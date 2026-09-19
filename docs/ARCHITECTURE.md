@@ -241,8 +241,13 @@ struct MissingGlyph { char32_t cp; };   // 豆腐の記録。Shaper が溜め、
 - 豆腐: どのフォントにもないコードポイントは `MissingGlyph` に記録し、第一フォントの
   `□`（U+25A1）、なければ `.notdef` を 1em の送りで出す。`ShapedCluster::missing = true`
 - 縦書き（`Direction::Vertical`）: UAX #50 の Vertical_Orientation が U / Tu の文字は
-  `HB_DIRECTION_TTB` でシェーピング（HarfBuzz が `vert` を自動適用）、R / Tr の文字（欧文・数字）は
-  横組みでシェーピングして `sideways = true`。offset は text_measurer.hpp の座標の約束に合わせる
+  `HB_DIRECTION_TTB` でシェーピング（HarfBuzz が `vert` を自動適用）、R の文字（欧文・数字）は
+  横組みでシェーピングして `sideways = true`。**Tr（「」（）ー：； など）は UAX #50 の定義どおり、
+  そのフォントに縦組み用グリフ（`vert`）があれば立てて差し替え、なければ横倒し**。
+  offset は text_measurer.hpp の座標の約束に合わせる
+- run は「フォールバックで決まるフォント」と「スクリプト」の両方の境界で分ける。HarfBuzz には
+  script / language（`ja` 固定）を明示的に渡す（`hb_buffer_guess_segment_properties` は
+  ロケールを読むので使わない。決定性のため）
 - ラスタライズ: `FT_LOAD_NO_HINTING | FT_LOAD_NO_BITMAP`、`FT_RENDER_MODE_NORMAL`。
   sideways は輪郭を 90° 回してから描く（ビットマップを回すのではなく）
 - テスト用フォント: リポジトリに置かず、CMake の configure 時に版（コミット SHA）とハッシュを

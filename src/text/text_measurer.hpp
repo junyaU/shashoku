@@ -73,6 +73,9 @@ class TextMeasurer {
   TextMeasurer() = default;
   TextMeasurer(const TextMeasurer&) = delete;
   TextMeasurer& operator=(const TextMeasurer&) = delete;
+  // ムーブも禁止（コピー禁止と揃える）。注入点なので参照でしか受け渡さない。
+  TextMeasurer(TextMeasurer&&) = delete;
+  TextMeasurer& operator=(TextMeasurer&&) = delete;
   virtual ~TextMeasurer() = default;
 
   // text は改行を含まない 1 区間。フォールバックによるフォント切り替えは実装の中で処理する

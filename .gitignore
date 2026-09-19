@@ -5,6 +5,7 @@
 # 個人設定
 /CMakeUserPresets.json
 /.claude/settings.local.json
+/.claude/worktrees/
 .vscode/
 .idea/
 .cache/

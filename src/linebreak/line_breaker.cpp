@@ -1,6 +1,7 @@
 #include "linebreak/line_breaker.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <optional>
 #include <span>
@@ -30,13 +31,16 @@ constexpr bool is_hard(BreakClass cls) {
          cls == BreakClass::Nl;
 }
 
-// 行頭禁則（この字を行頭に置かない）。ARCHITECTURE.md §3.4 (2):
+// 行頭禁則（この字が行頭に来てはいけない）。ARCHITECTURE.md §3.4 (2):
 // 句読点・終わり括弧（CL / CP）、感嘆符・疑問符（EX）、中点・繰り返し記号（NS）、
-// 数値の区切り（IS）、スラッシュ（SY）、分離禁則の …（IN）、strict の小書き仮名（CJ → NS）。
+// 数値の区切り（IS）、スラッシュ（SY）、strict の小書き仮名（CJ → NS）。
+//
+// IN（… ‥）は入れない。UAX #14 の LB22（× IN）は「…… を割らない」という分離禁則であって、
+// JIS X 4051 の行頭禁則ではない（… が行頭に来ること自体は許される）。並びの内部を割らない
+// ことは LB22 のペア規則と splits_inseparable() が担保する。
 constexpr bool is_line_start_prohibited(BreakClass cls) {
   return cls == BreakClass::Cl || cls == BreakClass::Cp || cls == BreakClass::Ex ||
-         cls == BreakClass::Ns || cls == BreakClass::Is || cls == BreakClass::Sy ||
-         cls == BreakClass::In;
+         cls == BreakClass::Ns || cls == BreakClass::Is || cls == BreakClass::Sy;
 }
 
 // 行末禁則（この字を行末に置かない）= 始め括弧（OP）。LB14 が空白越しでも守る。
@@ -81,6 +85,8 @@ class Analysis {
   [[nodiscard]] bool before_spaces_is(std::size_t k, BreakClass cls) const;
   // LB25 の NU (SY | IS)* を k から遡って読む。
   [[nodiscard]] bool numeric_run_ends_at(std::size_t k) const;
+  // items_[p] の直前で割ると分離禁則（JIS X 4051）を破るか。緊急分割の位置選びに使う。
+  [[nodiscard]] bool splits_inseparable(std::size_t p) const;
 
   // --- 幅と字間調整 ---
   [[nodiscard]] bool strippable(std::size_t i) const;
@@ -113,6 +119,7 @@ class Analysis {
   std::vector<std::uint8_t> start_prohibited_;
   std::vector<std::uint8_t> end_prohibited_;
   std::vector<std::size_t> sig_;  // attached_ でないアイテムの添字
+  std::vector<std::size_t> sig_pos_;  // アイテム添字 → sig_ 上の位置（attached_ は kNone）
 
   std::vector<PunctKind> punct_;
   std::vector<float> trim_before_;  // 字面の前にある詰められるアキ（正の値）
@@ -206,8 +213,10 @@ void Analysis::resolve_classes() {
   }
 
   sig_.reserve(n);
+  sig_pos_.assign(n, kNone);
   for (std::size_t i = 0; i < n; ++i) {
     if (attached_[i] == 0) {
+      sig_pos_[i] = sig_.size();
       sig_.push_back(i);
     }
     const bool text = items_[i].kind == ItemKind::Text;
@@ -436,6 +445,40 @@ std::optional<bool> Analysis::rule_number(std::size_t k) const {
   return std::nullopt;
 }
 
+// items_[p] の直前で割ると「離してはいけない組」を割ることになるか。
+// 緊急分割（break_anywhere）の位置選びだけに使う判定で、通常の分割可能位置の判定
+// （can_break_between）とは別物。対象は JIS X 4051 の分離禁則:
+//   * ——（B2 の並び。LB17 B2 SP* × B2）
+//   * …… ‥‥（IN の並び）。並びの *直前* は分離禁則ではないので割ってよい
+//   * 数値の内部と、数値と前置・後置記号（LB23a / LB25）
+//   * 呼び出し側が指定した no_break_before
+bool Analysis::splits_inseparable(std::size_t p) const {
+  if (items_[p].no_break_before) {
+    return true;
+  }
+  const std::size_t k = sig_pos_[p];
+  if (k == kNone || k == 0) {
+    return false;
+  }
+  const BreakClass prev = sig_class(k - 1);
+  const BreakClass next = sig_class(k);
+  if (next == BreakClass::B2 && before_spaces_is(k, BreakClass::B2)) {
+    return true;  // —— の途中
+  }
+  if (prev == BreakClass::In && next == BreakClass::In) {
+    return true;  // …… ‥‥ の途中
+  }
+  const bool prev_ideograph =
+      prev == BreakClass::Id || prev == BreakClass::Eb || prev == BreakClass::Em;
+  const bool next_ideograph =
+      next == BreakClass::Id || next == BreakClass::Eb || next == BreakClass::Em;
+  if ((prev == BreakClass::Pr && next_ideograph) || (prev_ideograph && next == BreakClass::Po)) {
+    return true;  // LB23a: 通貨記号・単位記号と表意文字を離さない
+  }
+  const std::optional<bool> number = rule_number(k);
+  return number.has_value() && !*number;  // LB25: 数値と前置・後置記号を離さない
+}
+
 // LB28〜LB30b: 欧文の語・括弧・地域表示記号・絵文字。
 std::optional<bool> Analysis::rule_letter(std::size_t k) const {
   const BreakClass prev = sig_class(k - 1);
@@ -511,8 +554,8 @@ void Analysis::compute_opportunities() {
       opp_[i] = 0;  // LB8a ZWJ ×（LB9 で吸収したあとも直後では割らない）
     }
     // 行頭禁則の最終保証（DESIGN.md Phase 4「行頭に句読点が絶対に出ない」）。
-    // UAX #14 では LB18（SP ÷）が LB21（× NS）/ LB22（× IN）より先に効くので、
-    // 空白の直後だけは NS / IN の前で割れてしまう。日本語組版ではそれを許さない。
+    // UAX #14 では LB18（SP ÷）が LB21（× NS）より先に効くので、空白の直後だけは
+    // NS の前で割れてしまう。日本語組版ではそれを許さない。
     if (start_prohibited_[i] != 0 || items_[i].no_break_before) {
       opp_[i] = 0;
     }
@@ -635,23 +678,47 @@ void Analysis::scan_candidates(std::size_t begin, std::size_t limit, float avail
 
 std::size_t Analysis::break_anywhere_at(std::size_t begin, std::size_t limit,
                                         float available) const {
-  // overflow-wrap: anywhere。クラスタ境界で割る。行頭禁則・行末禁則は守れる限り守り、
-  // 守れる位置が 1 つもなければ破る（line_breaker.hpp の Config::break_anywhere）。
-  std::size_t clean = kNone;
-  std::size_t any = kNone;
+  // overflow-wrap: anywhere。クラスタ境界で強制的に割る（line_breaker.hpp の
+  // Config::break_anywhere）。禁則は守れる限り守るので、幅に収まる位置を次の優先順位で選ぶ。
+  // 各段の中では「収まる最後の位置」= できるだけ長い行を採る。
+  //   0: 通常の分割可能位置（ここに来た時点で普通は無いが、あれば最優先）
+  //   1: 分離禁則にも行頭禁則・行末禁則にも掛からない位置
+  //   2: 分離禁則に掛からない位置（「は|……」のように、並びの直前で割る）
+  //   3: 収まる最後のクラスタ境界。ここで初めて禁則を破る（—— が 1 行に収まらない等）
+  // クラスタの内部（結合文字・異体字セレクタ・ZWJ 列の吸収）では、3 でも絶対に割らない。
+  std::array<std::size_t, 4> choice{kNone, kNone, kNone, kNone};
   for (std::size_t p = begin + 1; p < limit; ++p) {
-    if (attached_[p] != 0) {
-      continue;  // 結合文字列（クラスタ）の途中では割らない
+    if (attached_[p] != 0 || raw_zwj_[p - 1] != 0) {
+      continue;
     }
     if (fit(begin, p, available).width > available + kWidthEpsilon) {
       break;
     }
-    any = p;
-    if (start_prohibited_[p] == 0 && end_prohibited_[p - 1] == 0 && !items_[p].no_break_before) {
-      clean = p;
+    choice[3] = p;
+    if (splits_inseparable(p)) {
+      continue;
+    }
+    choice[2] = p;
+    if (start_prohibited_[p] != 0 || end_prohibited_[p - 1] != 0) {
+      continue;
+    }
+    choice[1] = p;
+    if (opp_[p] != 0) {
+      choice[0] = p;
     }
   }
-  return clean != kNone ? clean : any;
+  for (const std::size_t p : choice) {
+    if (p != kNone) {
+      return p;
+    }
+  }
+  // 1 クラスタも収まらない幅。それでもクラスタ 1 個だけを置く（その行ははみ出す）。
+  for (std::size_t p = begin + 1; p < limit; ++p) {
+    if (attached_[p] == 0 && raw_zwj_[p - 1] == 0) {
+      return p;
+    }
+  }
+  return kNone;
 }
 
 bool Analysis::ends_forced(std::size_t end) const {

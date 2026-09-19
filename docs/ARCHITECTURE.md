@@ -1,0 +1,371 @@
+# shashoku 実装設計書
+
+[DESIGN.md](DESIGN.md) が「何を・なぜ作るか」、この文書が「どう作るか」。
+DESIGN.md のスケッチを実装可能な粒度まで具体化し、その過程で下した設計判断を記録する。
+**両者が食い違ったら、§1 の判断記録に理由が書いてある限りこの文書が優先**（書いていなければバグなので直す）。
+
+モジュール間の契約は文章ではなくヘッダで固定してある。まずそれを読むこと:
+
+| 契約ヘッダ | 結ぶもの |
+|---|---|
+| [include/shashoku/error.hpp](../include/shashoku/error.hpp), [src/core/result.hpp](../src/core/result.hpp) | 全モジュール共通のエラー型 |
+| [src/core/](../src/core/) の各ヘッダ | 基本型（Rect / Color / Bitmap / ID）、UTF-8、JSON ダンプ |
+| [src/html/dom.hpp](../src/html/dom.hpp) | ① html → ② style |
+| [src/style/computed_style.hpp](../src/style/computed_style.hpp) | ② style → ③ layout |
+| [src/text/text_measurer.hpp](../src/text/text_measurer.hpp) | ③ layout ⇄ ④ text |
+| [src/linebreak/line_breaker.hpp](../src/linebreak/line_breaker.hpp) | ③ layout → 行分割器 |
+| [src/raster/display_list.hpp](../src/raster/display_list.hpp) | ⑤a paint → ⑤b raster |
+| [src/raster/glyph_source.hpp](../src/raster/glyph_source.hpp) | ⑤b raster ⇄ ④ text |
+
+契約ヘッダは勝手に変えない。実装してみて契約が間違っている・足りないと分かったら、
+最小限の変更にとどめ、**何をなぜ変えたかを必ず報告する**（他のモジュールが同じ契約に依存している）。
+
+---
+
+## 1. 設計判断の記録
+
+DESIGN.md のスケッチから変えた点・決めた点。番号は議論で参照するためのもの。
+
+**A1. レイアウトは論理座標（inline / block）で行い、物理座標への変換は paint で 1 回だけ行う。**
+縦書き（Phase 8）を「主軸の転置」で済ませるため。`writing-mode` は文書全体で 1 つ
+（ルート以外で親と違う値を指定したら `UnsupportedLayout` エラー。直交フローは扱わない）なので、
+ボックスツリー全体が 1 つの論理座標系に乗り、変換は大域的な 1 回で済む。
+横書きでは inline = x、block = y なので、横書きのダンプは物理座標と同じ値で読める。
+CSS の物理プロパティ（width / margin-top …）は layout の入口で論理方向に読み替える。
+
+**A2. 行分割の単位は「文字」ではなくクラスタ。** 結合文字・異体字セレクタ・絵文字の途中で
+割らないため。さらに行分割器の入力は `Item`（クラスタ or 分割不能なインライン要素）とし、
+画像とルビのまとまりを同じ列に流す。詳細は line_breaker.hpp の冒頭コメント。
+
+**A3. 行分割器の出力は行の範囲 + アイテムごとの字間調整（Spacing）。** 追い込み・約物連続の
+アキ詰め・行末約物の半角化はすべて「約物の前後の空きを削る」操作で、範囲だけでは表せない。
+
+**A4. 禁則 > 幅。** 禁則を守ると行に収まらないときは、割らずにはみ出す（`Line::overflows`）。
+「行頭に句読点が絶対に出ない」（DESIGN.md Phase 4 の受け入れ条件）を文字どおり守る。
+
+**A5. `%` と `auto` はスタイル段で解決しない。** 包含ブロックの大きさが要るので layout まで
+`Dimension` として残す（CSS の計算値と使用値の区別）。
+
+**A6. シェーピングは段落（インライン整形文脈）全体で 1 回。** 行ごとに再シェーピングしない。
+行分割はクラスタ境界でしか起きず、和文には行をまたぐカーニングがなく、欧文は空白で割れるため、
+結果はほぼ変わらない。代わりに「計測 → 分割 → 配置」が片道になり、相互再帰が消える。
+
+**A7. HarfBuzz と FreeType は互いを知らない。** HarfBuzz は自前の OpenType 実装（hb-ot）で
+メトリクスを読む（hb-ft を使わない）。FreeType はグリフのラスタライズだけに使う。
+依存ライブラリ同士の結合を避け、ビルド（FetchContent）を単純に保つため。
+
+**A8. グリフ位置はデバイスピクセルの整数に丸める。** サブピクセル位置のグリフ描画はしない。
+決定性（DESIGN.md §3-5）と実装の単純さを優先。ヒンティングは無効（`FT_LOAD_NO_HINTING`）。
+
+**A9. 浮動小数点の決定性。** `-ffp-contract=off`（設定済み）に加え、layout / raster では
+`+ - * /`、`sqrt`、`floor / ceil / round / trunc`、`min / max / abs` だけを使う。
+`pow / exp / log / sin / cos` などは libm の版で結果が変わりうるので使わない。
+
+**A10. マージンの相殺は「隣り合う兄弟ブロック間」だけ実装する。** 親子間の相殺はしない。
+flex コンテナの中では一切相殺しない。ブラウザとのピクセル一致は目標ではない（DESIGN.md §4）。
+
+**A11. 枠線と角丸は 4 辺・4 隅共通のみ。** `border-top` や隅ごとの半径は `UnsupportedProperty`。
+`box-sizing` は content-box のみ（プロパティ自体が対応外）。
+
+**A12. 画像は名前で参照する。** `render()` に `ImageSet`（名前 → PNG バイト列）を渡し、
+`<img src="名前">` で引く。ネットワークにもファイルシステムにも触れない。対応形式は PNG のみ。
+
+**A13. `text-align: justify` に対応する。** 追い出しで生じた行末の空きを字間に配分するのは
+日本語組版の基本動作で、「日本語の文章を正しく組むことに寄与するか？」に Yes。
+
+**A14. ソース中の改行の扱い。** 空白の畳み込みで、改行の前後がどちらも全角文字
+（East Asian Width が W / F / H のうち W・F）なら改行を消す。それ以外は空白 1 個にする
+（CSS Text 3 §4.1.3 segment break transformation）。HTML を整形して書いても和文に空白が入らない。
+
+**A15. 未知の font-family は読み飛ばす。** `font-family` はもともとフォールバック列なので、
+FontSet にない名前を飛ばすのは「黙って崩す」に当たらない。列を使い切ったら FontSet の追加順で探す。
+
+---
+
+## 2. モジュールと依存
+
+```
+core ─────────────┬──> png ────────────────────────────────┐
+  │               ├──> raster ─────────────────────┐       │
+  │               ├──> text ──(GlyphSource 実装)───┤       │
+  │               ├──> html ──> style ──┐          │       │
+linebreak（孤立）─┴─────────────────────┴> layout ─┴> paint ┴> api ──> tools/cli
+```
+
+| モジュール | 名前空間 | 依存してよいもの | 段 |
+|---|---|---|---|
+| core | `shashoku` | （なし） | — |
+| linebreak | `shashoku::linebreak` | **（なし。core にも依存しない）** | ③ の中核 |
+| png | `shashoku::png` | core, zlib | ⑥ |
+| raster | `shashoku::raster` | core | ⑤b |
+| text | `shashoku::text` | core, raster/glyph_source.hpp, FreeType, HarfBuzz | ④ |
+| html | `shashoku::html` | core | ① |
+| style | `shashoku::style` | core, html/dom.hpp | ② |
+| layout | `shashoku::layout` | core, style/computed_style.hpp, text/text_measurer.hpp, linebreak | ③ |
+| paint | `shashoku::paint` | core, layout, raster/display_list.hpp | ⑤a |
+| api | `shashoku` | すべて | — |
+
+- 各モジュールは `src/<module>/CMakeLists.txt` で `shashoku_add_module()`、テストは
+  `tests/<module>/CMakeLists.txt` で `shashoku_add_test()` を呼ぶ（[cmake/Modules.cmake](../cmake/Modules.cmake)）。
+  `src/CMakeLists.txt` と `tests/CMakeLists.txt` は存在するディレクトリを自動で拾うので触らない
+- 失敗しうる関数は `Result<T>`（= `std::expected<T, Error>`）を返す。例外を投げない・捕まえない
+- 各段の出力は `dump_json()` 系の関数で JSON にできること（`core/json_writer.hpp`）。キー順は固定
+
+---
+
+## 3. モジュール仕様
+
+### 3.1 core
+
+契約ヘッダの実装（`utf8.cpp`, `json_writer.cpp`, `error.cpp`）とそのテスト。
+`to_string(RenderError)` の書式は error.hpp のコメントどおり。location がなければ ` at L:C` を省く。
+
+### 3.2 png（⑥）
+
+```cpp
+namespace shashoku::png {
+Result<std::vector<std::uint8_t>> encode(const Bitmap& bitmap);  // RGBA8 → PNG
+Result<Bitmap> decode(std::span<const std::uint8_t> bytes);      // PNG → RGBA8
+}
+```
+
+- **encode**: シグネチャ + IHDR + IDAT + IEND。color type 6（RGBA）/ 8bit / 非インターレース。
+  フィルタは行ごとに 5 種（None / Sub / Up / Average / Paeth）を試し、「符号つきバイトとみなした
+  絶対値和」が最小のものを選ぶ（PNG 仕様 §12.8 のヒューリスティック）。zlib は `Z_BEST_COMPRESSION`・
+  既定ストラテジで固定（出力バイト列の決定性のため、設定を変えない）。CRC32 は自前で実装する
+  （zlib の `crc32()` は使わない: PNG エンコーダの自作範囲）。幅か高さが 0、または
+  `rgba.size() != width*height*4` の Bitmap は `InvalidOption` エラー
+- **decode**: `<img>` とゴールデンテストの比較用。対応: 8bit の gray / gray+alpha / RGB / RGBA /
+  パレット（tRNS 対応）、および 16bit（上位 8bit に落とす）、非インターレースのみ。
+  対応外（インターレース、1/2/4bit）とシグネチャ・CRC・チャンク構造・zlib の破損は
+  `ImageDecode` エラー。補助チャンクは読み飛ばす。ガンマや ICC は無視する
+- 受け入れ: `pngcheck` が通る。encode → decode が元の Bitmap に戻る。壊れた入力で落ちない（ASan）
+
+### 3.3 raster（⑤b）
+
+```cpp
+namespace shashoku::raster {
+struct Target {
+  float width = 0, height = 0;  // CSS px
+  float scale = 1;              // デバイスピクセル = ceil(CSS px * scale)
+  Color background = kTransparent;
+};
+Result<Bitmap> rasterize(const DisplayList& list, const Target& target, GlyphSource& glyphs,
+                         std::span<const Bitmap> images);
+}
+```
+
+- 合成は source-over、ストレートアルファ、sRGB 空間のまま。8bit 整数演算で、丸めは
+  `(x * 255 + 127) / 255` 系の「四捨五入」に統一する。半透明同士を重ねたときのアルファも正しく
+  （`out_a = src_a + dst_a * (1 - src_a)`、色はアルファで重みづけ）
+- 矩形は辺が小数座標でもよい（端のピクセルは面積比で被覆率を出す。scale = 2 や 0.5px 境界で必要）
+- 角丸・枠線・クリップの縁は被覆率によるアンチエイリアス。方式は実装者が選んでよいが、
+  決定的であること（A9）と、半径 0 のとき FillRect と 1 ビットも違わないこと
+- DrawGlyphs: 原点をデバイスピクセルの整数に丸めてから（A8）`GlyphSource::rasterize()` の
+  被覆率に色を掛けて合成する
+- DrawImage: 縮小は面積平均、拡大はバイリニア。等倍で整数位置ならピクセルをそのまま合成
+- PushClip / PopClip: 入れ子は積集合。対応が取れていない列は `Internal` エラー
+- 描画対象外（ビットマップの外、クリップの外）へのアクセスで落ちない
+
+### 3.4 linebreak（③ の中核・製品のコア）
+
+契約は [line_breaker.hpp](../src/linebreak/line_breaker.hpp)。ここでは規則を定める。
+**このモジュールのテスト群が禁則処理の実質的な仕様書になる**（DESIGN.md §10-2）ので、
+テストケースには出典（UAX #14 の規則番号 / JLREQ の節 / CSS Text の節）をコメントで添える。
+
+**(1) 分割クラス**: UAX #14 の分割クラスのうち、日本語と基本ラテンに必要なものをテーブルで持つ:
+BK CR LF NL SP ZW WJ GL CM ZWJ OP CL CP QU EX IS SY NS CJ IN B2 BA BB HY PR PO NU AL ID
+（+ 絵文字用に EB EM RI を ID 相当で扱う。ハングル音節は ID）。未知は AL、CJK の統合漢字・
+かな・全角記号の範囲は ID。East Asian Width が必要な規則（LB30 の OP/CP）は全角括弧の表で代用する。
+`Strictness` による CJ の解決と Loose の追加規則は CSS Text 3 §5.3 に従う。
+
+**(2) 分割可能位置**: UAX #14 の規則 LB2〜LB31 のうち、上のクラスに関係するものをペア表 +
+文脈規則（LB8 の空白、LB9/10 の CM、LB14〜17 の空白越し、LB25 の数値、LB30a の RI）で実装する。
+日本語の禁則はこの上に自然に乗る: 行頭禁則 = CL / CP / NS / EX / IS / (strict の) CJ の前で割らない、
+行末禁則 = OP の後で割らない、分離禁則 = `B2 B2`（——）と `IN IN`（……）と数値 + 単位。
+`Config::extra_*` は該当文字を NS / OP 相当に格上げする。`Item::no_break_before` と
+`ItemKind::Atomic`（ID 扱い）を尊重する。
+
+**(3) 行の決定**: 貪欲法。幅に収まる最後の分割可能位置で割る。行末の空白（SP）は幅に数えず
+`content_end` から除く。`ForcedBreak` の直後で必ず改行する。
+
+**(4) 約物の空き**（JLREQ 3.1.2〜3.1.5）。対象は全角の約物だけ:
+始め括弧 `「『（〔［｛〈《【〖〘〝`、終わり括弧 `」』）〕］｝〉》】〗〙〟`、読点 `、，`、句点 `。．`、中点 `・：；`。
+これらは 1em の送りのうち半分（中点は両側 1/4 ずつ）が空き。空き量は `Item::em` から計算する。
+- `collapse_punctuation_spacing`: 終わり括弧類・句読点の直後に始め括弧が続くとき、および
+  終わり括弧類・句読点が連続するとき、始め括弧が連続するときに、間の空きを半角ぶん詰める
+  （JLREQ 3.1.4 の表に従う）。行をまたいだペアには適用しない
+- `trim_line_end`: 行末の終わり括弧・句読点が収まらないとき、後ろの半角空きを捨てて収める
+- `trim_line_start`: 行頭の始め括弧の前の半角空きを捨てる
+
+**(5) あふれ処理**:
+- `Oidashi`: (3) のまま。禁則文字は手前の文字を道連れにして次の行へ行く
+- `Burasage`: 行末に来た句読点（`、。，．`）1 文字が収まらないとき、それを行の外に出す
+  （`Line::hang`）。収まるならぶら下げない。句読点以外には効かない（追い出しになる）
+- `Oikomi`: 貪欲法で決めた位置の次の分割可能位置までを、行内の約物の空き（(4) の空き量が上限）を
+  詰めれば収められるなら、詰めて収める。詰め量は各約物の詰め可能量に比例配分する。
+  収められなければ追い出し
+- どのポリシーでも (A4) 禁則 > 幅。`break_anywhere` は分割可能位置が 1 つもない行でだけ発動する
+
+**(6) 不変条件**（ファジングで検査する）: 全アイテムがちょうど 1 行に属する / 行は空でない /
+`overflows` でない行は `width <= available_width`（+ 許容誤差）/ 分割位置は必ず
+`break_opportunities()` が true の位置か ForcedBreak の直後か `break_anywhere` の発動 /
+同じ入力には同じ出力。
+
+### 3.5 text（④）
+
+```cpp
+namespace shashoku::text {
+class FontStore {                       // フォント実体の唯一の所有者（DESIGN.md §3-2）
+ public:
+  Result<FontId> load(std::span<const std::uint8_t> bytes);  // バイト列をコピーして保持。追加順 = フォールバック順
+  // family 名・weight の照会、(cp → どのフォントのどのグリフか) の解決 など
+};
+class Shaper final : public TextMeasurer { /* FontStore を参照。HarfBuzz */ };
+class FreeTypeGlyphSource final : public raster::GlyphSource { /* FontStore を参照 */ };
+struct MissingGlyph { char32_t cp; };   // 豆腐の記録。Shaper が溜め、api が Warning に変換する
+}
+```
+
+- 依存: FreeType と HarfBuzz を FetchContent で版・ハッシュ固定（A7）。システムのライブラリ
+  （zlib, png, bzip2, brotli）を拾わせない。HarfBuzz は公式 CMake でも `harfbuzz.cc`（アマルガム）
+  でもよいが、`shashoku_mark_system()` でヘッダを SYSTEM 扱いにすること
+- フォント選択（A15）: `font_family` を順に FontStore 内の family 名と照合（大文字小文字を無視）。
+  同じ family に複数 weight があれば `font_weight` に最も近いもの（CSS Fonts の規則）。
+  見つかったもの → 残りの全フォント（追加順）の順でフォールバック列を作る
+- run 分割: コードポイントごとにフォールバック列を cmap 引きし、最初にグリフを持つフォントを採用。
+  同じフォントが続く区間をまとめて HarfBuzz に渡す。結合文字・異体字セレクタ・ZWJ は直前の
+  文字と同じ run に入れる（別フォントに割らない）
+- 豆腐: どのフォントにもないコードポイントは `MissingGlyph` に記録し、第一フォントの
+  `□`（U+25A1）、なければ `.notdef` を 1em の送りで出す。`ShapedCluster::missing = true`
+- 縦書き（`Direction::Vertical`）: UAX #50 の Vertical_Orientation が U / Tu の文字は
+  `HB_DIRECTION_TTB` でシェーピング（HarfBuzz が `vert` を自動適用）、R / Tr の文字（欧文・数字）は
+  横組みでシェーピングして `sideways = true`。offset は text_measurer.hpp の座標の約束に合わせる
+- ラスタライズ: `FT_LOAD_NO_HINTING | FT_LOAD_NO_BITMAP`、`FT_RENDER_MODE_NORMAL`。
+  sideways は輪郭を 90° 回してから描く（ビットマップを回すのではなく）
+- テスト用フォント: リポジトリに置かず、CMake の configure 時に版（コミット SHA）とハッシュを
+  固定してダウンロードする（`cmake/TestAssets.cmake`）。Noto Sans JP（OFL）+ 欧文フォント 1 つ
+  （フォールバックのテスト用）。パスはコンパイル定義でテストに渡す
+- 受け入れ（DESIGN.md Phase 2）: 「こんにちは、世界のみんな。ABC😀」を 1 行でシェーピングでき、
+  😀 だけが豆腐として報告される
+
+### 3.6 html（①）
+
+```cpp
+namespace shashoku::html {
+Result<Node> parse(std::string_view source);  // 合成ルート "#root" を返す
+std::string dump_json(const Node& root);
+}
+```
+
+- 入力は断片（`<html>` / `<body>` なしで `<div>…` から始まる）。トップレベルに複数ノード可
+- 対応タグ: `div span p h1-h6 img ruby rt rp br style`。それ以外は `UnsupportedTag`
+  （`html head body script …` も含めてエラー）。コメントと `<!DOCTYPE>` は読み飛ばす
+- 対応属性: 共通 `style class id`、`img` は加えて `src width height alt`。それ以外は
+  `UnsupportedAttribute`。属性の重複は `HtmlParse`。引用符は `"` `'` なし の 3 形式
+- 空要素 `br img` は閉じタグなし（`<br/>` も可）。それ以外の要素の閉じ忘れ・対応しない終了タグ・
+  入れ子の誤りは `HtmlParse`（WHATWG の暗黙の閉じ規則は実装しない。fail loudly）
+- 文字参照: `&amp; &lt; &gt; &quot; &apos; &nbsp;` と数値参照（10 進・16 進）。未知の名前、
+  範囲外・サロゲートの数値は `HtmlParse`。`<style>` の中身は生テキスト（文字参照を解決しない）
+- 入力が不正な UTF-8 なら `InvalidUtf8`。すべてのエラーに `SourceLocation` を付ける
+
+### 3.7 style（②）
+
+```cpp
+namespace shashoku::style {
+Result<StyledNode> resolve(const html::Node& root);  // ルートの ComputedStyle は初期値
+std::string dump_json(const StyledNode& root);
+}
+```
+
+- カスケード: UA スタイルシート < `<style>` の規則（詳細度 → 出現順）< `style` 属性。
+  セレクタは `tag` `.class` `#id` とその結合（`p.note`）、およびカンマ区切りのみ。
+  結合子（子孫・`>`）、擬似クラス、`@` 規則、`!important` は `CssParse` / `UnsupportedProperty`
+- UA スタイル: `div p h1-h6` は block。`h1`〜`h6` は font-size `2 / 1.5 / 1.17 / 1 / 0.83 / 0.67 em`・
+  bold・上下 margin（ブラウザの既定値）。`p` は上下 margin 1em。`rt` は font-size 50%。
+  `rp` と `style` は display: none
+- 対応プロパティは DESIGN.md §4 の一覧 + 次のショートハンド / 別名:
+  `margin` `padding`（1〜4 値）、`border`（`<幅> solid <色>` / `none`）、`border-width`
+  `border-style`（solid / none）`border-color`、`flex`（`none` / `auto` / 1〜3 値）、
+  `gap` `row-gap` `column-gap`、`background`（色のみ。`background-color` の別名）。
+  一覧にないプロパティは `UnsupportedProperty`、値が対応外なら `UnsupportedValue`
+- 単位: `px` `em`、`0`（単位なし）。`%` は `width` と `flex-basis` のみ。`line-height` は
+  `normal` / 数値 / px / em。色: `#rgb #rgba #rrggbb #rrggbbaa`、`rgb()` `rgba()`、
+  CSS の色名、`transparent`、`currentColor`（border-color のみ）
+- 継承するのは computed_style.hpp で「継承する」とした群。`inherit` キーワードは全プロパティで可。
+  `em` は親の（`font-size` 自身は親の、それ以外は自分の）font-size で解決する
+- `display: inline` の要素への `width height margin padding border` 指定は `UnsupportedLayout`
+  （`img` を除く）。`writing-mode` の途中変更も `UnsupportedLayout`（A1）
+
+### 3.8 layout（③）
+
+```cpp
+namespace shashoku::layout {
+struct Options {
+  float viewport_width;                  // 物理 px
+  std::optional<float> viewport_height;  // 縦書きでは必須（InvalidOption）
+  linebreak::Config line_break;          // strictness / break_anywhere は CSS が上書きする
+};
+struct ImageSize { float width, height; };  // <img> の固有寸法。名前 → 寸法は api が解決して渡す
+Result<BoxTree> layout(const style::StyledNode& root, const Options&, text::TextMeasurer&,
+                       /* 画像の固有寸法を引く口 */);
+std::string dump_json(const BoxTree&);
+}
+```
+
+- ボックスツリーは論理座標・ルート原点からの絶対位置（A1）。型は `layout/box_tree.hpp` に
+  layout の実装者が定義する。最低限: ブロックの border-box と塗り情報、行ボックス、
+  行内のテキスト断片（FontId・サイズ・色・sideways・グリフごとの inline 位置と offset・
+  ベースライン / 中心軸の block 位置）、画像断片、インライン背景
+- **block**: 幅は親から降り、高さは子から戻る。`width: auto` は利用可能幅いっぱい。
+  `margin: 0 auto` の中央寄せ。兄弟間のマージン相殺（A10）。子が inline と block の混在なら
+  inline の連続を無名ブロックで包む
+- **inline**: インライン整形文脈ごとに、(a) 空白の畳み込み（A14）→ (b) スタイルが同じ区間ごとに
+  `TextMeasurer::shape()` → (c) クラスタを `linebreak::Item` に変換（letter-spacing を advance に加算、
+  `<br>` は ForcedBreak、`<img>` とルビのまとまりは Atomic）→ (d) `LineBreaker::break_lines()` →
+  (e) 行ボックスを積み、`Spacing` と `text-align`（justify を含む。A13）を反映してグリフを配置。
+  行の高さは行内の各断片の `line-height` の最大、ベースラインは半行間（half-leading）で決める
+- **flex**（Phase 6）: 単一行のみ（`flex-wrap` は対応外）。CSS Flexbox §9 のアルゴリズムのうち、
+  flex-basis の解決 → grow / shrink の配分（min-content を下限に）→ 交差軸の整列 → justify-content → gap。
+  アイテムの max-content / min-content は `kUnbounded` と `min_content_width()` で測る
+- **ルビ**（Phase 7）: `<ruby>` 内の「親文字の並び + `<rt>`」を 1 組とし、組ごとに 1 つの Atomic。
+  幅は max(親文字, ルビ)、短い方を中央に置く。行ボックスはルビのぶん block-start 側に広がる
+- **縦書き**（Phase 8）: 論理座標のまま。`TextStyle::direction = Vertical` で測るだけ
+- テストは偽の `TextMeasurer`（全角 1em / 半角 0.5em、ascent 0.88em / descent 0.12em）で
+  フォントなしに書き、`dump_json()` の座標を検証する（DESIGN.md §10-3）
+
+### 3.9 paint（⑤a）
+
+`raster::DisplayList build_display_list(const layout::BoxTree&)`。木を前順に辿り、
+背景 → 枠線 → 子 の順で命令を出す。論理 → 物理の変換（A1）はここだけで行う:
+横書きは `x = inline, y = block`、縦書き（vertical-rl）は `x = viewport_width − block − block_size, y = inline`。
+同じフォント・サイズ・色・sideways が連続するグリフは 1 つの `DrawGlyphs` にまとめる。
+完全に透明な塗りは命令を出さない。`dump_json(const DisplayList&)` と、デバッグ用の
+`dump_svg()`（DESIGN.md §2「SVG はデバッグダンプに格下げ」。グリフは矩形で代用してよい）を持つ。
+
+### 3.10 api / CLI
+
+公開ヘッダは `include/shashoku/`（`shashoku.hpp` が全部を include する）。DESIGN.md §8 の
+シグネチャに、A12 の `ImageSet` を取るオーバーロードと、`--dump-stage` 用の
+`dump(html, fonts, images, opts, Stage)` を加える。公開ヘッダに内部の型（FreeType、`src/` の型）を
+漏らさない。`FontSet` / `ImageSet` はバイト列を保持するだけで、解釈は `render()` の中で行う。
+
+出力サイズ: 幅 = `viewport_width`、高さ = `viewport_height`、未指定ならルートの内容の高さの切り上げ
+（0 なら `InvalidOption`）。どちらも `scale` を掛けて切り上げる。豆腐は `Warning` として返す。
+
+CLI は `tools/shashoku/`: `shashoku input.html --font A.otf [--font B.ttf …] [--image name=path …]
+-o out.png [--width N] [--height N] [--scale S] [--overflow oidashi|oikomi|burasage]
+[--dump-stage dom|style|box|display-list|svg]`。エラーは `to_string(RenderError)` を stderr に出して終了コード 1。
+
+---
+
+## 4. テスト
+
+- 単体テストは `tests/<module>/`。テスト実行ファイル名は `<module>_test`
+- ゴールデンテストは `tests/integration/`（`render()` を通した end-to-end）。期待画像は
+  `tests/golden/*.png` にコミットし、デコードしたピクセルの完全一致で比較する。不一致なら
+  `build/<preset>/test_output/` に actual / expected / diff の 3 枚を書き出す（DESIGN.md §10-1）
+- 期待画像の追加・更新は、必ず画像を目で見て正しいと確認してから行う
+- メモリを触るモジュール（png, raster, text, html, style）は `asan` プリセットでもテストを通す
+- ファジング（DESIGN.md §10-4）は、乱数の種を固定した「ランダム入力の性質テスト」として
+  通常のテストに含める（html: 落ちない / linebreak: §3.4 (6) の不変条件）

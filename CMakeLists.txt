@@ -50,6 +50,7 @@ if(SHASHOKU_SANITIZE)
 endif()
 
 include(CompilerOptions)
+include(Modules)
 include(Dependencies)
 
 add_subdirectory(src)

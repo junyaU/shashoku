@@ -312,6 +312,10 @@ render(std::string_view html, const FontSet& fonts, const RenderOptions& opts);
 
 ## 11. 開発の進め方（Claude Code への期待役割）
 
+> **2026-09-19 方針変更**: 以下の「コアは人間が書く」は失効。実装は Claude のサブエージェントが行い、
+> メインの Claude が設計とオーケストレーションを担当する。現行の役割分担は CLAUDE.md、
+> 実装レベルの設計は [ARCHITECTURE.md](ARCHITECTURE.md) を参照。以下は当初の方針の記録として残す。
+
 このプロジェクトは学習目的を兼ねる。**コア（レイアウトエンジン・行分割器・PNG エンコーダ・ラスタライズ）は人間が自分の手で書く。** Claude Code に頼みたいのは：
 
 - 設計の壁打ち・レビュー（この設計書との整合性チェック含む）

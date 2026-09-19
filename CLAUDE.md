@@ -1,26 +1,26 @@
 # shashoku（写植）
 
 日本語組版特化の HTML→PNG レンダリングエンジン（C++23）。
-**設計の唯一の正は [docs/DESIGN.md](docs/DESIGN.md)。** 設計判断・レビュー・提案の前に必ず該当節を読むこと。
-設計書と矛盾する提案をするときは、矛盾していることを明示した上で理由を述べる。
+設計の正は 2 つ: [docs/DESIGN.md](docs/DESIGN.md)（何を・なぜ作るか）と
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)（どう作るか。モジュール仕様・契約ヘッダ・設計判断の記録）。
+**実装・レビュー・提案の前に、必ず該当節を読むこと。** 設計と矛盾する変更をするときは、
+矛盾していることを明示した上で理由を述べ、ARCHITECTURE.md §1 の判断記録を更新する。
 
 やりとりは日本語。識別子は英語、コメントは日本語でよい。
 
-## 役割分担（最重要 / DESIGN.md §11）
+## 役割分担
 
-このプロジェクトは学習目的を兼ねる。**コアは人間が自分の手で書く。**
+2026-09-19 にユーザーの指示で方針を変更した（DESIGN.md §11 の「コアは人間が書く」は失効）:
+**実装は Claude のサブエージェントが行い、メインの Claude は設計とオーケストレーションを担当する。**
 
-- **Claude が実装コードを書いてはいけない領域**（頼まれても、まず擬似コード・レビュー・仕様要約で支援する）:
-  PNG エンコーダ / ラスタライザ・合成 / レイアウトエンジン（block・inline・flexbox）/ 行分割器（禁則）/
-  HTML・CSS パーサとスタイル解決
-- **Claude の担当**:
-  - 設計の壁打ち・レビュー（DESIGN.md との整合性チェックを含む）
-  - CMake / CI / clang-format / clang-tidy などの基盤整備
-  - テストケースの列挙と整備（特に禁則のテーブル駆動テストの網羅）
-  - FreeType / HarfBuzz の API 調査と最小サンプル
-  - 仕様の調査と要約（UAX #14、JIS X 4051 / JLREQ、WHATWG HTML、CSS Text、PNG 仕様）
-- コアのバグを見つけたら、直さずに「どこが・なぜ・どう確かめたか」を報告する。修正は頼まれてから。
-- テストを書くときは、未実装の API を勝手に決めない。シグネチャは人間が決めたものに合わせる。
+- **オーケストレーター（メインの Claude）**: 詳細設計（ARCHITECTURE.md と契約ヘッダ）、作業の分割と
+  サブエージェントの起動、成果物のレビュー・検証・統合。製品コードの実装は自分で書かず委譲する
+- **実装エージェント**: 割り当てられたモジュール（`src/<module>/` と `tests/<module>/`）だけを変更する。
+  - 契約ヘッダ（ARCHITECTURE.md 冒頭の表）と他モジュールのファイルは勝手に変えない。
+    契約の誤り・不足に気づいたら最小限の変更にとどめ、何をなぜ変えたかを最終報告に必ず書く
+  - 完了条件: `dev` / `asan` プリセットでビルド（`-Werror`）とテストが通り、`scripts/format.sh --check` と
+    `scripts/tidy.sh` が通ること。通っていないものを「完了」と報告しない。未完・既知の不具合は隠さず書く
+  - テストは実装と同じ重みの成果物。仕様（ARCHITECTURE.md §3）の各項目に対応するテストを書く
 
 ## 設計原則（DESIGN.md §3 の要約。レビュー時のチェックリスト）
 
@@ -37,6 +37,8 @@
 ## ビルドとテスト
 
 必要なもの: CMake 3.22+、Ninja、clang-18 + libc++-18（`std::expected` のため。g++ 11 では不可）。
+libc++-18 が未インストールのマシンでは素の `cmake --preset` は通らない。その場合はオーケストレーターが
+用意したラッパー（`dev configure|build|test|all <preset>`。パスは作業指示に書かれる）を使う。
 
 ```bash
 cmake --preset dev            # configure（初回は zlib / GoogleTest を取得）
@@ -55,20 +57,21 @@ scripts/tidy.sh               # clang-tidy（build/dev の compile_commands.json
 
 ```
 include/shashoku/   公開 API（DESIGN.md §8）。ここに置いたものは互換性を背負う
-src/<module>/       内部実装。パイプラインの段ごとにモジュールを切る（下記）
-tests/              GoogleTest。<module>_test.cpp、ゴールデンは tests/golden/、フォントは tests/assets/
-cmake/              CompilerOptions.cmake（警告・決定性フラグ）、Dependencies.cmake（FetchContent）
+src/<module>/       内部実装。パイプラインの段ごとに 1 モジュール = 1 静的ライブラリ（shashoku::<module>）
+tests/<module>/     GoogleTest（実行ファイル名は <module>_test）。end-to-end は tests/integration/、期待画像は tests/golden/
+tools/shashoku/     CLI
+cmake/              CompilerOptions（警告・決定性フラグ）/ Modules（shashoku_add_module, shashoku_add_test）/ Dependencies（FetchContent）
 scripts/            format.sh / tidy.sh
 docs/               DESIGN.md
 ```
 
-モジュール名の予定（フェーズが来たら作る。空ディレクトリは先に作らない）:
-`png`（⑥ Phase 0）→ `raster`（⑤b Phase 1）→ `text`（④ FontStore・シェーピング Phase 2）→
-`layout`（③ Phase 3）→ `linebreak`（③ の中核 Phase 4）→ `html` / `style`（①② Phase 5）
+モジュール一覧と依存の向きは ARCHITECTURE.md §2。未着手のモジュールのディレクトリは先に作らない。
 
-- ソースを足したら `src/CMakeLists.txt` に 1 行追加（GLOB は使わない）
-- テストを足したら `tests/CMakeLists.txt` に `shashoku_add_test(<name> <sources>)` を追加
-- モジュール間の依存はパイプラインの向きにだけ許す。`linebreak` は他のどのモジュールにも依存しない
+- モジュールを足す: `src/<module>/CMakeLists.txt` で `shashoku_add_module(<module> SOURCES ... DEPS ...)`、
+  `tests/<module>/CMakeLists.txt` で `shashoku_add_test(<module>_test SOURCES ... LIBS shashoku::<module>)`。
+  `src/CMakeLists.txt` と `tests/CMakeLists.txt` は存在するディレクトリを自動で拾うので触らない
+- ソースは明示的に列挙する（GLOB は使わない）
+- モジュール間の依存は ARCHITECTURE.md §2 の表の向きにだけ許す。`linebreak` は何にも依存しない（core にも）
 
 ## コード規約
 
@@ -77,8 +80,10 @@ docs/               DESIGN.md
   enum 値 `CamelCase` / 名前空間 `shashoku`。ファイル名は `snake_case.hpp` / `.cpp`、ヘッダは `#pragma once`
 - 整形は .clang-format（Google ベース、100 桁）。手で整形を議論しない
 - include は `src/` 起点（`#include "linebreak/line_breaker.hpp"`）、公開ヘッダは `"shashoku/..."`
-- 中間表現は素の struct + `std::variant`。継承は注入点（TextMeasurer など）に限る
-- 浮動小数点: `-ffast-math` 禁止、`-ffp-contract=off` は外さない（決定性のため。理由は cmake/CompilerOptions.cmake）
+- 失敗しうる関数は `Result<T>`（`core/result.hpp`）を返し、`fail(kind, message, location)` で作る
+- 中間表現は素の struct + `std::variant`。継承は注入点（TextMeasurer / GlyphSource）に限る
+- 浮動小数点: `-ffast-math` 禁止、`-ffp-contract=off` は外さない。layout / raster では `pow` `exp` `sin` 等の
+  libm 依存の関数を使わない（決定性のため。ARCHITECTURE.md A9）
 - 警告は `-Werror`。抑制するときは最小範囲で、理由をコメントに書く（`// NOLINT(check-name): 理由`）
 
 ## 依存ライブラリ

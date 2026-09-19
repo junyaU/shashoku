@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: clang-18 + libc++
+            preset: dev
+            packages: clang-18 libc++-18-dev libc++abi-18-dev
+          - name: clang-18 + libc++ (ASan + UBSan)
+            preset: asan
+            packages: clang-18 libc++-18-dev libc++abi-18-dev
+          - name: clang-18 + libc++ (Release)
+            preset: release
+            packages: clang-18 libc++-18-dev libc++abi-18-dev
+          # 標準ライブラリ実装への依存を検出するため、libstdc++ でもビルドする
+          - name: gcc-14 + libstdc++
+            preset: gcc
+            packages: g++-14
+            cc: gcc-14
+            cxx: g++-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ninja-build ${{ matrix.packages }}
+      - name: Configure
+        env:
+          CC: ${{ matrix.cc }}
+          CXX: ${{ matrix.cxx }}
+        run: cmake --preset ${{ matrix.preset }}
+      - name: Build
+        run: cmake --build --preset ${{ matrix.preset }}
+      - name: Test
+        run: ctest --preset ${{ matrix.preset }}
+
+  lint:
+    name: clang-format + clang-tidy
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            ninja-build clang-18 clang-format-18 clang-tidy-18 libc++-18-dev libc++abi-18-dev
+      - name: clang-format
+        run: scripts/format.sh --check
+      - name: Configure (compile_commands.json と依存ヘッダの取得)
+        run: cmake --preset dev
+      - name: clang-tidy
+        run: scripts/tidy.sh build/dev

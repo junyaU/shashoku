@@ -1,0 +1,24 @@
+---
+# DESIGN.md のコードスケッチ（2 スペース、アクセス指定子 1 スペース下げ）は Google スタイルそのもの。
+# clang-format のメジャーバージョンで整形結果が変わるため、18 に固定して使う（scripts/format.sh）。
+Language: Cpp
+BasedOnStyle: Google
+Standard: Latest
+ColumnLimit: 100
+DerivePointerAlignment: false
+PointerAlignment: Left
+IncludeBlocks: Regroup
+IncludeCategories:
+  # 1. C ヘッダ / C ライブラリ（<zlib.h>, <hb.h>, <ft2build.h>）
+  - Regex: '^<[a-z0-9_]+\.h>'
+    Priority: 1
+  # 2. C++ 標準ライブラリ（<vector>）
+  - Regex: '^<[a-z_]+>'
+    Priority: 2
+  # 3. その他のサードパーティ（<gtest/gtest.h>, <freetype/freetype.h>）
+  - Regex: '^<.*>'
+    Priority: 3
+  # 4. プロジェクト内ヘッダ
+  - Regex: '.*'
+    Priority: 4
+...

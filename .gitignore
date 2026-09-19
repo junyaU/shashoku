@@ -1,0 +1,16 @@
+# ビルド成果物
+/build/
+/Testing/
+
+# 個人設定
+/CMakeUserPresets.json
+/.claude/settings.local.json
+.vscode/
+.idea/
+.cache/
+*.swp
+.DS_Store
+
+# ゴールデンテスト失敗時の出力（expected は tests/golden/ にコミットする）
+*.actual.png
+*.diff.png

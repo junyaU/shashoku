@@ -1,0 +1,69 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": { "major": 3, "minor": 22, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "SHASHOKU_WARNINGS_AS_ERRORS": "ON"
+      }
+    },
+    {
+      "name": "clang-libcxx",
+      "hidden": true,
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang-18",
+        "CMAKE_CXX_COMPILER": "clang++-18",
+        "CMAKE_CXX_FLAGS": "-stdlib=libc++"
+      }
+    },
+    {
+      "name": "dev",
+      "displayName": "開発用（clang-18 + libc++ / Debug）",
+      "inherits": ["base", "clang-libcxx"],
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+    },
+    {
+      "name": "asan",
+      "displayName": "ASan + UBSan（clang-18 + libc++ / Debug）",
+      "inherits": ["base", "clang-libcxx"],
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "SHASHOKU_SANITIZE": "ON"
+      }
+    },
+    {
+      "name": "release",
+      "displayName": "リリース（clang-18 + libc++ / Release）",
+      "inherits": ["base", "clang-libcxx"],
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+    },
+    {
+      "name": "gcc",
+      "displayName": "GCC + libstdc++（移植性確認用。環境変数 CC / CXX でバージョン指定）",
+      "inherits": ["base"],
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+    }
+  ],
+  "buildPresets": [
+    { "name": "dev", "configurePreset": "dev" },
+    { "name": "asan", "configurePreset": "asan" },
+    { "name": "release", "configurePreset": "release" },
+    { "name": "gcc", "configurePreset": "gcc" }
+  ],
+  "testPresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "output": { "outputOnFailure": true }
+    },
+    { "name": "dev", "inherits": "base", "configurePreset": "dev" },
+    { "name": "asan", "inherits": "base", "configurePreset": "asan" },
+    { "name": "release", "inherits": "base", "configurePreset": "release" },
+    { "name": "gcc", "inherits": "base", "configurePreset": "gcc" }
+  ]
+}

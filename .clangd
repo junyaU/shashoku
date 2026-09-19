@@ -1,0 +1,3 @@
+# clangd は build/compile_commands.json までしか自動で探さないので、dev プリセットの場所を教える
+CompileFlags:
+  CompilationDatabase: build/dev

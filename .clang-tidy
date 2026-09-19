@@ -1,0 +1,64 @@
+---
+# 方針: バグを見つけるチェックは広く有効にし、好みの問題・ピクセル処理で
+# ノイズになるものだけを理由つきで外す。外したくなったらここに理由を書くこと。
+Checks: >
+  -*,
+  bugprone-*,
+  cert-*,
+  clang-analyzer-*,
+  concurrency-*,
+  cppcoreguidelines-*,
+  misc-*,
+  modernize-*,
+  performance-*,
+  portability-*,
+  readability-*,
+  -bugprone-easily-swappable-parameters,
+  -cppcoreguidelines-avoid-magic-numbers,
+  -cppcoreguidelines-pro-bounds-constant-array-index,
+  -cppcoreguidelines-pro-bounds-pointer-arithmetic,
+  -cppcoreguidelines-pro-type-reinterpret-cast,
+  -misc-include-cleaner,
+  -misc-non-private-member-variables-in-classes,
+  -modernize-use-trailing-return-type,
+  -readability-identifier-length,
+  -readability-magic-numbers,
+  -readability-math-missing-parentheses
+
+# 外した理由:
+#   easily-swappable-parameters   (x, y, w, h) を取る関数だらけになるため
+#   magic-numbers                 PNG のチャンク定数・色成分 255 などが大量に出るため
+#   pro-bounds-* / reinterpret    ピクセルバッファと C API（zlib / FreeType）境界で不可避。
+#                                 境界チェックは Debug の標準ライブラリ hardening と ASan に任せる
+#   misc-include-cleaner          C ライブラリのヘッダ構成と相性が悪く誤検知が多い
+#   non-private-member-variables  中間表現は素の struct で持つ設計のため
+#   trailing-return-type          好みの問題
+#   identifier-length             x, y, w, h, i は正当な名前
+
+WarningsAsErrors: '*'
+HeaderFilterRegex: '.*/(include|src|tests|tools)/.*'
+FormatStyle: file
+
+CheckOptions:
+  # 命名規則: DESIGN.md のスケッチに合わせる（型は CamelCase、関数と変数は snake_case）
+  - { key: readability-identifier-naming.NamespaceCase,          value: lower_case }
+  - { key: readability-identifier-naming.ClassCase,              value: CamelCase }
+  - { key: readability-identifier-naming.StructCase,             value: CamelCase }
+  - { key: readability-identifier-naming.EnumCase,               value: CamelCase }
+  - { key: readability-identifier-naming.EnumConstantCase,       value: CamelCase }
+  - { key: readability-identifier-naming.TypeAliasCase,          value: CamelCase }
+  - { key: readability-identifier-naming.TypeTemplateParameterCase, value: CamelCase }
+  - { key: readability-identifier-naming.FunctionCase,           value: lower_case }
+  - { key: readability-identifier-naming.VariableCase,           value: lower_case }
+  - { key: readability-identifier-naming.ParameterCase,          value: lower_case }
+  - { key: readability-identifier-naming.MemberCase,             value: lower_case }
+  - { key: readability-identifier-naming.PrivateMemberSuffix,    value: _ }
+  - { key: readability-identifier-naming.ConstexprVariableCase,  value: CamelCase }
+  - { key: readability-identifier-naming.ConstexprVariablePrefix, value: k }
+  - { key: readability-identifier-naming.GlobalConstantCase,     value: CamelCase }
+  - { key: readability-identifier-naming.GlobalConstantPrefix,   value: k }
+  # 素の struct（中間表現）は public メンバだけなので特殊メンバ関数の定義を要求しない
+  - { key: cppcoreguidelines-special-member-functions.AllowSoleDefaultDtor, value: true }
+  # テーブル駆動テストの巨大な TEST 本体を許容する
+  - { key: readability-function-cognitive-complexity.IgnoreMacros, value: true }
+...

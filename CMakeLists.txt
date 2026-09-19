@@ -16,6 +16,11 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# C++ モジュールは使わない。CMake 3.28+ は C++20 以上で依存スキャンを自動で有効にし、
+# compile_commands.json にビルド時生成の @*.modmap を書き込むため、ビルド前に走る
+# clang-tidy が「ファイルがない」で落ちる。ビルドも無駄に遅くなるので明示的に切る。
+set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
+
 # std::expected はエラー型の中核（DESIGN.md §7）。無いツールチェーンでは
 # 謎のコンパイルエラーになる前に、configure 時点で理由つきで落とす。
 include(CheckCXXSourceCompiles)

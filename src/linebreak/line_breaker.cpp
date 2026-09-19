@@ -468,6 +468,9 @@ bool Analysis::splits_inseparable(std::size_t p) const {
   if (prev == BreakClass::In && next == BreakClass::In) {
     return true;  // …… ‥‥ の途中
   }
+  if ((next == BreakClass::Is || next == BreakClass::Sy) && numeric_run_ends_at(k - 1)) {
+    return true;  // 1,200 の , や 1/2 の / を数値から切り離さない（LB25 の NU (NU|SY|IS)*）
+  }
   const bool prev_ideograph =
       prev == BreakClass::Id || prev == BreakClass::Eb || prev == BreakClass::Em;
   const bool next_ideograph =
@@ -683,10 +686,12 @@ std::size_t Analysis::break_anywhere_at(std::size_t begin, std::size_t limit,
   // 各段の中では「収まる最後の位置」= できるだけ長い行を採る。
   //   0: 通常の分割可能位置（ここに来た時点で普通は無いが、あれば最優先）
   //   1: 分離禁則にも行頭禁則・行末禁則にも掛からない位置
-  //   2: 分離禁則に掛からない位置（「は|……」のように、並びの直前で割る）
-  //   3: 収まる最後のクラスタ境界。ここで初めて禁則を破る（—— が 1 行に収まらない等）
-  // クラスタの内部（結合文字・異体字セレクタ・ZWJ 列の吸収）では、3 でも絶対に割らない。
-  std::array<std::size_t, 4> choice{kNone, kNone, kNone, kNone};
+  //   2: 分離禁則だけ守る位置（「は|……」のように、並びの直前で割る）
+  //   3: 行頭禁則・行末禁則だけ守る位置。分離禁則は破るが、句読点は行頭に出さない
+  //      （「￥1,200」のように、どこで割っても分離禁則に掛かるとき）
+  //   4: 収まる最後のクラスタ境界。ここで初めて何もかも破る
+  // クラスタの内部（結合文字・異体字セレクタ・ZWJ 列の吸収）では、4 でも絶対に割らない。
+  std::array<std::size_t, 5> choice{kNone, kNone, kNone, kNone, kNone};
   for (std::size_t p = begin + 1; p < limit; ++p) {
     if (attached_[p] != 0 || raw_zwj_[p - 1] != 0) {
       continue;
@@ -694,17 +699,20 @@ std::size_t Analysis::break_anywhere_at(std::size_t begin, std::size_t limit,
     if (fit(begin, p, available).width > available + kWidthEpsilon) {
       break;
     }
-    choice[3] = p;
-    if (splits_inseparable(p)) {
-      continue;
+    const bool inseparable = splits_inseparable(p);
+    const bool prohibited = start_prohibited_[p] != 0 || end_prohibited_[p - 1] != 0;
+    choice[4] = p;
+    if (!prohibited) {
+      choice[3] = p;
     }
-    choice[2] = p;
-    if (start_prohibited_[p] != 0 || end_prohibited_[p - 1] != 0) {
-      continue;
-    }
-    choice[1] = p;
-    if (opp_[p] != 0) {
-      choice[0] = p;
+    if (!inseparable) {
+      choice[2] = p;
+      if (!prohibited) {
+        choice[1] = p;
+        if (opp_[p] != 0) {
+          choice[0] = p;
+        }
+      }
     }
   }
   for (const std::size_t p : choice) {

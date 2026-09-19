@@ -215,6 +215,58 @@ TEST(LineBreakOverflow, BreakAnywherePrefersAvoidingLineStartProhibition) {
   EXPECT_EQ(laid.texts(), (std::vector<std::string>{"AB", "C、", "D"}));
 }
 
+TEST(LineBreakOverflow, BreakAnywhereKeepsLineStartRuleWhileBreakingInseparable) {
+  // 数値の内部はどこで割っても分離禁則に掛かる（LB25）。それでも「,」を行頭に出さない
+  // 位置を選ぶ（位置選びの段 3: 行頭禁則・行末禁則だけ守る）。
+  Config config;
+  config.break_anywhere = true;
+  for (const float width : {3.0F * kEm, 3.25F * kEm}) {
+    SCOPED_TRACE(width);
+    const Laid laid = run("価格は￥1,200（税込）", width, config);
+    for (std::size_t i = 1; i < laid.breaks.lines.size(); ++i) {
+      EXPECT_NE(laid.items[laid.breaks.lines[i].begin].cp, U',') << "「,」が行頭に出た";
+    }
+    EXPECT_EQ(laid.texts(), (std::vector<std::string>{"価格は", "￥1,20", "0（税", "込）"}));
+  }
+}
+
+TEST(LineBreakOverflow, BreakAnywhereAvoidsLineStartProhibitionInNumbers) {
+  // 幅 40px には "1,200" が収まるが、それだと次の行が「,」で始まるので "1,20" にする。
+  // 段 2（分離禁則だけ守る）は空なので、段 3 が効いていることの確認。
+  Config config;
+  config.break_anywhere = true;
+  EXPECT_EQ(run("1,200,000", 2.5F * kEm, config).texts(),
+            (std::vector<std::string>{"1,20", "0,000"}));
+  EXPECT_EQ(run("1.200.000", 2.5F * kEm, config).texts(),
+            (std::vector<std::string>{"1.20", "0.000"}));
+  // 段 3 が使える幅なら「,」の直後で割る。
+  EXPECT_EQ(run("1,000", 1.0F * kEm, config).texts(), (std::vector<std::string>{"1,", "00", "0"}));
+}
+
+TEST(LineBreakOverflow, BreakAnywhereAvoidsOtherLineStartProhibitions) {
+  // 分離禁則に掛からない位置があるときは段 1 が効く（行頭禁則も行末禁則も守る）。
+  Config config;
+  config.break_anywhere = true;
+  // 句点（CL）: "AB" まで収まるが、それだと次の行が「。」で始まる
+  EXPECT_EQ(run("AB。CD", 1.0F * kEm, config).texts(),
+            (std::vector<std::string>{"A", "B。", "CD"}));
+  // 小書き仮名（strict では NS）: "AB" まで収まるが、次の行が「っ」で始まる
+  EXPECT_EQ(run("ABっC", 1.0F * kEm, config).texts(),
+            (std::vector<std::string>{"A", "B", "っ", "C"}));
+}
+
+TEST(LineBreakOverflow, BreakAnywhereBreaksLineStartRuleWhenNothingElseFits) {
+  // 収まる位置が「分離禁則にも行頭禁則にも掛かる」ものしかなければ、最後の段で破る。
+  Config config;
+  config.break_anywhere = true;
+  // 幅 8px では "1" しか置けず、「,」を行頭に出すしかない。
+  EXPECT_EQ(run("1,000", 0.5F * kEm, config).texts(),
+            (std::vector<std::string>{"1", ",", "0", "0", "0"}));
+  // 全位置が行頭禁則（終わり括弧の連続）なら、できるだけ長く取って割る。
+  EXPECT_EQ(run("あ」」」", 2.0F * kEm, config).texts(),
+            (std::vector<std::string>{"あ」」", "」"}));
+}
+
 TEST(LineBreakOverflow, BreakAnywhereNeverSplitsClusters) {
   // 結合文字・異体字セレクタ・ZWJ の吸収先（クラスタの内部）では、
   // 1 クラスタも収まらない幅でも絶対に割らない。

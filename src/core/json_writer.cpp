@@ -18,8 +18,16 @@ namespace {
 constexpr std::size_t kIndentWidth = 2;
 
 // std::to_chars / std::format はロケールに依存しない（DESIGN.md §3-5 の決定性）。
-// 数値の桁数は double の最短往復表現（最長 24 文字程度）に十分な大きさをとる。
-using NumberBuffer = std::array<char, 48>;
+//
+// バッファの長さは固定小数点表記の最悪ケースに合わせる: double の最短往復表現は
+// 有効数字 17 桁で、下の固定小数点の下限 1e-6 では小数点以下に先行ゼロが 5 桁つくので
+// 符号 + "0" + "." + 5 + 17 = 25 文字。指数表記は最長でも 24 文字程度。
+using NumberBuffer = std::array<char, 64>;
+
+// 固定小数点で書く範囲。ダンプは人が座標を読むためのものなので、この範囲の値は
+// 指数表記にしない（100000.0 が "1e+05" になると読めない）。
+constexpr double kFixedMinMagnitude = 1e-6;
+constexpr double kFixedMaxMagnitude = 1e15;
 
 template <class T>
 void append_number(std::string& out, T value) {
@@ -36,8 +44,23 @@ void append_float(std::string& out, T value) {
     out += "null";
     return;
   }
-  // 引数なしの to_chars は「元の値に戻せる最短表現」を、整数値なら小数点なしで書く。
-  append_number(out, value);
+  if (value == T{0}) {
+    // -0.0 も "0" と書く。符号だけ違う 0 でダンプの差分が出ないようにする。
+    out += '0';
+    return;
+  }
+
+  // 精度を指定しない to_chars は「元の値に戻せる最短表現」を書く。整数値なら
+  // fixed でも小数点はつかない（100000.0 → "100000"、12.0 → "12"）。
+  const double magnitude = std::abs(static_cast<double>(value));
+  const bool fixed = magnitude >= kFixedMinMagnitude && magnitude < kFixedMaxMagnitude;
+
+  NumberBuffer buf{};
+  const std::to_chars_result res =
+      fixed ? std::to_chars(buf.data(), buf.data() + buf.size(), value, std::chars_format::fixed)
+            : std::to_chars(buf.data(), buf.data() + buf.size(), value);
+  assert(res.ec == std::errc{});
+  out.append(buf.data(), res.ptr);
 }
 
 // JSON が要求するのは " ・\ ・U+0000..U+001F のエスケープだけ。非 ASCII は UTF-8 のまま出す

@@ -1,6 +1,7 @@
 #include "core/json_writer.hpp"
 
 #include <cstdint>
+#include <cstdlib>
 #include <limits>
 #include <string>
 #include <string_view>
@@ -23,6 +24,25 @@ std::string quoted(std::string_view s) {
   JsonWriter writer;
   writer.value(s);
   return std::move(writer).str();
+}
+
+// 書いた表記を読み戻して元の値に一致することを確かめる。
+// libc++ 18 には浮動小数点の std::from_chars がないので strtof / strtod を使う
+// （テストはロケールを変更しないので "C" ロケールのまま = JSON の数値表記と同じ）。
+void expect_round_trip(float value) {
+  const std::string text = scalar(value);
+  char* end = nullptr;
+  const float parsed = std::strtof(text.c_str(), &end);
+  EXPECT_EQ(end, text.c_str() + text.size()) << text;
+  EXPECT_EQ(parsed, value) << text;
+}
+
+void expect_round_trip(double value) {
+  const std::string text = scalar(value);
+  char* end = nullptr;
+  const double parsed = std::strtod(text.c_str(), &end);
+  EXPECT_EQ(end, text.c_str() + text.size()) << text;
+  EXPECT_EQ(parsed, value) << text;
 }
 
 // ---- 構造 -----------------------------------------------------------------
@@ -204,7 +224,70 @@ TEST(JsonWriterNumber, ShortestRoundTripRepresentation) {
   EXPECT_EQ(scalar(1.0 / 3.0), "0.3333333333333333");
 }
 
-TEST(JsonWriterNumber, NegativeZeroKeepsSign) { EXPECT_EQ(scalar(-0.0F), "-0"); }
+// ダンプは人が座標を読むためのもの。よくある大きさの値を指数表記にしない
+// （絶対値が 1e-6 以上 1e15 未満は固定小数点）。
+TEST(JsonWriterNumber, ReadableMagnitudesUseFixedNotation) {
+  EXPECT_EQ(scalar(100000.0F), "100000");
+  EXPECT_EQ(scalar(1200.5F), "1200.5");
+  EXPECT_EQ(scalar(0.1F), "0.1");
+  EXPECT_EQ(scalar(-100000.0F), "-100000");
+  EXPECT_EQ(scalar(10000000.0F), "10000000");
+
+  EXPECT_EQ(scalar(100000.0), "100000");
+  EXPECT_EQ(scalar(1200.5), "1200.5");
+  EXPECT_EQ(scalar(0.1), "0.1");
+  EXPECT_EQ(scalar(1e14), "100000000000000");
+  EXPECT_EQ(scalar(0.000001), "0.000001");
+
+  // 固定小数点の範囲内では 'e' が出ない
+  for (const std::string& text : {scalar(100000.0F), scalar(1e14), scalar(0.000001)}) {
+    EXPECT_EQ(text.find('e'), std::string::npos) << text;
+  }
+}
+
+// 範囲外の有限値は指数表記になりうるが、必ず元の値に戻せる
+TEST(JsonWriterNumber, ExtremeMagnitudesRoundTrip) {
+  EXPECT_EQ(scalar(1e-7F), "1e-07");
+  EXPECT_EQ(scalar(1e20F), "1e+20");
+  EXPECT_EQ(scalar(1e15), "1e+15");  // 上限は範囲外（未満）
+
+  expect_round_trip(1e-7F);
+  expect_round_trip(1e20F);
+  expect_round_trip(-1e-7F);
+  expect_round_trip(-1e20F);
+  expect_round_trip(std::numeric_limits<float>::max());
+  expect_round_trip(std::numeric_limits<float>::denorm_min());
+
+  expect_round_trip(1e-7);
+  expect_round_trip(1e20);
+  expect_round_trip(1e300);
+  expect_round_trip(std::numeric_limits<double>::max());
+  expect_round_trip(std::numeric_limits<double>::denorm_min());
+}
+
+// 固定小数点で書く側も往復できる（桁を削っていない）
+TEST(JsonWriterNumber, FixedNotationRoundTrips) {
+  expect_round_trip(100000.0F);
+  expect_round_trip(1200.5F);
+  expect_round_trip(0.1F);
+  expect_round_trip(1.0F / 3.0F);
+  expect_round_trip(-987654.3F);
+
+  expect_round_trip(100000.0);
+  expect_round_trip(0.1);
+  expect_round_trip(1.0 / 3.0);
+  expect_round_trip(0.1 + 0.2);
+  expect_round_trip(999999999999999.9);
+  expect_round_trip(0.000001);
+}
+
+// -0.0 は 0 と書く（符号だけ違う 0 でダンプの差分が出ないようにする）
+TEST(JsonWriterNumber, NegativeZeroIsWrittenAsZero) {
+  EXPECT_EQ(scalar(-0.0F), "0");
+  EXPECT_EQ(scalar(-0.0), "0");
+  EXPECT_EQ(scalar(0.0F), "0");
+  EXPECT_EQ(scalar(0.0), "0");
+}
 
 // NaN / Inf は JSON で表せないので null
 TEST(JsonWriterNumber, NonFiniteBecomesNull) {

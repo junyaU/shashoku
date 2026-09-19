@@ -28,6 +28,9 @@ class GlyphSource {
   GlyphSource() = default;
   GlyphSource(const GlyphSource&) = delete;
   GlyphSource& operator=(const GlyphSource&) = delete;
+  // ムーブも禁止（コピー禁止と揃える）。注入点なので参照でしか受け渡さない。
+  GlyphSource(GlyphSource&&) = delete;
+  GlyphSource& operator=(GlyphSource&&) = delete;
   virtual ~GlyphSource() = default;
 
   // pixel_size はデバイスピクセル単位（= DrawGlyphs::size * scale）。

@@ -27,8 +27,10 @@ DESIGN.md のスケッチを実装可能な粒度まで具体化し、その過�
 DESIGN.md のスケッチから変えた点・決めた点。番号は議論で参照するためのもの。
 
 **A1. レイアウトは論理座標（inline / block）で行い、物理座標への変換は paint で 1 回だけ行う。**
-縦書き（Phase 8）を「主軸の転置」で済ませるため。`writing-mode` は文書全体で 1 つ
-（ルート以外で親と違う値を指定したら `UnsupportedLayout` エラー。直交フローは扱わない）なので、
+縦書き（Phase 8）を「主軸の転置」で済ませるため。`writing-mode` は文書全体で 1 つ。
+指定できるのはトップレベル要素（合成ルート `#root` の直接の子）だけで、`#root` はその値を採用する
+（トップレベル要素どうしで値が食い違う、またはそれより深い要素で親と違う値を指定したら
+`UnsupportedLayout` エラー。直交フローは扱わない）。だから
 ボックスツリー全体が 1 つの論理座標系に乗り、変換は大域的な 1 回で済む。
 横書きでは inline = x、block = y なので、横書きのダンプは物理座標と同じ値で読める。
 CSS の物理プロパティ（width / margin-top …）は layout の入口で論理方向に読み替える。
@@ -294,6 +296,8 @@ std::string dump_json(const StyledNode& root);
   CSS の色名、`transparent`、`currentColor`（border-color のみ）
 - 継承するのは computed_style.hpp で「継承する」とした群。`inherit` キーワードは全プロパティで可。
   `em` は親の（`font-size` 自身は親の、それ以外は自分の）font-size で解決する
+- 合成ルート `#root` は `display: block`、それ以外のプロパティは初期値（`writing-mode` だけ A1 の規則で決まる）。
+  `img` の `width` / `height` 属性は px の数値として `attr_width` / `attr_height` に入れる（不正なら `UnsupportedValue`）
 - `display: inline` の要素への `width height margin padding border` 指定は `UnsupportedLayout`
   （`img` を除く）。`writing-mode` の途中変更も `UnsupportedLayout`（A1）
 

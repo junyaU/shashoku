@@ -45,7 +45,7 @@ class JsonWriter {
  private:
   enum class Scope : std::uint8_t { Object, Array };
   struct Frame {
-    Scope scope;
+    Scope scope = Scope::Object;
     bool has_items = false;
   };
 

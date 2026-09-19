@@ -282,6 +282,60 @@ TEST(LineBreakProperty, BreakAnywhereKeepsInseparablePairsThatFit) {
   }
 }
 
+// 分離禁則に掛かる要素（数字・…・—・結合文字）を含まない文字だけの列。
+// この列では splits_inseparable() が決して真にならないので、緊急分割の位置選びは
+// 「禁則に掛かるか」だけで決まり、テスト側から厳密に予測できる。
+std::vector<Item> random_separable_text(std::mt19937& rng, std::size_t count) {
+  static constexpr std::array<char32_t, 18> kSeparablePool{
+      U'あ', U'い', U'漢', U'字', U'A',  U'b',  U'Z', U'x', U' ',
+      U'。', U'、', U'」', U'）', U'「', U'（', U',', U'!', U'/',
+  };
+  std::uniform_int_distribution<std::size_t> pick(0, kSeparablePool.size() - 1);
+  std::string utf8;
+  for (std::size_t i = 0; i < count; ++i) {
+    utf8 += test::to_utf8(kSeparablePool[pick(rng)]);
+  }
+  return test::items_of(utf8);
+}
+
+TEST(LineBreakProperty, BreakAnywhereBreaksLineStartRuleOnlyAsLastResort) {
+  // 緊急分割で行頭禁則を破った行があるなら、直前の行の中に
+  // 「行頭禁則にも行末禁則にも掛からず、幅にも収まるクラスタ境界」は 1 つも無かったはず。
+  std::mt19937 rng = seeded_rng(20260924);
+  std::uniform_int_distribution<std::size_t> length(1, 30);
+  std::uniform_real_distribution<float> width(4.0F, 90.0F);
+  for (int iteration = 0; iteration < 300; ++iteration) {
+    const std::vector<Item> items = random_separable_text(rng, length(rng));
+    const float available = width(rng);
+    for (const Strictness strictness : {Strictness::Strict, Strictness::Normal}) {
+      Config config;
+      config.strictness = strictness;
+      config.break_anywhere = true;
+      const LineBreaker breaker(config);
+      const Breaks breaks = breaker.break_lines(items, available);
+      const std::vector<bool> opportunities = breaker.break_opportunities(items);
+      SCOPED_TRACE("iteration " + std::to_string(iteration) + " width " +
+                   std::to_string(available));
+      for (std::size_t i = 1; i < breaks.lines.size(); ++i) {
+        const std::size_t begin = breaks.lines[i].begin;
+        if (opportunities[begin] || breaks.lines[i - 1].overflows) {
+          continue;  // 通常の分割位置 / 1 クラスタも収まらなかった行
+        }
+        if (!contains(kAlwaysLineStartProhibited, items[begin].cp)) {
+          continue;
+        }
+        // 直前の行を短くすれば禁則を守れた、という位置があってはならない。
+        for (std::size_t p = breaks.lines[i - 1].begin + 1; p < begin; ++p) {
+          const bool prohibited = contains(kAlwaysLineStartProhibited, items[p].cp) ||
+                                  contains(kAlwaysLineEndProhibited, items[p - 1].cp);
+          EXPECT_TRUE(prohibited) << "禁則を守れる位置があったのに破った: "
+                                  << describe(items, breaks, i);
+        }
+      }
+    }
+  }
+}
+
 TEST(LineBreakProperty, ExtraProhibitedCharactersNeverStartOrEndLines) {
   // Config::extra_* で足した文字も禁則として守られる。
   std::mt19937 rng = seeded_rng(20260922);

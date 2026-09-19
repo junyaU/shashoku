@@ -19,6 +19,7 @@ Checks: >
   -cppcoreguidelines-pro-bounds-pointer-arithmetic,
   -cppcoreguidelines-pro-type-reinterpret-cast,
   -misc-include-cleaner,
+  -misc-no-recursion,
   -misc-non-private-member-variables-in-classes,
   -modernize-use-trailing-return-type,
   -readability-identifier-length,
@@ -31,6 +32,8 @@ Checks: >
 #   pro-bounds-* / reinterpret    ピクセルバッファと C API（zlib / FreeType）境界で不可避。
 #                                 境界チェックは Debug の標準ライブラリ hardening と ASan に任せる
 #   misc-include-cleaner          C ライブラリのヘッダ構成と相性が悪く誤検知が多い
+#   misc-no-recursion             DOM / スタイル / ボックスの木は再帰で辿るのが自然。深さは html パーサが 256 に制限する。
+#                                 再帰的な struct はコピーするだけで libc++ の <vector> 内まで指摘され、NOLINT もできない
 #   non-private-member-variables  中間表現は素の struct で持つ設計のため
 #   trailing-return-type          好みの問題
 #   identifier-length             x, y, w, h, i は正当な名前

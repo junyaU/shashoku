@@ -174,6 +174,70 @@ TEST(LineBreakOverflow, BreakAnywhereOnlyWhenNothingFits) {
   EXPECT_EQ(laid.texts(), (std::vector<std::string>{"あいうえ", "お。かき"}));
 }
 
+TEST(LineBreakOverflow, BreakAnywhereKeepsInseparablePairs) {
+  // 緊急分割でも分離禁則を最優先で守る。「は……本」の「……」は 2em なので、
+  // 2em 以上の幅なら「は|……|本」と割る（「は…|…本」にはしない）。
+  // 出典: JIS X 4051 / JLREQ 3.1.1 分離禁則、UAX #14 LB22 × IN。
+  Config config;
+  config.break_anywhere = true;
+  for (const float width : {2.0F * kEm, 2.75F * kEm}) {
+    SCOPED_TRACE(width);
+    const Laid laid = run("それは……本当ですか", width, config);
+    EXPECT_EQ(laid.texts(), (std::vector<std::string>{"それ", "は", "……", "本当", "です", "か"}));
+    const Laid compact = run("は……本", width, config);
+    EXPECT_EQ(compact.texts(), (std::vector<std::string>{"は", "……", "本"}));
+  }
+}
+
+TEST(LineBreakOverflow, BreakAnywhereSplitsPairOnlyWhenItCannotFit) {
+  // ペア自体が 1 行に収まらない幅なら、分離禁則を破るしかない（最後の手段）。
+  Config config;
+  config.break_anywhere = true;
+  const Laid laid = run("は……本", 1.5F * kEm, config);
+  EXPECT_EQ(laid.texts(), (std::vector<std::string>{"は", "…", "…", "本"}));
+}
+
+TEST(LineBreakOverflow, BreakAnywhereKeepsDashPair) {
+  // 「——」も同じ。NBSP の後ろでは割れない（LB12 GL ×）ので緊急分割に落ちるが、
+  // 「——」は 2em で収まるのでペアを保ったまま NBSP の後ろで割る。
+  Config config;
+  config.break_anywhere = true;
+  const Laid laid = run("あ\u00A0——い", 3.0F * kEm, config);
+  EXPECT_EQ(laid.texts(), (std::vector<std::string>{"あ\u00A0", "——い"}));
+}
+
+TEST(LineBreakOverflow, BreakAnywherePrefersAvoidingLineStartProhibition) {
+  // 分離禁則に掛からない位置が複数あるなら、行頭禁則を避けられる位置を選ぶ。
+  // 幅 24px には "ABC" が収まるが、それだと次の行が「、」で始まるので "AB" にする。
+  Config config;
+  config.break_anywhere = true;
+  const Laid laid = run("ABC、D", 1.5F * kEm, config);
+  EXPECT_EQ(laid.texts(), (std::vector<std::string>{"AB", "C、", "D"}));
+}
+
+TEST(LineBreakOverflow, BreakAnywhereNeverSplitsClusters) {
+  // 結合文字・異体字セレクタ・ZWJ の吸収先（クラスタの内部）では、
+  // 1 クラスタも収まらない幅でも絶対に割らない。
+  Config config;
+  config.break_anywhere = true;
+  std::vector<Item> items = test::items_of("A\u0301B\u0301C\u0301");
+  for (Item& item : items) {
+    if (item.cp == U'\u0301') {
+      item.advance = 0.0F;  // 結合文字は送りを持たない
+    }
+  }
+  // 1 クラスタぶん収まる幅と、1 クラスタも収まらない幅のどちらでも。
+  for (const float width : {0.5F * kEm, 0.25F * kEm}) {
+    SCOPED_TRACE(width);
+    const Breaks breaks = LineBreaker(config).break_lines(items, width);
+    EXPECT_EQ(test::line_texts(items, breaks),
+              (std::vector<std::string>{"A\u0301", "B\u0301", "C\u0301"}));
+    for (const Line& line : breaks.lines) {
+      EXPECT_NE(items[line.begin].cp, U'\u0301') << "行頭が結合文字になっている";
+    }
+  }
+}
+
 TEST(LineBreakOverflow, BreakAnywhereBreaksProhibitionAsLastResort) {
   // 守れる位置が 1 つもなければ破る（line_breaker.hpp の Config::break_anywhere）。
   // "A。BC" を 0.5 文字ぶんの幅で流すと、1 アイテムずつに割るしかない。

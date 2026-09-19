@@ -210,6 +210,78 @@ TEST(LineBreakProperty, MinContentWidthNeverOverflows) {
   }
 }
 
+// 分離禁止ペア（…… / ——）を「普通の文字で挟んだ孤立したペア」として埋め込んだランダム文。
+struct PairedText {
+  std::vector<Item> items;
+  std::vector<std::uint8_t> pair_second;  // 分離禁止ペアの 2 文字目のアイテム
+};
+
+PairedText random_paired_text(std::mt19937& rng, std::size_t tokens) {
+  // ペアの前が普通に割れる文字（「 以外）だと緊急分割まで来ないこともあるので、
+  // 始め括弧・句点も混ぜて位置選びの各段を踏ませる。
+  static constexpr std::array<char32_t, 8> kPlain{U'あ', U'い', U'漢', U'字',
+                                                  U'。', U'「', U'」', U'ん'};
+  std::uniform_int_distribution<std::size_t> plain(0, kPlain.size() - 1);
+  std::uniform_int_distribution<int> shape(0, 3);
+  std::u32string text;
+  std::vector<std::size_t> seconds;
+  for (std::size_t i = 0; i < tokens; ++i) {
+    if (shape(rng) == 0) {
+      const char32_t mark = shape(rng) < 2 ? U'…' : U'—';
+      text.push_back(mark);
+      seconds.push_back(text.size());
+      text.push_back(mark);
+    }
+    text.push_back(kPlain[plain(rng)]);  // ペアは必ず普通の文字で挟む
+  }
+  std::string utf8;
+  for (const char32_t cp : text) {
+    utf8 += test::to_utf8(cp);
+  }
+  PairedText result;
+  result.items = test::items_of(utf8);
+  result.pair_second.assign(result.items.size(), 0);
+  for (const std::size_t index : seconds) {
+    result.pair_second[index] = 1;
+  }
+  return result;
+}
+
+TEST(LineBreakProperty, BreakAnywhereKeepsInseparablePairsThatFit) {
+  // 緊急分割（break_anywhere）でも、ペアが 1 行に収まる幅なら途中では割らない。
+  // 出典: JIS X 4051 / JLREQ 3.1.1 分離禁則。ペアが収まらない幅で割れるのは想定内。
+  std::mt19937 rng = seeded_rng(20260923);
+  std::uniform_int_distribution<std::size_t> tokens(1, 20);
+  std::uniform_real_distribution<float> width(4.0F, 120.0F);
+  for (int iteration = 0; iteration < 300; ++iteration) {
+    const PairedText text = random_paired_text(rng, tokens(rng));
+    const float available = width(rng);
+    // loose では IN が ID に解決されて分離禁則が外れるので strict / normal を見る。
+    for (const Strictness strictness : {Strictness::Strict, Strictness::Normal}) {
+      for (const OverflowPolicy overflow :
+           {OverflowPolicy::Oidashi, OverflowPolicy::Oikomi, OverflowPolicy::Burasage}) {
+        Config config;
+        config.strictness = strictness;
+        config.overflow = overflow;
+        config.break_anywhere = true;
+        const Breaks breaks = LineBreaker(config).break_lines(text.items, available);
+        SCOPED_TRACE("iteration " + std::to_string(iteration) + " width " +
+                     std::to_string(available) + " strictness " +
+                     std::to_string(static_cast<int>(strictness)));
+        for (std::size_t i = 1; i < breaks.lines.size(); ++i) {
+          const std::size_t begin = breaks.lines[i].begin;
+          if (text.pair_second[begin] == 0) {
+            continue;
+          }
+          const float pair = text.items[begin - 1].advance + text.items[begin].advance;
+          EXPECT_GT(pair, available + kTolerance)
+              << "1 行に収まるはずの分離禁止ペアを割った: " << describe(text.items, breaks, i);
+        }
+      }
+    }
+  }
+}
+
 TEST(LineBreakProperty, ExtraProhibitedCharactersNeverStartOrEndLines) {
   // Config::extra_* で足した文字も禁則として守られる。
   std::mt19937 rng = seeded_rng(20260922);

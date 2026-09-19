@@ -28,6 +28,9 @@ class GlyphSource {
   GlyphSource() = default;
   GlyphSource(const GlyphSource&) = delete;
   GlyphSource& operator=(const GlyphSource&) = delete;
+  // 注入点なのでコピーも移動もしない（明示しないと cppcoreguidelines-special-member-functions）
+  GlyphSource(GlyphSource&&) = delete;
+  GlyphSource& operator=(GlyphSource&&) = delete;
   virtual ~GlyphSource() = default;
 
   // pixel_size はデバイスピクセル単位（= DrawGlyphs::size * scale）。

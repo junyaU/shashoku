@@ -101,9 +101,22 @@ struct InlineBackground {
   bool operator==(const InlineBackground&) const = default;
 };
 
+// <img>。行の中の分割不能な箱（linebreak::ItemKind::Atomic）として流れる。
+// display: block の <img> も「画像断片 1 個だけの行を持つブロック」として表す（型を増やさない）。
+// 描画順（paint）: decoration の背景 → 画像（content_rect に拡縮。border_radius があれば
+// 角丸でクリップ）→ decoration の枠線。
+struct ImageFragment {
+  ImageId image = 0;  // render() に渡された画像テーブルの添字（raster::DrawImage にそのまま渡す）
+  LogicalRect rect;          // border-box
+  LogicalRect content_rect;  // 画像を描く範囲（rect から border と padding を除いたもの）
+  BoxDecoration decoration;
+
+  bool operator==(const ImageFragment&) const = default;
+};
+
 // 行の中身。vector の順序がそのまま描画順（背景 → 文字）。
-// 第 2 段で画像断片、第 3 段でルビを足す（ルビは baseline の違う TextFragment で表せる見込み）。
-using InlineFragment = std::variant<TextFragment, InlineBackground>;
+// ルビは baseline の違う TextFragment で表す（新しい variant を足さない）。
+using InlineFragment = std::variant<TextFragment, InlineBackground, ImageFragment>;
 
 struct LineBox {
   // 行ボックスの矩形。inline 方向はこの行を含むブロックの content 領域いっぱい

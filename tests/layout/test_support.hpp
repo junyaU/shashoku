@@ -71,7 +71,7 @@ struct Tree {
 
 // ---- レイアウトの呼び出し --------------------------------------------------------
 [[nodiscard]] Options make_options(float viewport_width);
-// ImageSizeLookup は第 1 段では使わないので空のものを渡す。
+// ImageLookup は第 1 段では使わないので空のものを渡す。
 [[nodiscard]] Result<BoxTree> run_layout(const style::StyledNode& root, const Options& options,
                                          text::TextMeasurer& measurer);
 // 幅だけ指定する短縮形。

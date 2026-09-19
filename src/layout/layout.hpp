@@ -5,6 +5,7 @@
 #include <string>
 #include <string_view>
 
+#include "core/ids.hpp"
 #include "core/result.hpp"
 #include "layout/box_tree.hpp"
 #include "linebreak/line_breaker.hpp"
@@ -21,18 +22,21 @@ struct Options {
 };
 
 // <img> の固有寸法（物理 px）。名前 → 寸法の解決は api の仕事（A12）。
-struct ImageSize {
-  float width = 0;
+// <img src> から引いた画像の情報。id はボックスツリー（ImageFragment）経由で paint → raster
+// に渡る。
+struct ImageInfo {
+  ImageId id = 0;
+  float width = 0;  // 固有寸法（px）
   float height = 0;
 };
 
-// 見つからなければ nullopt（レイアウトは ImageNotFound を返す）。第 2 段で使う。
-using ImageSizeLookup = std::function<std::optional<ImageSize>(std::string_view src)>;
+// 見つからなければ nullopt（レイアウトは ImageNotFound を返す）。
+using ImageLookup = std::function<std::optional<ImageInfo>(std::string_view src)>;
 
 // root は style::resolve() が返す合成ルート（"#root"、display: block）。
 // measurer は注入される計測器（DESIGN.md §3-4）。テストは偽物を渡す。
 Result<BoxTree> layout(const style::StyledNode& root, const Options& options,
-                       text::TextMeasurer& measurer, const ImageSizeLookup& images);
+                       text::TextMeasurer& measurer, const ImageLookup& images);
 
 // --dump-stage=box の出力。キー順は固定（box_tree.hpp の型の並び順）。
 std::string dump_json(const BoxTree& tree);

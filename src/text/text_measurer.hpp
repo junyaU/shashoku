@@ -68,9 +68,6 @@ struct FontMetrics {
   float line_gap = 0;  // フォント推奨の行間（line-height: normal = ascent + descent + line_gap）
 };
 
-// コピー禁止の注入点。コピーを delete した時点でムーブも暗黙に生成されないので、
-// ムーブの宣言を足す必要はない。
-// NOLINTNEXTLINE(cppcoreguidelines-special-member-functions)
 class TextMeasurer {
  public:
   TextMeasurer() = default;

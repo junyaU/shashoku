@@ -217,7 +217,7 @@ Options make_options(float viewport_width) {
 
 Result<BoxTree> run_layout(const style::StyledNode& root, const Options& options,
                            text::TextMeasurer& measurer) {
-  const ImageSizeLookup images = [](std::string_view) { return std::nullopt; };
+  const ImageLookup images = [](std::string_view) { return std::optional<ImageInfo>{}; };
   return layout(root, options, measurer, images);
 }
 

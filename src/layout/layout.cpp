@@ -382,8 +382,7 @@ Result<BlockBox> Layouter::layout_block(const BlockInput& input, const BoxSizing
 }  // namespace
 
 Result<BoxTree> layout(const style::StyledNode& root, const Options& options,
-                       text::TextMeasurer& measurer,
-                       [[maybe_unused]] const ImageSizeLookup& images) {
+                       text::TextMeasurer& measurer, [[maybe_unused]] const ImageLookup& images) {
   // images は第 2 段（<img>）で使う。第 1 段では <img> 自体がエラーなので引かない
   if (!is_positive_finite(options.viewport_width)) {
     return fail(ErrorKind::InvalidOption, "viewport width must be a positive finite number");

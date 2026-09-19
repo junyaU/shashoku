@@ -23,6 +23,7 @@ struct Dimension {
   Kind kind = Kind::Auto;
   float value = 0;  // Px: px / Percent: 50% なら 50 / Auto: 未使用
 
+  // NOLINTNEXTLINE(readability-identifier-naming): `auto` は予約語なので末尾に `_` を付ける
   static Dimension auto_() { return {}; }
   static Dimension px(float v) { return {Kind::Px, v}; }
   static Dimension percent(float v) { return {Kind::Percent, v}; }

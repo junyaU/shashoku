@@ -33,6 +33,11 @@ struct RenderResult {
 //   CssParse / UnsupportedProperty / UnsupportedValue / UnsupportedLayout … ② スタイル
 //   NoFonts / FontLoad … フォント、ImageDecode / ImageNotFound … 画像
 //   InvalidOption … RenderOptions の値が不正
+//   LimitExceeded … 入力が opts.limits の上限を超えた（limits.hpp）
+//   OutOfMemory … メモリを確保できなかった（最善努力。ARCHITECTURE.md A22）
+//
+// 信頼できない HTML を受けるときは `opts.limits` で予算を決める（limits.hpp）。既定値でも
+// 事故は止まるが、無制限ではない。OutOfMemory は保証ではなく最後の網であることに注意。
 std::expected<RenderResult, RenderError> render(std::string_view html, const FontSet& fonts,
                                                 const RenderOptions& opts = {});
 

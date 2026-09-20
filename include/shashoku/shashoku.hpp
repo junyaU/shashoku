@@ -17,6 +17,7 @@
 #include "shashoku/error.hpp"
 #include "shashoku/font_set.hpp"
 #include "shashoku/image_set.hpp"
+#include "shashoku/limits.hpp"
 #include "shashoku/options.hpp"
 #include "shashoku/render.hpp"
 #include "shashoku/version.hpp"

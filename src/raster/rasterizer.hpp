@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <span>
 
 #include "core/bitmap.hpp"
@@ -10,6 +11,13 @@
 
 namespace shashoku::raster {
 
+// 出力ビットマップのデバイス画素数の上限の既定（2^26 = 67,108,864。RGBA で 256 MB）。
+//
+// 利用者が調整する上限は `RenderLimits::device_pixels` に一本化してあり（A21）、api は
+// 必ずそちらの値を Target に入れる。ここの定数は raster を単体で使うときの既定で、値は
+// RenderLimits の既定と同じ（食い違わないことを src/api/render.cpp が static_assert する）。
+inline constexpr std::uint64_t kMaxDevicePixels = std::uint64_t{1} << 26U;
+
 // ラスタライズ先の指定（ARCHITECTURE.md §3.3）。
 // デバイスピクセル数 = ceil(CSS px * scale)。
 struct Target {
@@ -17,6 +25,8 @@ struct Target {
   float height = 0;  // CSS px
   float scale = 1;
   Color background = kTransparent;
+  // 幅 x 高さ（デバイス画素）の上限。ピクセルバッファを確保する前に判定する。
+  std::uint64_t max_device_pixels = kMaxDevicePixels;
 
   bool operator==(const Target&) const = default;
 };
@@ -32,7 +42,8 @@ struct Target {
 // 1 本しかなく、矩形・角丸・枠線・グリフ・画像・クリップがすべてそこを通る。
 //
 // エラー:
-//   InvalidOption  target の幅・高さ・scale が不正（非正 / 非有限 / デバイスピクセルが巨大すぎる）
+//   InvalidOption  target の幅・高さ・scale が不正（非正 / 非有限）
+//   LimitExceeded  デバイス画素数が target.max_device_pixels を超える
 //   Internal       PushClip / PopClip の対応が取れていない、DrawImage の ID が範囲外、
 //                  GlyphSource / images が契約を満たさないビットマップを返した
 //

@@ -534,7 +534,8 @@ TEST(HtmlParseError, NestingTooDeep) {
     source += "<div>";
   }
   const Error error = parse_failure(source);
-  EXPECT_EQ(error.kind, ErrorKind::HtmlParse);
+  // 構文の誤りではなく「上限を超えた」なので LimitExceeded（A21）。
+  EXPECT_EQ(error.kind, ErrorKind::LimitExceeded);
   ASSERT_TRUE(error.location.has_value());
   const SourceLocation location = error.location.value_or(SourceLocation{});
   EXPECT_EQ(location.line, 1U);
@@ -542,6 +543,33 @@ TEST(HtmlParseError, NestingTooDeep) {
   EXPECT_EQ(location.column, static_cast<std::uint32_t>((kMaxNestingDepth * 5) + 1));
   EXPECT_THAT(error.message, HasSubstr("nested too deeply"));
   EXPECT_THAT(error.message, HasSubstr("the maximum is 256"));
+}
+
+// 深さの上限は呼び出し側が決める（api は RenderLimits::nesting_depth を渡す）。
+// ちょうどは通り、1 段でも超えたら LimitExceeded。
+TEST(HtmlParseError, NestingDepthIsAParameter) {
+  const auto nested = [](std::size_t depth) {
+    std::string source;
+    for (std::size_t i = 0; i < depth; ++i) {
+      source += "<div>";
+    }
+    for (std::size_t i = 0; i < depth; ++i) {
+      source += "</div>";
+    }
+    return source;
+  };
+
+  const Result<Node> exact = parse(nested(4), 4);
+  ASSERT_TRUE(exact.has_value()) << to_string(exact.error());
+
+  Result<Node> over = parse(nested(5), 4);
+  ASSERT_FALSE(over.has_value());
+  const Error error = std::move(over).error();
+  EXPECT_EQ(error.kind, ErrorKind::LimitExceeded);
+  EXPECT_THAT(error.message, HasSubstr("the maximum is 4"));
+  ASSERT_TRUE(error.location.has_value());
+  // 5 個目の `<div>`（1 個 5 桁）
+  EXPECT_EQ(error.location.value_or(SourceLocation{}).column, 21U);
 }
 
 TEST(HtmlParseError, FormattedErrorMentionsKindAndLocation) {

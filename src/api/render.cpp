@@ -6,7 +6,9 @@
 #include <cstdint>
 #include <expected>
 #include <format>
+#include <new>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -41,9 +43,17 @@
 namespace shashoku {
 namespace {
 
-// scale の上限。ラスタライザのデバイスピクセル上限に当たる前に、
-// 「1.0 のつもりが 1000」のような取り違えを InvalidOption として弾く。
-constexpr float kMaxScale = 256.0F;
+// 入力の上限（A21）は RenderLimits に一本化してある。各モジュールは自分の既定値を
+// 定数で持っているが、api は必ず RenderLimits の値を渡すので、両者が食い違っていないことを
+// ここで機械的に確かめる（既定値が 2 か所に分かれて別々に動くのを防ぐ）。
+static_assert(RenderLimits{}.nesting_depth == html::kMaxNestingDepth,
+              "RenderLimits::nesting_depth と html::kMaxNestingDepth の既定値が食い違っている");
+static_assert(RenderLimits{}.style_rules == style::kMaxStyleRules,
+              "RenderLimits::style_rules と style::kMaxStyleRules の既定値が食い違っている");
+static_assert(RenderLimits{}.image_pixels == png::kMaxPixels,
+              "RenderLimits::image_pixels と png::kMaxPixels の既定値が食い違っている");
+static_assert(RenderLimits{}.device_pixels == raster::kMaxDevicePixels,
+              "RenderLimits::device_pixels と raster::kMaxDevicePixels の既定値が食い違っている");
 
 // ---------------------------------------------------------------------------
 // オプションの検証と変換
@@ -99,9 +109,143 @@ Result<void> validate(const RenderOptions& options) {
     return fail(ErrorKind::InvalidOption,
                 std::format("scale must be a positive finite number (got {})", options.scale));
   }
-  if (options.scale > kMaxScale) {
-    return fail(ErrorKind::InvalidOption,
-                std::format("scale must not exceed {} (got {})", kMaxScale, options.scale));
+  if (options.scale > options.limits.scale) {
+    return fail(ErrorKind::LimitExceeded,
+                std::format("scale is {}, which exceeds the limit of {} "
+                            "(raise RenderLimits::scale to allow it)",
+                            options.scale, options.limits.scale));
+  }
+  return {};
+}
+
+// ---------------------------------------------------------------------------
+// 入力の上限（ARCHITECTURE.md A21）
+//
+// 検査する場所は 3 つ:
+//   (a) 入力を受けた時点（バイト数・枚数。パースより前）      … check_input_limits
+//   (b) 計算値化のあと（ノード数・文字数・font-size）          … check_dom_limits / check_computed_limits
+//   (c) 大きな確保の直前（画像のデコード、出力ビットマップ）  … png::decode / raster::rasterize に渡す
+//
+// どの判定もサイズと個数だけを見る（時間やメモリの実測は見ない）ので決定的。
+// ---------------------------------------------------------------------------
+
+// (a) 入力を受けた時点。パースもデコードもする前に弾く。
+Result<void> check_input_limits(std::string_view html, const ImageSet& images,
+                                const RenderLimits& limits) {
+  if (html.size() > limits.html_bytes) {
+    return fail(ErrorKind::LimitExceeded,
+                std::format("the HTML input is {} bytes, which exceeds the limit of {} "
+                            "(raise RenderLimits::html_bytes to allow it)",
+                            html.size(), limits.html_bytes));
+  }
+  if (images.size() > limits.images) {
+    return fail(ErrorKind::LimitExceeded,
+                std::format("the ImageSet has {} images, which exceeds the limit of {} "
+                            "(raise RenderLimits::images to allow it)",
+                            images.size(), limits.images));
+  }
+  return {};
+}
+
+// 正しい UTF-8 の継続バイト（10xxxxxx）以外を数えればコードポイント数になる。
+// html::parse() が UTF-8 の妥当性を保証済みなので、ここで検証はしない。
+std::size_t count_code_points(std::string_view text) {
+  std::size_t count = 0;
+  for (const char c : text) {
+    if ((static_cast<unsigned char>(c) & 0xC0U) != 0x80U) {
+      ++count;
+    }
+  }
+  return count;
+}
+
+// (b) DOM のノード数とテキストの総コードポイント数。合成ルート `#root` は数えない。
+// `<style>` の中身は「組む対象のテキスト」ではないのでコードポイントには数えない
+// （その量は html_bytes と style_rules が押さえる）。
+//
+// 木は 1 回だけ前順に辿り、超過したノードの位置を覚えておいて総数と一緒に報告する
+// （「いくつに対していくつだったか」を出すため。木はもう全部メモリにある）。
+Result<void> check_dom_limits(const html::Node& root, const RenderLimits& limits) {
+  struct Frame {
+    const html::Node* node = nullptr;
+    bool in_style = false;
+  };
+
+  std::vector<Frame> stack;
+  const auto push_children = [&stack](const html::Node& node, bool in_style) {
+    for (std::size_t i = node.children.size(); i > 0; --i) {
+      stack.push_back(Frame{.node = &node.children[i - 1], .in_style = in_style});
+    }
+  };
+
+  std::size_t nodes = 0;
+  std::size_t code_points = 0;
+  std::optional<SourceLocation> node_overflow;
+  std::optional<SourceLocation> text_overflow;
+  push_children(root, false);
+  while (!stack.empty()) {
+    const Frame frame = stack.back();
+    stack.pop_back();
+    const html::Node& node = *frame.node;
+
+    ++nodes;
+    if (nodes == limits.dom_nodes + 1 && !node_overflow) {
+      node_overflow = node.location;
+    }
+    if (node.type == html::Node::Type::Text) {
+      if (!frame.in_style) {
+        const std::size_t before = code_points;
+        code_points += count_code_points(node.text);
+        if (before <= limits.text_code_points && code_points > limits.text_code_points &&
+            !text_overflow) {
+          text_overflow = node.location;
+        }
+      }
+      continue;
+    }
+    push_children(node, node.tag == "style");
+  }
+
+  if (node_overflow) {
+    return fail(ErrorKind::LimitExceeded,
+                std::format("the document has {} nodes, which exceeds the limit of {} "
+                            "(raise RenderLimits::dom_nodes to allow it)",
+                            nodes, limits.dom_nodes),
+                node_overflow);
+  }
+  if (text_overflow) {
+    return fail(ErrorKind::LimitExceeded,
+                std::format("the document has {} text code points, which exceeds the limit of {} "
+                            "(raise RenderLimits::text_code_points to allow it)",
+                            code_points, limits.text_code_points),
+                text_overflow);
+  }
+  return {};
+}
+
+// (b) 計算値化のあと。font-size はここで初めて px に解決される（`<rt>` の 50% も含む）。
+// グリフのビットマップは pixel_size = font-size * scale の 2 乗で大きくなるので、
+// 出力画像が小さくても font-size だけで数 GB を確保しうる（issue #6 の実測）。
+Result<void> check_computed_limits(const style::StyledNode& root, float scale,
+                                   const RenderLimits& limits) {
+  std::vector<const style::StyledNode*> stack{&root};
+  while (!stack.empty()) {
+    const style::StyledNode& node = *stack.back();
+    stack.pop_back();
+    if (node.type == style::StyledNode::Type::Element) {
+      const float device_px = node.style.font_size * scale;
+      if (device_px > limits.font_size_device_px) {
+        return fail(ErrorKind::LimitExceeded,
+                    std::format("font-size {} px x scale {} = {} device px, which exceeds the "
+                                "limit of {} (raise RenderLimits::font_size_device_px to allow it)",
+                                node.style.font_size, scale, device_px,
+                                limits.font_size_device_px),
+                    node.location);
+      }
+    }
+    for (std::size_t i = node.children.size(); i > 0; --i) {
+      stack.push_back(&node.children[i - 1]);
+    }
   }
   return {};
 }
@@ -118,7 +262,8 @@ struct Resources {
   std::vector<std::string> names;  // images と同じ長さ・同じ順
 };
 
-Result<Resources> load_resources(const FontSet& fonts, const ImageSet& images) {
+Result<Resources> load_resources(const FontSet& fonts, const ImageSet& images,
+                                 const RenderLimits& limits) {
   if (fonts.empty()) {
     return fail(ErrorKind::NoFonts, "no fonts were given: add at least one font to the FontSet");
   }
@@ -138,13 +283,29 @@ Result<Resources> load_resources(const FontSet& fonts, const ImageSet& images) {
       }
     }
   }
+  // (c) 大きな確保の直前。png::decode は IHDR を読んだ時点（画素を確保する前）に判定するので、
+  // 「巨大な寸法を名乗るだけの小さな PNG」でもメモリは 1 バイトも増えない。
+  // 1 枚あたりの上限と合計の上限のうち、いま効いている方をそのまま渡す。
+  std::uint64_t total_pixels = 0;
   for (std::size_t i = 0; i < images.size(); ++i) {
     const std::string_view name = images.name(i);
-    Result<Bitmap> bitmap = png::decode(images.bytes(i));
+    const std::uint64_t remaining =
+        limits.total_image_pixels > total_pixels ? limits.total_image_pixels - total_pixels : 0;
+    const bool per_image_binds = limits.image_pixels <= remaining;
+    const std::uint64_t cap = per_image_binds ? limits.image_pixels : remaining;
+
+    Result<Bitmap> bitmap = png::decode(images.bytes(i), cap);
     if (!bitmap) {
+      if (bitmap.error().kind == ErrorKind::LimitExceeded) {
+        return fail(ErrorKind::LimitExceeded,
+                    std::format("image \"{}\": {} (raise RenderLimits::{} to allow it)", name,
+                                bitmap.error().message,
+                                per_image_binds ? "image_pixels" : "total_image_pixels"));
+      }
       return fail(ErrorKind::ImageDecode,
                   std::format("image \"{}\": {}", name, bitmap.error().message));
     }
+    total_pixels += std::uint64_t{bitmap->width} * bitmap->height;
     resources.images.push_back(std::move(*bitmap));
     resources.names.emplace_back(name);
   }
@@ -216,15 +377,24 @@ Result<RenderResult> render_impl(std::string_view html, const FontSet& fonts,
   if (const Result<void> ok = validate(options); !ok) {
     return std::unexpected(ok.error());
   }
-  const Result<html::Node> dom = html::parse(html);
+  if (const Result<void> ok = check_input_limits(html, images, options.limits); !ok) {
+    return std::unexpected(ok.error());
+  }
+  const Result<html::Node> dom = html::parse(html, options.limits.nesting_depth);
   if (!dom) {
     return std::unexpected(dom.error());
   }
-  const Result<style::StyledNode> styled = style::resolve(*dom);
+  if (const Result<void> ok = check_dom_limits(*dom, options.limits); !ok) {
+    return std::unexpected(ok.error());
+  }
+  const Result<style::StyledNode> styled = style::resolve(*dom, options.limits.style_rules);
   if (!styled) {
     return std::unexpected(styled.error());
   }
-  Result<Resources> resources = load_resources(fonts, images);
+  if (const Result<void> ok = check_computed_limits(*styled, options.scale, options.limits); !ok) {
+    return std::unexpected(ok.error());
+  }
+  Result<Resources> resources = load_resources(fonts, images, options.limits);
   if (!resources) {
     return std::unexpected(resources.error());
   }
@@ -243,10 +413,16 @@ Result<RenderResult> render_impl(std::string_view html, const FontSet& fonts,
   const raster::Target target{.width = static_cast<float>(options.viewport_width),
                               .height = *height,
                               .scale = options.scale,
-                              .background = kTransparent};
+                              .background = kTransparent,
+                              .max_device_pixels = options.limits.device_pixels};
   text::FreeTypeGlyphSource glyphs(resources->fonts);
   const Result<Bitmap> bitmap = raster::rasterize(list, target, glyphs, resources->images);
   if (!bitmap) {
+    if (bitmap.error().kind == ErrorKind::LimitExceeded) {
+      return fail(ErrorKind::LimitExceeded,
+                  std::format("{} (raise RenderLimits::device_pixels to allow it)",
+                              bitmap.error().message));
+    }
     return std::unexpected(bitmap.error());
   }
   Result<std::vector<std::uint8_t>> encoded = png::encode(*bitmap);
@@ -267,22 +443,31 @@ Result<std::string> dump_impl(std::string_view html, const FontSet& fonts, const
   if (const Result<void> ok = validate(options); !ok) {
     return std::unexpected(ok.error());
   }
-  const Result<html::Node> dom = html::parse(html);
+  if (const Result<void> ok = check_input_limits(html, images, options.limits); !ok) {
+    return std::unexpected(ok.error());
+  }
+  const Result<html::Node> dom = html::parse(html, options.limits.nesting_depth);
   if (!dom) {
     return std::unexpected(dom.error());
+  }
+  if (const Result<void> ok = check_dom_limits(*dom, options.limits); !ok) {
+    return std::unexpected(ok.error());
   }
   if (stage == DumpStage::Dom) {
     return html::dump_json(*dom);
   }
-  const Result<style::StyledNode> styled = style::resolve(*dom);
+  const Result<style::StyledNode> styled = style::resolve(*dom, options.limits.style_rules);
   if (!styled) {
     return std::unexpected(styled.error());
+  }
+  if (const Result<void> ok = check_computed_limits(*styled, options.scale, options.limits); !ok) {
+    return std::unexpected(ok.error());
   }
   if (stage == DumpStage::Style) {
     return style::dump_json(*styled);
   }
 
-  Result<Resources> resources = load_resources(fonts, images);
+  Result<Resources> resources = load_resources(fonts, images, options.limits);
   if (!resources) {
     return std::unexpected(resources.error());
   }
@@ -306,22 +491,51 @@ Result<std::string> dump_impl(std::string_view html, const FontSet& fonts, const
   return paint::dump_svg(list, static_cast<float>(options.viewport_width), *height);
 }
 
+// ---------------------------------------------------------------------------
+// メモリ不足（ARCHITECTURE.md A22）
+// ---------------------------------------------------------------------------
+
+// 「例外を投げない・捕まえない」（ARCHITECTURE.md §2）の**唯一の例外規定**。
+// 公開関数の境界でだけ std::bad_alloc / std::length_error を捕まえ、OutOfMemory にして返す。
+// 内部では従来どおり例外を使わず、失敗は Result<T> で返す。
+//
+// これは最善努力である: Linux の既定のオーバーコミットでは、確保そのものは成功して
+// あとから OOM killer に殺されるので bad_alloc が来ないことがある。メモリの保証は
+// RenderLimits の側で行う（limits.hpp）。
+template <class T, class Body>
+std::expected<T, RenderError> catch_out_of_memory(Body&& body) {
+  try {
+    return std::forward<Body>(body)();
+  } catch (const std::bad_alloc&) {
+    return std::unexpected(RenderError{.kind = ErrorKind::OutOfMemory,
+                                       .message = "out of memory (std::bad_alloc)",
+                                       .location = std::nullopt});
+  } catch (const std::length_error&) {
+    return std::unexpected(
+        RenderError{.kind = ErrorKind::OutOfMemory,
+                    .message = "out of memory (a container exceeded its maximum size)",
+                    .location = std::nullopt});
+  }
+}
+
 }  // namespace
 
 std::expected<RenderResult, RenderError> render(std::string_view html, const FontSet& fonts,
                                                 const RenderOptions& opts) {
-  return render_impl(html, fonts, ImageSet{}, opts);
+  return catch_out_of_memory<RenderResult>(
+      [&] { return render_impl(html, fonts, ImageSet{}, opts); });
 }
 
 std::expected<RenderResult, RenderError> render(std::string_view html, const FontSet& fonts,
                                                 const ImageSet& images, const RenderOptions& opts) {
-  return render_impl(html, fonts, images, opts);
+  return catch_out_of_memory<RenderResult>([&] { return render_impl(html, fonts, images, opts); });
 }
 
 std::expected<std::string, RenderError> dump(std::string_view html, const FontSet& fonts,
                                              const ImageSet& images, const RenderOptions& opts,
                                              DumpStage stage) {
-  return dump_impl(html, fonts, images, opts, stage);
+  return catch_out_of_memory<std::string>(
+      [&] { return dump_impl(html, fonts, images, opts, stage); });
 }
 
 std::string_view to_string(DumpStage stage) noexcept {

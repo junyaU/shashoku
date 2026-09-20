@@ -4,6 +4,8 @@
 #include <optional>
 #include <string>
 
+#include "shashoku/limits.hpp"
+
 namespace shashoku {
 
 // 行に収まらなかったときの処理（DESIGN.md §5 / JIS X 4051・JLREQ）。
@@ -44,6 +46,7 @@ struct RenderOptions {
   std::optional<int> viewport_height;  // CSS px。未指定なら内容の高さに追従する
   float scale = 1.0F;                  // 2.0 で Retina 向けの 2 倍解像度
   LineBreakConfig line_break;
+  RenderLimits limits;  // 入力の上限（limits.hpp）。既定値で OG 画像には十分広い
 
   bool operator==(const RenderOptions&) const = default;
 };

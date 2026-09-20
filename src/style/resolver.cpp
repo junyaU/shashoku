@@ -620,6 +620,8 @@ Result<void> read_image_attributes(const html::Node& node, StyledNode& styled) {
 
 class Resolver {
  public:
+  explicit Resolver(std::size_t max_style_rules) : max_style_rules_(max_style_rules) {}
+
   Result<void> load(const html::Node& root);
   Result<StyledNode> build(const html::Node& root);
 
@@ -632,13 +634,15 @@ class Resolver {
   [[nodiscard]] Result<std::optional<StyledNode>> build_element(const html::Node& node,
                                                                 const StyleState& parent) const;
 
+  std::size_t max_style_rules_ = kMaxStyleRules;
   Stylesheet ua_;
   Stylesheet author_;
 };
 
 // `<style>` 要素は木のどこにあってもよく、文書全体に効く。複数あれば出現順に連結する。
 // NOLINTNEXTLINE(misc-no-recursion): DOM は木なので前順の再帰で辿る
-Result<void> collect_author_css(const html::Node& node, std::uint32_t& order, Stylesheet& out) {
+Result<void> collect_author_css(const html::Node& node, std::uint32_t& order, Stylesheet& out,
+                                std::size_t max_rules) {
   if (node.type == html::Node::Type::Element && node.tag == "style") {
     for (const html::Node& child : node.children) {
       if (child.type != html::Node::Type::Text) {
@@ -647,11 +651,19 @@ Result<void> collect_author_css(const html::Node& node, std::uint32_t& order, St
       if (Result<void> parsed = parse_stylesheet(child.text, child.location, order, out); !parsed) {
         return parsed;
       }
+      // セレクタの照合は「規則数 x 要素数」なので、規則の数そのものに上限が要る（A21）。
+      if (out.size() > max_rules) {
+        return fail(ErrorKind::LimitExceeded,
+                    std::format("the stylesheet has {} rules, which exceeds the limit of {} "
+                                "(raise RenderLimits::style_rules to allow it)",
+                                out.size(), max_rules),
+                    child.location);
+      }
     }
     return {};
   }
   for (const html::Node& child : node.children) {
-    if (Result<void> collected = collect_author_css(child, order, out); !collected) {
+    if (Result<void> collected = collect_author_css(child, order, out, max_rules); !collected) {
       return collected;
     }
   }
@@ -665,7 +677,7 @@ Result<void> Resolver::load(const html::Node& root) {
   }
   ua_ = *std::move(ua);
   std::uint32_t order = 0;
-  return collect_author_css(root, order, author_);
+  return collect_author_css(root, order, author_, max_style_rules_);
 }
 
 Result<StyleState> Resolver::cascade(const html::Node& node, const StyleState& parent) const {
@@ -852,12 +864,12 @@ Result<StyledNode> Resolver::build(const html::Node& root) {
 
 }  // namespace
 
-Result<StyledNode> resolve(const html::Node& root) {
+Result<StyledNode> resolve(const html::Node& root, std::size_t max_style_rules) {
   if (root.type != html::Node::Type::Element) {
     return fail(ErrorKind::Internal, "style::resolve() expects the synthetic root element",
                 root.location);
   }
-  Resolver resolver;
+  Resolver resolver(max_style_rules);
   if (Result<void> loaded = resolver.load(root); !loaded) {
     return std::unexpected(loaded.error());
   }

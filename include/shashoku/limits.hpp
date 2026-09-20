@@ -29,7 +29,7 @@ struct RenderLimits {
   // ---- (a) 入力を受けた時点（パースより前に数えられるもの）--------------------
 
   // HTML の入力バイト数。4 MiB は和文 100 万字を超える。
-  std::size_t html_bytes = 4U * 1024U * 1024U;
+  std::size_t html_bytes = std::size_t{4} * 1024 * 1024;
   // ImageSet に入れられる画像の枚数。
   std::size_t images = 64;
 

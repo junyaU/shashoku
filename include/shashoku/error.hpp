@@ -30,10 +30,10 @@ enum class ErrorKind : std::uint8_t {
   NoFonts,        // FontSet が空
   ImageDecode,    // 画像のバイト列を解釈できない / 対応外の形式
   ImageNotFound,  // <img src> に対応する画像が ImageSet にない
-  InvalidOption,   // RenderOptions の値が不正
-  LimitExceeded,   // 入力が RenderLimits の上限を超えた（limits.hpp）
-  OutOfMemory,     // メモリを確保できなかった（最善努力。limits.hpp / ARCHITECTURE.md A22）
-  Internal,        // ここに来たら shashoku のバグ
+  InvalidOption,  // RenderOptions の値が不正
+  LimitExceeded,  // 入力が RenderLimits の上限を超えた（limits.hpp）
+  OutOfMemory,  // メモリを確保できなかった（最善努力。limits.hpp / ARCHITECTURE.md A22）
+  Internal,  // ここに来たら shashoku のバグ
 };
 
 // 失敗は必ずこの型で返す（例外は投げない）。fail loudly の原則により、

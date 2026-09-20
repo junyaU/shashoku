@@ -128,6 +128,74 @@ UCD から生成する。生成物（`src/*/[a-z_]*_table.inc`）はコミット
 手で足した例外（クラスの寄せ先、既定値のブロック）は結果の範囲ではなく**規則**としてスクリプトに書く。
 更新手順と、`layout` の全角表をいまだけ Unicode 15.1 相当で据え置いている理由は
 [docs/UNICODE_TABLES.md](UNICODE_TABLES.md)。
+
+**A21. 入力の上限は `RenderLimits`（[include/shashoku/limits.hpp](../include/shashoku/limits.hpp)）に
+集約し、3 か所で検査する。** それまでは上限が部品に散らばっていて（入れ子 256 / 画像 2^26 px /
+出力 2^26 px / scale 256 / 入力 4 GiB）、**処理全体の予算を表す場所がなかった**。出力画像が
+小さくても途中の段は入力に比例したメモリを使うので、最終段の画素数だけでは事故が止まらない
+（`font-size: 30000px` の 1 文字を 100x100 に描くだけで 1.2 GB を確保していた。実測 1,197 MB。
+issue #6）。上限は**入力の一部**なので純粋関数の性質は壊れない（DESIGN.md §3-5）: 同じ HTML と
+同じ `RenderLimits` からは同じ PNG か同じエラーが出る。判定はすべてサイズ・個数で行い、
+経過時間や実メモリ使用量では行わない（決定的であること）。
+
+検査する場所は 3 つ:
+
+| | 場所 | 見るもの |
+|---|---|---|
+| (a) | 入力を受けた時点（パースより前） | `html_bytes` / `images` |
+| (b) | パース・計算値化のあと（api が DOM とスタイル付きツリーを 1 回ずつ辿る） | `nesting_depth` / `dom_nodes` / `text_code_points` / `style_rules` / `font_size_device_px` / `scale` |
+| (c) | 大きな確保の直前（確保する前に判定する） | `image_pixels` / `total_image_pixels` / `device_pixels` |
+
+既定値と根拠（「OG 画像 1200x630 @2x・数千文字・画像数枚には十分広く、事故は止まる」）:
+
+| フィールド | 既定 | 根拠 |
+|---|---|---|
+| `html_bytes` | 4 MiB | 和文 100 万字を超える。OG 用の断片は数 KB |
+| `images` | 64 枚 | OG 画像で使うのはアイコン・ロゴ数枚。64 枚でも合計画素数が先に効く |
+| `nesting_depth` | 256 | 既存値の据え置き。`Node` のデストラクタが深さだけ再帰する |
+| `dom_nodes` | 20,000 | OG カードは 100 未満。`style_rules` との積（4x10^7 回の照合）が 0.1 秒に収まる量 |
+| `text_code_points` | 50,000 | 「数千文字」の 10 倍以上。行分割と配置が入力に比例して効く |
+| `style_rules` | 2,000 | セレクタの照合は 規則数 x 要素数。`dom_nodes` との積で決めた |
+| `font_size_device_px` | 2,048 | グリフのビットマップは pixel_size の 2 乗。2048^2 = 4 MB で頭打ちになる。見出しは @2x でも 300 px 程度 |
+| `scale` | 256 | 既存値の据え置き。「1.0 のつもりが 1000」を弾く |
+| `image_pixels` | 2^24 | 4096x4096（RGBA で 64 MB）。OG に貼る素材には十分 |
+| `total_image_pixels` | 2^25 | 128 MB。「1 枚 2^26 px x 枚数無制限」だったのを塞ぐ |
+| `device_pixels` | 2^26 | 既存値の据え置き。1200x630 @2x の 22 倍 |
+
+決めたこと:
+
+- **「無制限」を表す特別な値は作らない。** `0` は文字どおり 0 で、事実上外したいときは型の最大値を
+  入れる。「0 = 無制限」にすると、ゼロ初期化した構造体が最も危険な設定になってしまう
+- 各モジュールは自分の既定値を定数で持つ（`html::kMaxNestingDepth` / `style::kMaxStyleRules` /
+  `png::kMaxPixels` / `raster::kMaxDevicePixels`）が、**api は必ず `RenderLimits` の値を引数で渡す**
+  （グローバル状態は使わない）。両者が食い違わないことは `src/api/render.cpp` の `static_assert` が
+  機械的に検査する。モジュール側の定数は「api を通さず単体で使うとき」の既定に過ぎない
+- **絶対上限**（実装の都合。`RenderLimits` では緩められない）として残すもの: HTML の 4 GiB
+  （`SourceLocation::offset` が 32 bit。`html::kMaxSourceBytes`）、出力の 1 辺 2^32-1 px
+  （`Bitmap::width` が `std::uint32_t`）、画素数 x 4 が `std::size_t` に収まること
+- 超過は専用の `ErrorKind::LimitExceeded`。message には「どの上限を・いくつに対して・いくつだったか」と
+  `RenderLimits` のどのフィールドで変えられるかを入れ、入力位置が分かるもの（font-size を指定した要素、
+  深すぎる要素、上限を超えたノード）には location を付ける。HTML の 4 GiB 超過を `InvalidOption` で
+  返していたのも `LimitExceeded` に直した
+- `<style>` の中身は `text_code_points` に数えない（「組む対象のテキスト」ではないため）。その量は
+  `html_bytes` と `style_rules` が押さえる
+- **計測・シェーピングの回数の予算は入れていない。** レイアウトの計算量そのもの（#4 の O(NxL)、
+  #5 の 2^depth）は別途直す。いまは `dom_nodes` x `style_rules` と `text_code_points` で間接的に抑えている
+
+**A22. メモリ不足は、公開関数の境界でだけ例外を捕まえて `ErrorKind::OutOfMemory` にする。**
+これは「例外を投げない・捕まえない」（§2 / CLAUDE.md コード規約）の**唯一の例外規定**。
+`render()` / `dump()` の全オーバーロードが `std::bad_alloc` と `std::length_error` を捕まえて
+`RenderError` に変換する。内部では従来どおり例外を使わず、失敗は `Result<T>` で返す
+（`catch` は `src/api/render.cpp` の `catch_out_of_memory()` 1 か所だけ）。
+
+理由: 「例外をライブラリ境界の外へ出さない」という契約を守るには、境界に `catch` が要る。
+`terminate` に倒す案もあったが、OG 画像を生成するサーバがリクエスト 1 本で落ちるのは割に合わない。
+
+**これは最善努力であり、保証は `RenderLimits` の側で行う。** Linux の既定のオーバーコミットでは
+確保そのものが成功して、あとから OOM killer にプロセスごと殺されるので、`bad_alloc` が来ないことがある。
+「メモリを使い切らないこと」を保証するのは A21 の上限の仕事で、`OutOfMemory` は最後の網に過ぎない。
+依存ライブラリ（FreeType / HarfBuzz / zlib）の確保失敗は A19 の `Result` 化で拾う。
+`noexcept` は公開関数のどれにも付けない（付けると変換する前に `terminate` する）。
 ---
 
 ## 2. モジュールと依存
@@ -173,7 +241,8 @@ linebreak（孤立）─┴─────────────────�
 ```cpp
 namespace shashoku::png {
 Result<std::vector<std::uint8_t>> encode(const Bitmap& bitmap);  // RGBA8 → PNG
-Result<Bitmap> decode(std::span<const std::uint8_t> bytes);      // PNG → RGBA8
+Result<Bitmap> decode(std::span<const std::uint8_t> bytes,       // PNG → RGBA8
+                      std::uint64_t max_pixels = kMaxPixels);
 }
 ```
 
@@ -186,7 +255,10 @@ Result<Bitmap> decode(std::span<const std::uint8_t> bytes);      // PNG → RGBA
 - **decode**: `<img>` とゴールデンテストの比較用。対応: 8bit の gray / gray+alpha / RGB / RGBA /
   パレット（tRNS 対応）、および 16bit（上位 8bit に落とす）、非インターレースのみ。
   対応外（インターレース、1/2/4bit）とシグネチャ・CRC・チャンク構造・zlib の破損は
-  `ImageDecode` エラー。補助チャンクは読み飛ばす。ガンマや ICC は無視する
+  `ImageDecode` エラー。補助チャンクは読み飛ばす。ガンマや ICC は無視する。
+  **`max_pixels`（幅 x 高さ）の判定は IHDR を読んだ時点で行う**（画素を確保する前。A21 の (c)）。
+  超過は `LimitExceeded`。api は `RenderLimits::image_pixels` と `total_image_pixels` から
+  「いま効いている方」の値を渡す
 - 受け入れ: `pngcheck` が通る。encode → decode が元の Bitmap に戻る。壊れた入力で落ちない（ASan）
 
 ### 3.3 raster（⑤b）
@@ -197,6 +269,7 @@ struct Target {
   float width = 0, height = 0;  // CSS px
   float scale = 1;              // デバイスピクセル = ceil(CSS px * scale)
   Color background = kTransparent;
+  std::uint64_t max_device_pixels = kMaxDevicePixels;  // 幅 x 高さの上限（A21）
 };
 Result<Bitmap> rasterize(const DisplayList& list, const Target& target, GlyphSource& glyphs,
                          std::span<const Bitmap> images);
@@ -217,6 +290,10 @@ Result<Bitmap> rasterize(const DisplayList& list, const Target& target, GlyphSou
 - DrawImage: 縮小は面積平均、拡大はバイリニア。等倍で整数位置ならピクセルをそのまま合成
 - PushClip / PopClip: 入れ子は積集合。対応が取れていない列は `Internal` エラー
 - 描画対象外（ビットマップの外、クリップの外）へのアクセスで落ちない
+- **デバイス画素数は、ピクセルバッファを確保する前に `target.max_device_pixels` と比べる**
+  （A21 の (c)）。超過は `LimitExceeded`。api は `RenderLimits::device_pixels` を渡す。
+  1 辺が `Bitmap::width` の型（`std::uint32_t`）に収まること、画素数 x 4 が `std::size_t` に
+  収まることは、`max_device_pixels` では緩められない絶対上限
 
 ### 3.4 linebreak（③ の中核・製品のコア）
 
@@ -326,7 +403,8 @@ struct MissingGlyph { char32_t cp; };   // 豆腐の記録。Shaper が溜め、
 
 ```cpp
 namespace shashoku::html {
-Result<Node> parse(std::string_view source);  // 合成ルート "#root" を返す
+// 合成ルート "#root" を返す
+Result<Node> parse(std::string_view source, std::size_t max_nesting_depth = kMaxNestingDepth);
 std::string dump_json(const Node& root);
 }
 ```
@@ -341,12 +419,16 @@ std::string dump_json(const Node& root);
 - 文字参照: `&amp; &lt; &gt; &quot; &apos; &nbsp;` と数値参照（10 進・16 進）。未知の名前、
   範囲外・サロゲートの数値は `HtmlParse`。`<style>` の中身は生テキスト（文字参照を解決しない）
 - 入力が不正な UTF-8 なら `InvalidUtf8`。すべてのエラーに `SourceLocation` を付ける
+- `max_nesting_depth` を超える入れ子は `LimitExceeded`（位置つき。api は
+  `RenderLimits::nesting_depth` を渡す）。入力が 4 GiB を超える場合も `LimitExceeded` だが、
+  こちらは `SourceLocation::offset` が 32 bit であることによる絶対上限（A21）
 
 ### 3.7 style（②）
 
 ```cpp
 namespace shashoku::style {
-Result<StyledNode> resolve(const html::Node& root);  // ルートの ComputedStyle は初期値
+// ルートの ComputedStyle は初期値
+Result<StyledNode> resolve(const html::Node& root, std::size_t max_style_rules = kMaxStyleRules);
 std::string dump_json(const StyledNode& root);
 }
 ```
@@ -371,6 +453,8 @@ std::string dump_json(const StyledNode& root);
   `img` の `width` / `height` 属性は px の数値として `attr_width` / `attr_height` に入れる（不正なら `UnsupportedValue`）
 - `display: inline` の要素への `width height margin padding border` 指定は `UnsupportedLayout`
   （`img` を除く）。`writing-mode` の途中変更も `UnsupportedLayout`（A1）
+- `<style>` から読んだ規則が `max_style_rules` を超えたら `LimitExceeded`（位置つき）。
+  セレクタの照合は「規則数 x 要素数」なので、規則の数そのものに上限が要る（A21）
 
 ### 3.8 layout（③）
 
@@ -427,6 +511,15 @@ std::string dump_json(const BoxTree&);
 
 出力サイズ: 幅 = `viewport_width`、高さ = `viewport_height`、未指定ならルートの内容の高さの切り上げ
 （0 なら `InvalidOption`）。どちらも `scale` を掛けて切り上げる。豆腐は `Warning` として返す。
+
+入力の上限（A21）は api が一手に引き受ける。順序は
+`validate(options)` → (a) `check_input_limits` → `html::parse` → (b) `check_dom_limits` →
+`style::resolve` → (b) `check_computed_limits` → `load_resources`（(c) 画像）→ … → `rasterize`（(c) 出力）。
+`check_dom_limits` は DOM を、`check_computed_limits` はスタイル付きツリーを、それぞれ明示スタックで
+1 回だけ前順に辿る（layout には手を入れない）。`png` / `raster` / `html` / `style` へは引数で渡す。
+各モジュールの既定値と `RenderLimits` の既定値が一致することは `static_assert` で検査する。
+公開関数の境界には `std::bad_alloc` / `std::length_error` の `catch` を置く（A22。ここだけ）。
+CLI に上限を変えるフラグは足していない（既定値のまま使う）。
 
 CLI は `tools/shashoku/`: `shashoku input.html --font A.otf [--font B.ttf …] [--image name=path …]
 -o out.png [--width N] [--height N] [--scale S] [--overflow oidashi|oikomi|burasage]

@@ -732,10 +732,10 @@ Result<std::pair<std::uint32_t, std::uint32_t>> device_size(const Target& target
   // ピクセルバッファを確保する前に判定する（A21 の検査点 (c)）。
   const std::uint64_t pixels = static_cast<std::uint64_t>(w) * static_cast<std::uint64_t>(h);
   if (pixels > target.max_device_pixels) {
-    return fail(ErrorKind::LimitExceeded,
-                "raster: device size " + std::to_string(w) + " x " + std::to_string(h) + " = " +
-                    std::to_string(pixels) + " px exceeds the limit of " +
-                    std::to_string(target.max_device_pixels) + " pixels");
+    return fail(ErrorKind::LimitExceeded, "raster: device size " + std::to_string(w) + " x " +
+                                              std::to_string(h) + " = " + std::to_string(pixels) +
+                                              " px exceeds the limit of " +
+                                              std::to_string(target.max_device_pixels) + " pixels");
   }
   // 絶対上限: Bitmap::rgba は 1 画素 4 バイトなので、画素数 x 4 が std::size_t に収まること。
   // max_device_pixels を極端に緩めたときに、掛け算が黙って一周するのを防ぐ。

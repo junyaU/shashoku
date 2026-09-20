@@ -526,7 +526,8 @@ TEST(PngDecode, MaxPixelsIsAParameter) {
   spec.width = 4;
   spec.height = 2;
   spec.color_type = 6;
-  spec.raw = with_none_filter(std::vector<std::uint8_t>(4 * 2 * 4, 0x40), 4 * 4, 2);
+  // 4x2 の RGBA = 1 行 16 バイト
+  spec.raw = with_none_filter(std::vector<std::uint8_t>(std::size_t{16} * 2, 0x40), 16, 2);
   const std::vector<std::uint8_t> png = build_png(spec);
 
   const Result<Bitmap> exact = decode(png, 8);
@@ -536,8 +537,7 @@ TEST(PngDecode, MaxPixelsIsAParameter) {
   const Result<Bitmap> over = decode(png, 7);
   ASSERT_FALSE(over.has_value());
   EXPECT_EQ(over.error().kind, ErrorKind::LimitExceeded);
-  EXPECT_NE(over.error().message.find("the limit is 7"), std::string::npos)
-      << over.error().message;
+  EXPECT_NE(over.error().message.find("the limit is 7"), std::string::npos) << over.error().message;
 }
 
 TEST(PngDecode, RejectsTruncatedIdatData) {

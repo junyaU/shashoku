@@ -110,10 +110,9 @@ Result<void> validate(const RenderOptions& options) {
                 std::format("scale must be a positive finite number (got {})", options.scale));
   }
   if (options.scale > options.limits.scale) {
-    return fail(ErrorKind::LimitExceeded,
-                std::format("scale is {}, which exceeds the limit of {} "
-                            "(raise RenderLimits::scale to allow it)",
-                            options.scale, options.limits.scale));
+    return fail(ErrorKind::LimitExceeded, std::format("scale is {}, which exceeds the limit of {} "
+                                                      "(raise RenderLimits::scale to allow it)",
+                                                      options.scale, options.limits.scale));
   }
   return {};
 }
@@ -122,9 +121,12 @@ Result<void> validate(const RenderOptions& options) {
 // 入力の上限（ARCHITECTURE.md A21）
 //
 // 検査する場所は 3 つ:
-//   (a) 入力を受けた時点（バイト数・枚数。パースより前）      … check_input_limits
-//   (b) 計算値化のあと（ノード数・文字数・font-size）          … check_dom_limits / check_computed_limits
-//   (c) 大きな確保の直前（画像のデコード、出力ビットマップ）  … png::decode / raster::rasterize に渡す
+//   (a) 入力を受けた時点（バイト数・枚数。パースより前）
+//       … check_input_limits
+//   (b) 計算値化のあと（ノード数・文字数・font-size）
+//       … check_dom_limits / check_computed_limits
+//   (c) 大きな確保の直前（画像のデコード、出力ビットマップ）
+//       … png::decode / raster::rasterize に上限を渡す
 //
 // どの判定もサイズと個数だけを見る（時間やメモリの実測は見ない）ので決定的。
 // ---------------------------------------------------------------------------
@@ -238,8 +240,7 @@ Result<void> check_computed_limits(const style::StyledNode& root, float scale,
         return fail(ErrorKind::LimitExceeded,
                     std::format("font-size {} px x scale {} = {} device px, which exceeds the "
                                 "limit of {} (raise RenderLimits::font_size_device_px to allow it)",
-                                node.style.font_size, scale, device_px,
-                                limits.font_size_device_px),
+                                node.style.font_size, scale, device_px, limits.font_size_device_px),
                     node.location);
       }
     }

@@ -337,6 +337,52 @@ TEST(LayoutInline, SpanBackgroundCoversItsFragmentsPerLine) {
   EXPECT_EQ(lines[0]->fragments.back().index(), 0U);
 }
 
+// 入れ子と複数行が混ざっても、背景は「外側の span が先」の順で、行ごとに交差する範囲だけ出る。
+TEST(LayoutInline, NestedBackgroundsKeepOuterFirstOnEveryLine) {
+  FakeMeasurer measurer;
+  const auto root = build({block(
+      {inline_box({text("あい"),
+                   inline_box({text("うえお")},
+                              [](ComputedStyle& style) {
+                                style.background_color = Color{0, 255, 0, 255};
+                              }),
+                   text("かき")},
+                  [](ComputedStyle& style) { style.background_color = Color{0, 0, 255, 255}; }),
+       inline_box({text("くけ")},
+                  [](ComputedStyle& style) { style.background_color = Color{255, 0, 0, 255}; })})});
+  const auto tree = run_layout(root, 64, measurer);  // 1 行 4 文字
+  ASSERT_TRUE(tree.has_value());
+  const std::vector<const LineBox*> lines = all_lines(*tree);
+  ASSERT_EQ(lines.size(), 3U);  // あいうえ / おかきく / け
+
+  // 1 行目: 外側（あいうえ）→ 内側（うえ）
+  const std::vector<const InlineBackground*> first = backgrounds(*lines[0]);
+  ASSERT_EQ(first.size(), 2U);
+  EXPECT_EQ(first[0]->color, (Color{0, 0, 255, 255}));
+  EXPECT_FLOAT_EQ(first[0]->rect.inline_start, 0);
+  EXPECT_FLOAT_EQ(first[0]->rect.inline_size, 64);
+  EXPECT_EQ(first[1]->color, (Color{0, 255, 0, 255}));
+  EXPECT_FLOAT_EQ(first[1]->rect.inline_start, 32);
+  EXPECT_FLOAT_EQ(first[1]->rect.inline_size, 32);
+
+  // 2 行目: 外側（おかき）→ 内側（お）→ 次の span（く）
+  const std::vector<const InlineBackground*> second = backgrounds(*lines[1]);
+  ASSERT_EQ(second.size(), 3U);
+  EXPECT_EQ(second[0]->color, (Color{0, 0, 255, 255}));
+  EXPECT_FLOAT_EQ(second[0]->rect.inline_size, 48);
+  EXPECT_EQ(second[1]->color, (Color{0, 255, 0, 255}));
+  EXPECT_FLOAT_EQ(second[1]->rect.inline_size, 16);
+  EXPECT_EQ(second[2]->color, (Color{255, 0, 0, 255}));
+  EXPECT_FLOAT_EQ(second[2]->rect.inline_start, 48);
+
+  // 3 行目: もう外側の span は終わっている
+  const std::vector<const InlineBackground*> third = backgrounds(*lines[2]);
+  ASSERT_EQ(third.size(), 1U);
+  EXPECT_EQ(third[0]->color, (Color{255, 0, 0, 255}));
+  EXPECT_FLOAT_EQ(third[0]->rect.inline_start, 0);
+  EXPECT_FLOAT_EQ(third[0]->rect.inline_size, 16);
+}
+
 TEST(LayoutInline, SpanBackgroundIsSplitPerLine) {
   FakeMeasurer measurer;
   const auto root =

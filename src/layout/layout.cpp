@@ -151,6 +151,7 @@ Result<Stacked> stack_children(LayoutEngine& engine, std::vector<Pending>& pendi
 
 Result<BlockBox> LayoutEngine::layout_block(const BlockInput& input, const BoxSizing& sizing,
                                             float content_inline_start, float block_start) {
+  ++counters().layout_block;
   if (input.replaced != nullptr) {
     return layout_image_box(input, sizing, content_inline_start, block_start);
   }
@@ -225,7 +226,8 @@ Result<BlockBox> LayoutEngine::layout_block(const BlockInput& input, const BoxSi
 }
 
 Result<BoxTree> layout(const style::StyledNode& root, const Options& options,
-                       text::TextMeasurer& measurer, const ImageLookup& images) {
+                       text::TextMeasurer& measurer, const ImageLookup& images,
+                       Counters* counters) {
   if (!is_positive_finite(options.viewport_width)) {
     return fail(ErrorKind::InvalidOption, "viewport width must be a positive finite number");
   }
@@ -248,7 +250,8 @@ Result<BoxTree> layout(const style::StyledNode& root, const Options& options,
   // ルートの包含ブロックは viewport（A1: 横書きは inline = 幅、縦書きは inline = 高さ）
   const float viewport_inline_size =
       mode == WritingMode::VerticalRl ? *options.viewport_height : options.viewport_width;
-  LayoutEngine engine(options, measurer, images, mode);
+  Counters discarded;  // 呼び出し側が数えないときの捨て場（null 判定を 1 か所で済ませる）
+  LayoutEngine engine(options, measurer, images, mode, counters != nullptr ? *counters : discarded);
   Result<BoxSizing> sizing = engine.resolve_box(root.style, viewport_inline_size, root.location);
   if (!sizing) {
     return std::unexpected(sizing.error());

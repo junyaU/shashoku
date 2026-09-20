@@ -9,6 +9,7 @@ shashoku_add_test(layout_test
     vertical_test.cpp
     ruby_test.cpp
     line_break_test.cpp
+    complexity_test.cpp
     dump_json_test.cpp
     error_test.cpp
     property_test.cpp

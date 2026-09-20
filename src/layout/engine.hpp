@@ -4,9 +4,11 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 
 #include "core/result.hpp"
 #include "layout/box_tree.hpp"
+#include "layout/counters.hpp"
 #include "layout/layout.hpp"
 #include "layout/logical.hpp"
 #include "style/computed_style.hpp"
@@ -70,14 +72,34 @@ void translate(BlockBox& box, float delta_inline, float delta_block);
 class LayoutEngine {
  public:
   LayoutEngine(const Options& options, text::TextMeasurer& measurer, const ImageLookup& images,
-               WritingMode mode)
-      : options_(&options), measurer_(&measurer), images_(&images), map_(mode), mode_(mode) {}
+               WritingMode mode, Counters& counters)
+      : options_(&options),
+        measurer_(&measurer),
+        images_(&images),
+        map_(mode),
+        mode_(mode),
+        counters_(&counters) {}
 
   [[nodiscard]] const Options& options() const { return *options_; }
-  [[nodiscard]] text::TextMeasurer& measurer() const { return *measurer_; }
   [[nodiscard]] const ImageLookup& images() const { return *images_; }
   [[nodiscard]] const LogicalMap& map() const { return map_; }
   [[nodiscard]] WritingMode mode() const { return mode_; }
+
+  // 計測カウンタ（issue #10-3）。出力には影響しない = 値を読んで分岐してはいけない。
+  // 計測は const のレイアウト処理の途中でも起きるので、const から書ける形にしてある。
+  [[nodiscard]] Counters& counters() const { return *counters_; }
+
+  // 計測器の呼び出しは必ずここを通す（回数と文字数を数えるため。TextMeasurer 自体は公開しない）。
+  [[nodiscard]] text::ShapedText shape(std::u32string_view text,
+                                       const text::TextStyle& style) const {
+    ++counters_->shape_calls;
+    counters_->shaped_chars += text.size();
+    return measurer_->shape(text, style);
+  }
+  [[nodiscard]] text::FontMetrics metrics(const text::TextStyle& style) const {
+    ++counters_->metrics_calls;
+    return measurer_->metrics(style);
+  }
 
   // CSS 2.1 §10.3.3（inline 方向）と §10.5（block 方向）の使用値。
   // override_inline / override_block は置換要素（<img>）と flex アイテムのように、
@@ -115,6 +137,7 @@ class LayoutEngine {
   const ImageLookup* images_;
   LogicalMap map_;
   WritingMode mode_;
+  Counters* counters_;
 };
 
 }  // namespace shashoku::layout

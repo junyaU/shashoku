@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <iterator>
+#include <ranges>
 #include <span>
 #include <string>
 #include <utility>
@@ -296,7 +298,7 @@ Result<void> collect_element(const StyledNode& node, LayoutEngine& engine, float
   std::size_t scope = kNone;
   if (!node.style.background_color.transparent()) {
     const RunStyle run = run_style_of(node.style);
-    const text::FontMetrics metrics = engine.measurer().metrics(text_style_of(run, engine.map()));
+    const text::FontMetrics metrics = engine.metrics(text_style_of(run, engine.map()));
     const bool vertical = engine.map().vertical();
     out.scopes.push_back(
         BackgroundScope{.color = node.style.background_color,
@@ -536,19 +538,22 @@ class InlineFormatter {
                           Extent& extent) const;
   [[nodiscard]] float ruby_above(const RubyPiece& piece) const;
   [[nodiscard]] float ruby_baseline(const RubyPiece& piece, float baseline) const;
-  [[nodiscard]] Extent measure_line(const linebreak::Line& line) const;
+  [[nodiscard]] Extent measure_line(const linebreak::Line& line);
   [[nodiscard]] Alignment align_line(const linebreak::Line& line, bool is_last) const;
   void place_image(const ImagePiece& image, float item_start, float baseline,
                    std::vector<InlineFragment>& content) const;
   void place_ruby(const RubyPiece& piece, float item_start, float advance, float baseline,
                   FragmentWriter& writer) const;
   void place_line(const linebreak::Line& line, const linebreak::Breaks& breaks,
-                  const Alignment& alignment, float baseline, std::vector<InlineFragment>& content,
-                  std::vector<Placement>& placement) const;
-  [[nodiscard]] std::vector<InlineBackground> build_backgrounds(
-      const linebreak::Line& line, const std::vector<Placement>& placement, float baseline) const;
+                  const Alignment& alignment, float baseline, std::vector<InlineFragment>& content);
+  // 行 [line.begin, line.content_end) の中で、文字位置 char_index 以降から始まる最初のアイテム。
+  // アイテムの char_begin は狭義単調増加なので二分探索できる。
+  [[nodiscard]] std::size_t first_item_at(const linebreak::Line& line,
+                                          std::size_t char_index) const;
+  [[nodiscard]] std::vector<InlineBackground> build_backgrounds(const linebreak::Line& line,
+                                                                float baseline);
   [[nodiscard]] LineBox build_line(const linebreak::Line& line, const linebreak::Breaks& breaks,
-                                   bool is_last, float block_start) const;
+                                   bool is_last, float block_start);
   [[nodiscard]] std::string text_of(std::size_t char_begin, std::size_t char_end) const;
 
   const InlineInput* input_;
@@ -570,6 +575,18 @@ class InlineFormatter {
   std::vector<linebreak::Item> items_;
   std::vector<ItemSource> sources_;
   std::vector<bool> opportunities_;  // text-align: justify のときだけ埋める
+
+  // 行の構築で使い回す作業バッファ。行ごとに確保すると段落全体で O(N×L) になる（#4）ので、
+  // run() で 1 回だけ確保する。行をまたいで残る値は読まない（下の約束を守ること）。
+  //   placement_  : place_line() が書いた [line.begin, line.content_end) だけを読む
+  //   style_stamp_: measure_line() の「この行でもう見たスタイル」。世代印なので消さなくてよい
+  std::vector<Placement> placement_;
+  std::vector<std::uint64_t> style_stamp_;
+  std::uint64_t stamp_ = 0;
+  // 背景スコープは begin の昇順（collect_element が外側から push する）。行が進むのに
+  // 合わせて「いまの行と交差するスコープ」だけを持つ。
+  std::size_t scope_cursor_ = 0;
+  std::vector<std::size_t> active_scopes_;
 };
 
 void InlineFormatter::build_ruby_item(std::size_t group_index) {
@@ -586,9 +603,9 @@ void InlineFormatter::build_ruby_item(std::size_t group_index) {
       text.push_back(chars_[end].cp);
       ++end;
     }
-    runs_.push_back(ShapedRun{.style = style_id,
-                              .shaped = engine_->measurer().shape(
-                                  text, text_style_of(styles_[style_id], engine_->map()))});
+    runs_.push_back(ShapedRun{
+        .style = style_id,
+        .shaped = engine_->shape(text, text_style_of(styles_[style_id], engine_->map()))});
     const ShapedRun& run = runs_.back();
     float advance = 0;
     for (const text::ShapedCluster& cluster : run.shaped.clusters) {
@@ -607,9 +624,9 @@ void InlineFormatter::build_ruby_item(std::size_t group_index) {
 
   // ルビ文字。letter-spacing はルビには掛けない
   const std::size_t rt_style = group.rt_style;
-  runs_.push_back(ShapedRun{.style = rt_style,
-                            .shaped = engine_->measurer().shape(
-                                group.rt_text, text_style_of(styles_[rt_style], engine_->map()))});
+  runs_.push_back(ShapedRun{
+      .style = rt_style,
+      .shaped = engine_->shape(group.rt_text, text_style_of(styles_[rt_style], engine_->map()))});
   piece.rt_run = runs_.size() - 1;
   piece.rt_style = rt_style;
   for (const text::ShapedCluster& cluster : runs_.back().shaped.clusters) {
@@ -678,9 +695,9 @@ void InlineFormatter::build_items() {
       ++end;
     }
     const std::size_t style_id = flat.style;
-    runs_.push_back(ShapedRun{.style = style_id,
-                              .shaped = engine_->measurer().shape(
-                                  text, text_style_of(styles_[style_id], engine_->map()))});
+    runs_.push_back(ShapedRun{
+        .style = style_id,
+        .shaped = engine_->shape(text, text_style_of(styles_[style_id], engine_->map()))});
     const std::size_t run = runs_.size() - 1;
     // (c) クラスタ → Item。letter-spacing は送りに足す
     for (const text::ShapedCluster& cluster : runs_[run].shaped.clusters) {
@@ -762,10 +779,10 @@ float InlineFormatter::ruby_baseline(const RubyPiece& piece, float baseline) con
   return baseline - piece.base_ascent - piece.rt_descent;
 }
 
-Extent InlineFormatter::measure_line(const linebreak::Line& line) const {
+Extent InlineFormatter::measure_line(const linebreak::Line& line) {
   Extent extent;
   extend_line_height(kNone, strut_metrics_, extent);  // 支柱は内容によらず全行に参加する
-  std::vector<bool> seen(styles_.size(), false);
+  ++stamp_;  // この行で「もう見た」印。行ごとに配列を作り直さない（#4）
   for (std::size_t i = line.begin; i < line.content_end; ++i) {
     const ItemSource& source = sources_[i];
     if (source.image != kNone) {
@@ -782,17 +799,17 @@ Extent InlineFormatter::measure_line(const linebreak::Line& line) const {
     }
     if (source.ruby != kNone) {
       const RubyPiece& piece = rubies_[source.ruby];
-      if (!seen[piece.base_style]) {
-        seen[piece.base_style] = true;
+      if (style_stamp_[piece.base_style] != stamp_) {
+        style_stamp_[piece.base_style] = stamp_;
         extend_line_height(piece.base_style, metrics_[piece.base_style], extent);
       }
       extent.above = std::max(extent.above, ruby_above(piece));
       continue;
     }
-    if (seen[source.style]) {
+    if (style_stamp_[source.style] == stamp_) {
       continue;
     }
-    seen[source.style] = true;
+    style_stamp_[source.style] = stamp_;
     extend_line_height(source.style, metrics_[source.style], extent);
   }
   return extent;
@@ -878,8 +895,7 @@ void InlineFormatter::place_ruby(const RubyPiece& piece, float item_start, float
 //   pen += spacing.before → クラスタのグリフを順に置く → pen = 開始位置 + advance + spacing.after
 void InlineFormatter::place_line(const linebreak::Line& line, const linebreak::Breaks& breaks,
                                  const Alignment& alignment, float baseline,
-                                 std::vector<InlineFragment>& content,
-                                 std::vector<Placement>& placement) const {
+                                 std::vector<InlineFragment>& content) {
   FragmentWriter writer(content, styles_);
   float pen = input_->content_inline_start + alignment.offset;
   for (std::size_t i = line.begin; i < line.content_end; ++i) {
@@ -903,31 +919,53 @@ void InlineFormatter::place_line(const linebreak::Line& line, const linebreak::B
 
     pen = item_start + items_[i].advance + breaks.spacing[i].after;
     writer.extend_to(pen);
-    placement[i] = Placement{.inline_start = item_start, .inline_end = pen};
+    placement_[i] = Placement{.inline_start = item_start, .inline_end = pen};
   }
 }
 
-std::vector<InlineBackground> InlineFormatter::build_backgrounds(
-    const linebreak::Line& line, const std::vector<Placement>& placement, float baseline) const {
+std::size_t InlineFormatter::first_item_at(const linebreak::Line& line,
+                                           std::size_t char_index) const {
+  const auto begin = sources_.begin() + static_cast<std::ptrdiff_t>(line.begin);
+  const auto end = sources_.begin() + static_cast<std::ptrdiff_t>(line.content_end);
+  const auto found = std::ranges::lower_bound(begin, end, char_index, {}, &ItemSource::char_begin);
+  return static_cast<std::size_t>(found - sources_.begin());
+}
+
+// 行と交差する背景スコープだけを見る（#4）。スコープは begin の昇順なので、行が進むのに
+// 合わせて active_scopes_ を更新すれば、1 行あたりの仕事は「その行に出る背景の数」で済む。
+std::vector<InlineBackground> InlineFormatter::build_backgrounds(const linebreak::Line& line,
+                                                                 float baseline) {
   std::vector<InlineBackground> backgrounds;
-  for (const BackgroundScope& scope : scopes_) {
-    std::size_t first = kNone;
-    std::size_t last = kNone;
-    for (std::size_t i = line.begin; i < line.content_end; ++i) {
-      const std::size_t at = sources_[i].char_begin;
-      if (at >= scope.begin && at < scope.end) {
-        first = first == kNone ? i : first;
-        last = i;
-      }
+  if (line.begin >= line.content_end) {
+    return backgrounds;  // 中身のない行（強制改行だけの行）には背景も出ない
+  }
+  const std::size_t char_begin = sources_[line.begin].char_begin;
+  const std::size_t char_end = sources_[line.content_end - 1].char_end;
+  // この行の先頭より前で終わったスコープを落とす（行の先頭は行ごとに進むので、落とすのは 1 回ずつ）
+  std::erase_if(active_scopes_,
+                [&](std::size_t index) { return scopes_[index].end <= char_begin; });
+  // この行の終わりより前に始まるスコープを入れる（cursor も行とともに 1 方向に進む）
+  while (scope_cursor_ < scopes_.size() && scopes_[scope_cursor_].begin < char_end) {
+    if (scopes_[scope_cursor_].end > char_begin) {
+      active_scopes_.push_back(scope_cursor_);
     }
-    if (first == kNone) {
-      continue;
+    ++scope_cursor_;
+  }
+  engine_->counters().background_probes += active_scopes_.size();
+
+  for (const std::size_t index : active_scopes_) {  // 外側の span が先（描画順）
+    const BackgroundScope& scope = scopes_[index];
+    const std::size_t first = first_item_at(line, scope.begin);
+    const std::size_t after = first_item_at(line, scope.end);
+    if (first >= after) {
+      continue;  // 交差はしているが、この行にはこのスコープの文字がない
     }
+    const std::size_t last = after - 1;
     backgrounds.push_back(InlineBackground{
         .rect =
-            LogicalRect{.inline_start = placement[first].inline_start,
+            LogicalRect{.inline_start = placement_[first].inline_start,
                         .block_start = baseline - scope.start_extent,
-                        .inline_size = placement[last].inline_end - placement[first].inline_start,
+                        .inline_size = placement_[last].inline_end - placement_[first].inline_start,
                         .block_size = scope.size},
         .color = scope.color});
   }
@@ -935,7 +973,7 @@ std::vector<InlineBackground> InlineFormatter::build_backgrounds(
 }
 
 LineBox InlineFormatter::build_line(const linebreak::Line& line, const linebreak::Breaks& breaks,
-                                    bool is_last, float block_start) const {
+                                    bool is_last, float block_start) {
   const Extent extent = measure_line(line);
   LineBox box;
   box.rect = LogicalRect{.inline_start = input_->content_inline_start,
@@ -945,12 +983,11 @@ LineBox InlineFormatter::build_line(const linebreak::Line& line, const linebreak
   box.baseline = block_start + extent.above;
 
   std::vector<InlineFragment> content;
-  std::vector<Placement> placement(items_.size());
-  place_line(line, breaks, align_line(line, is_last), box.baseline, content, placement);
+  ++engine_->counters().line_boxes;
+  place_line(line, breaks, align_line(line, is_last), box.baseline, content);
 
   // 描画順: 背景 → 文字・画像
-  const std::vector<InlineBackground> backgrounds =
-      build_backgrounds(line, placement, box.baseline);
+  const std::vector<InlineBackground> backgrounds = build_backgrounds(line, box.baseline);
   box.fragments.reserve(backgrounds.size() + content.size());
   for (const InlineBackground& background : backgrounds) {
     box.fragments.emplace_back(background);  // 自明にコピーできる小さな型
@@ -971,6 +1008,7 @@ linebreak::Config InlineFormatter::config() const {
 }
 
 Result<void> InlineFormatter::prepare() {
+  ++engine_->counters().inline_prepare;
   Collected collected;
   if (const Result<void> result =
           collect(input_->children, *engine_, input_->content_inline_size, collected);
@@ -1004,10 +1042,10 @@ Result<void> InlineFormatter::prepare() {
   }
 
   strut_ = run_style_of(*input_->block_style);
-  strut_metrics_ = engine_->measurer().metrics(text_style_of(strut_, engine_->map()));
+  strut_metrics_ = engine_->metrics(text_style_of(strut_, engine_->map()));
   metrics_.reserve(styles_.size());
   for (const RunStyle& run_style : styles_) {
-    metrics_.push_back(engine_->measurer().metrics(text_style_of(run_style, engine_->map())));
+    metrics_.push_back(engine_->metrics(text_style_of(run_style, engine_->map())));
   }
   build_items();
   return {};
@@ -1046,6 +1084,10 @@ Result<std::vector<LineBox>> InlineFormatter::run() {
   } else {
     opportunities_.assign(items_.size(), false);
   }
+  // 行の構築の作業バッファは、行ごとではなく段落で 1 回だけ確保する（#4）
+  placement_.assign(items_.size(), Placement{});
+  style_stamp_.assign(styles_.size(), 0);
+  engine_->counters().line_scratch += items_.size() + styles_.size();
 
   std::vector<LineBox> lines;
   lines.reserve(breaks.lines.size());

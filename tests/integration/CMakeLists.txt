@@ -9,6 +9,7 @@ shashoku_add_test(integration_test
     pipeline_test.cpp
     shaping_test.cpp
     line_policy_test.cpp
+    scale_property_test.cpp
     fuzz_test.cpp
   LIBS shashoku::shashoku shashoku_test_support)
 

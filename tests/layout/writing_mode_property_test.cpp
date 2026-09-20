@@ -376,9 +376,8 @@ Both layout_both(const MakeTree& make, float inline_size, bool sideways = false,
   if (comparer.diffs().empty()) {
     return ::testing::AssertionSuccess();
   }
-  return ::testing::AssertionFailure()
-         << "論理座標のボックスツリーが一致しない（" << comparer.diffs().size()
-         << " 件）:" << comparer.text();
+  return ::testing::AssertionFailure() << "論理座標のボックスツリーが一致しない（"
+                                       << comparer.diffs().size() << " 件）:" << comparer.text();
 }
 
 constexpr std::string_view kJapanese =
@@ -505,8 +504,7 @@ TEST(WritingModeProperty, TextAlign) {
           block({text(kJapanese)}, [align](ComputedStyle& s) { s.text_align = align; }),
       };
     };
-    EXPECT_TRUE(same_logical_tree(make, 170))
-        << "text-align = " << static_cast<int>(align);
+    EXPECT_TRUE(same_logical_tree(make, 170)) << "text-align = " << static_cast<int>(align);
   }
 }
 
@@ -650,10 +648,12 @@ class TreeMaker {
 
   std::string_view sentence() {
     constexpr std::string_view kTexts[] = {
-        "あいうえお", "吾輩は猫である。名前はまだ無い。",
+        "あいうえお",
+        "吾輩は猫である。名前はまだ無い。",
         "組版、それは「文字を並べる」仕事である。",
         "長い長い段落をここに置いて、行分割器が何度も折り返すようにしておく。",
-        "ん", "きゃりーぱみゅぱみゅ",
+        "ん",
+        "きゃりーぱみゅぱみゅ",
     };
     return kTexts[static_cast<std::size_t>(pick(0, 5))];
   }

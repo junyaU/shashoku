@@ -176,7 +176,7 @@ TEST(LineBreakItemPolicy, StrictnessChangesMinContentWidth) {
 // --------------------------------------------------------------- break_anywhere
 
 TEST(LineBreakItemPolicy, BreakAnywhereOnEveryItem) {
-  // issue #2 の表 2 行目に相当: <div style="width:3 文字"><span style="overflow-wrap:anywhere">。
+  // issue #2 の表 2 行目（span に overflow-wrap: anywhere）に相当。幅は 3 文字ぶん。
   // 全アイテムが anywhere なら、Config::break_anywhere = true と同じ 3 行になる。
   std::vector<Item> items = test::items_of("ABCDEFGH");
   EXPECT_EQ(lines_of(items, 3.0F * kAscii), (std::vector<std::string>{"ABCDEFGH"}));  // 指定なし

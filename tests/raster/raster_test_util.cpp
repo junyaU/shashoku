@@ -37,9 +37,16 @@ void FakeGlyphSource::set(GlyphId glyph_id, GlyphBitmap bitmap) {
   glyphs_[glyph_id] = std::move(bitmap);
 }
 
-GlyphBitmap FakeGlyphSource::rasterize(FontId font, GlyphId glyph_id, float pixel_size,
-                                       bool sideways) {
+void FakeGlyphSource::set_error(GlyphId glyph_id, Error error) {
+  errors_[glyph_id] = std::move(error);
+}
+
+Result<GlyphBitmap> FakeGlyphSource::rasterize(FontId font, GlyphId glyph_id, float pixel_size,
+                                               bool sideways) {
   calls_.push_back(Call{font, glyph_id, pixel_size, sideways});
+  if (const auto failure = errors_.find(glyph_id); failure != errors_.end()) {
+    return std::unexpected(failure->second);
+  }
   const auto it = glyphs_.find(glyph_id);
   if (it == glyphs_.end()) {
     return GlyphBitmap{};  // 未登録は空白グリフ扱い

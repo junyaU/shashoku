@@ -570,6 +570,9 @@ Result<void> Canvas::draw_glyphs(const DrawGlyphs& cmd, float scale, GlyphSource
     return {};
   }
   const float pixel_size = cmd.size * scale;
+  if (!finite(pixel_size) || pixel_size <= 0.0F) {
+    return {};  // size * scale があふれた（非有限の寸法を持つコマンドは無視する）
+  }
   for (const GlyphInstance& g : cmd.glyphs) {
     if (!finite(g.origin.x) || !finite(g.origin.y)) {
       continue;
@@ -580,22 +583,28 @@ Result<void> Canvas::draw_glyphs(const DrawGlyphs& cmd, float scale, GlyphSource
     if (std::fabs(ox) > kMaxOrigin || std::fabs(oy) > kMaxOrigin) {
       continue;
     }
-    const GlyphBitmap bmp = glyphs.rasterize(cmd.font, g.glyph_id, pixel_size, cmd.sideways);
-    if (bmp.width == 0U || bmp.height == 0U) {
-      continue;  // 空白グリフ
+    // 失敗は握りつぶさずに伝播する（glyph_source.hpp: 空のビットマップは「描くものが
+    // ないグリフ」だけを意味する。issue #3）。
+    const Result<GlyphBitmap> bmp =
+        glyphs.rasterize(cmd.font, g.glyph_id, pixel_size, cmd.sideways);
+    if (!bmp) {
+      return std::unexpected(bmp.error());
     }
     const std::size_t expected =
-        static_cast<std::size_t>(bmp.width) * static_cast<std::size_t>(bmp.height);
-    if (bmp.coverage.size() != expected) {
+        static_cast<std::size_t>(bmp->width) * static_cast<std::size_t>(bmp->height);
+    if (bmp->coverage.size() != expected) {
       return fail(ErrorKind::Internal,
                   "raster: GlyphSource returned a malformed bitmap for glyph " +
                       std::to_string(g.glyph_id) + " (coverage " +
-                      std::to_string(bmp.coverage.size()) + " bytes, expected " +
+                      std::to_string(bmp->coverage.size()) + " bytes, expected " +
                       std::to_string(expected) + ")");
     }
+    if (bmp->width == 0U || bmp->height == 0U) {
+      continue;  // 空白グリフ（成功して空のビットマップ）
+    }
     // glyph_source.hpp: 左上ピクセルのデバイス座標は (origin.x + left, origin.y - top)。
-    blit_glyph(bmp, static_cast<std::int64_t>(ox) + bmp.left,
-               static_cast<std::int64_t>(oy) - bmp.top, cmd.color);
+    blit_glyph(*bmp, static_cast<std::int64_t>(ox) + bmp->left,
+               static_cast<std::int64_t>(oy) - bmp->top, cmd.color);
   }
   return {};
 }

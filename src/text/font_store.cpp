@@ -26,11 +26,7 @@ namespace {
 
 using detail::FontEntry;
 using detail::FontStoreImpl;
-
-std::string ft_error_text(FT_Error error) {
-  const char* text = FT_Error_String(error);
-  return text != nullptr ? std::string(text) : ("FreeType error " + std::to_string(error));
-}
+using detail::ft_error_text;
 
 std::string fold_ascii(std::string_view name) {
   std::string folded(name);
@@ -67,9 +63,14 @@ Result<std::unique_ptr<FontEntry>> make_entry(
   entry->bytes = bytes;
   entry->ft_face = face;  // ここから先の失敗でも ~FontEntry が face を解放する
 
+  // 埋め込みビットマップ専用のフォント（CBDT / CBLC・sbix のカラー絵文字など）は、
+  // FreeType が FT_FACE_FLAG_SCALABLE を立てない。ラスタライザは輪郭しか扱えないので
+  // （glyph_source.hpp）、字が全部消えた PNG を出す前にここで落とす（fail loudly）。
   if (FT_IS_SCALABLE(face) == 0 || face->num_glyphs <= 0 || face->units_per_EM == 0) {
     return fail(ErrorKind::FontLoad,
-                "輪郭を持たないフォントは扱えません (face " + std::to_string(face_index) + ")");
+                "輪郭を持たないフォントは扱えません (face " + std::to_string(face_index) +
+                    "): 埋め込みビットマップ専用のフォント（CBDT / sbix のカラー絵文字など）は"
+                    "対応していません");
   }
 
   entry->upem = face->units_per_EM;

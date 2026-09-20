@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <limits>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -220,6 +221,39 @@ TEST(RasterGlyph, MalformedGlyphBitmapIsInternalError) {
   broken.width = 4;
   broken.height = 4;
   broken.coverage.assign(3, 255);
+  glyphs.set(1, broken);
+  const Error e = must_fail({one_glyph(1, Point{0, 0})}, square(4), glyphs);
+  EXPECT_EQ(e.kind, ErrorKind::Internal);
+  EXPECT_NE(e.message.find("GlyphSource"), std::string::npos);
+}
+
+// issue #3: GlyphSource の失敗は「空白グリフ」に化けさせず、そのまま伝播する。
+TEST(RasterGlyph, GlyphSourceFailureIsPropagated) {
+  FakeGlyphSource glyphs;
+  glyphs.set_error(1, Error{ErrorKind::FontLoad, "text: グリフを読めません", std::nullopt});
+  const Error e = must_fail({one_glyph(1, Point{0, 0})}, square(4), glyphs);
+  EXPECT_EQ(e.kind, ErrorKind::FontLoad);
+  EXPECT_EQ(e.message, "text: グリフを読めません");
+}
+
+// 途中のグリフが失敗したら、そこで止めてエラーを返す（描けたぶんだけ返さない）。
+TEST(RasterGlyph, FailureInTheMiddleOfARunStopsTheWholeRasterization) {
+  FakeGlyphSource glyphs;
+  glyphs.set(1, solid_glyph(0, 0, 1, 1, 255));
+  glyphs.set_error(2, Error{ErrorKind::Internal, "text: FontId がありません", std::nullopt});
+  DrawGlyphs cmd = one_glyph(1, Point{0, 0});
+  cmd.glyphs = {GlyphInstance{1, Point{0, 0}}, GlyphInstance{2, Point{1, 0}},
+                GlyphInstance{1, Point{2, 0}}};
+  const Error e = must_fail({cmd}, square(4), glyphs);
+  EXPECT_EQ(e.kind, ErrorKind::Internal);
+  EXPECT_EQ(glyphs.calls().size(), 2U) << "失敗したグリフより後ろを読んでいる";
+}
+
+// 空のビットマップなのに被覆率が入っている（契約違反）ものも Internal。
+TEST(RasterGlyph, EmptyBitmapWithCoverageIsInternalError) {
+  FakeGlyphSource glyphs;
+  GlyphBitmap broken;  // width = height = 0 なのに coverage がある
+  broken.coverage.assign(4, 255);
   glyphs.set(1, broken);
   const Error e = must_fail({one_glyph(1, Point{0, 0})}, square(4), glyphs);
   EXPECT_EQ(e.kind, ErrorKind::Internal);

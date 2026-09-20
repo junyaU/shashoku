@@ -9,7 +9,9 @@
 
 #include <gtest/gtest.h>
 
+#include "core/result.hpp"
 #include "raster/glyph_source.hpp"
+#include "shashoku/error.hpp"
 #include "text/font_store.hpp"
 #include "text/freetype_glyph_source.hpp"
 #include "text/shaper.hpp"
@@ -50,13 +52,14 @@ void draw(GrayImage& image, const ShapedText& shaped, raster::GlyphSource& glyph
   for (const ShapedGlyph& glyph : shaped.glyphs) {
     const auto origin_x = static_cast<int>(std::lround(pen_x + glyph.x_offset));
     const auto origin_y = static_cast<int>(std::lround(pen_y + glyph.y_offset));
-    const raster::GlyphBitmap bitmap =
+    const Result<raster::GlyphBitmap> bitmap =
         glyphs.rasterize(glyph.font, glyph.glyph_id, pixel_size, glyph.sideways);
-    for (std::uint32_t row = 0; row < bitmap.height; ++row) {
-      for (std::uint32_t column = 0; column < bitmap.width; ++column) {
-        image.blend(origin_x + bitmap.left + static_cast<int>(column),
-                    origin_y - bitmap.top + static_cast<int>(row),
-                    bitmap.coverage[static_cast<std::size_t>(row) * bitmap.width + column]);
+    ASSERT_TRUE(bitmap.has_value()) << to_string(bitmap.error());
+    for (std::uint32_t row = 0; row < bitmap->height; ++row) {
+      for (std::uint32_t column = 0; column < bitmap->width; ++column) {
+        image.blend(origin_x + bitmap->left + static_cast<int>(column),
+                    origin_y - bitmap->top + static_cast<int>(row),
+                    bitmap->coverage[static_cast<std::size_t>(row) * bitmap->width + column]);
       }
     }
     if (vertical) {

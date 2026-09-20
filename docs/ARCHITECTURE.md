@@ -96,6 +96,27 @@ FontSet にない名前を飛ばすのは「黙って崩す」に当たらない
 縦横比を保つ（CSS では歪むが、OG 画像でアイコンが潰れるのは誰も望まない）。主軸方向の grow / shrink は
 CSS どおりに効く。`box-sizing` は content-box のみ（A11）なので、1200×630 の箱に padding 80px を
 入れるなら `width: 1040px; height: 470px` と書く。
+
+**A19. `GlyphSource::rasterize()` は `Result<GlyphBitmap>` を返し、「成功して空のビットマップ」は
+空白グリフだけを意味する。** 値返しの契約では、不正な `FontId`・`FT_Load_Glyph` の失敗・輪郭を
+持たないグリフ・未対応の pixel_mode がすべて空のビットマップになり、ラスタライザがそれを空白として
+読み飛ばしていた。結果、**文字の欠けた PNG が「成功」として返りうる**（issue #3。DESIGN.md §3-6 違反）。
+分類:
+
+| 事象 | 返すもの |
+|---|---|
+| 空白グリフ（輪郭はあるが塗る面積が 0）、`pixel_size` が 1/64 px 未満 | 成功（空のビットマップ） |
+| 不正な `FontId`、非有限・非正の `pixel_size` | `Internal`（呼び出し側のバグ） |
+| `FT_Set_Char_Size` / `FT_Load_Glyph` / `FT_Render_Glyph` の失敗、輪郭を持たないグリフ、未対応の pixel_mode、26.6 に収まらない `pixel_size` | `FontLoad` |
+
+`pixel_size` が有限かつ 0 より大きいことは**呼び出し側の責務**にした。ラスタライザはもともと
+非有限・非正の寸法を持つコマンドを読み飛ばす方針（§3.3）で、グリフだけ別扱いにする理由がないため。
+エラーのメッセージには `FontId` / `glyph_id` / `pixel_size` / FreeType のエラーコードを必ず入れる。
+
+フォント全体が輪郭を持たない場合（CBDT/CBLC・sbix のカラー絵文字フォント。FreeType は
+`FT_FACE_FLAG_SCALABLE` を立てない）は、`FontStore::load()` が `FontLoad` で落とす（一番早い段で
+落とす。実装済み）。COLR/CPAL のカラー絵文字はベースの輪郭を持つので load は通り、ベースグリフが
+空なら「空白」として通ってしまう。これを警告 + 豆腐に回すかは Shaper 側の判断（未着手）。
 ---
 
 ## 2. モジュールと依存
@@ -178,7 +199,10 @@ Result<Bitmap> rasterize(const DisplayList& list, const Target& target, GlyphSou
 - 角丸・枠線・クリップの縁は被覆率によるアンチエイリアス。方式は実装者が選んでよいが、
   決定的であること（A9）と、半径 0 のとき FillRect と 1 ビットも違わないこと
 - DrawGlyphs: 原点をデバイスピクセルの整数に丸めてから（A8）`GlyphSource::rasterize()` の
-  被覆率に色を掛けて合成する
+  被覆率に色を掛けて合成する。**`rasterize()` のエラーはそのまま伝播する**（A19）。
+  読み飛ばしてよいのは「成功して空のビットマップ」= 空白グリフだけで、
+  `coverage.size() == width * height` を破ったビットマップは `Internal`。
+  `size * scale` が非有限・非正になるコマンドは（他の非有限な寸法と同じく）無視する
 - DrawImage: 縮小は面積平均、拡大はバイリニア。等倍で整数位置ならピクセルをそのまま合成
 - PushClip / PopClip: 入れ子は積集合。対応が取れていない列は `Internal` エラー
 - 描画対象外（ビットマップの外、クリップの外）へのアクセスで落ちない
@@ -276,7 +300,11 @@ struct MissingGlyph { char32_t cp; };   // 豆腐の記録。Shaper が溜め、
   script / language（`ja` 固定）を明示的に渡す（`hb_buffer_guess_segment_properties` は
   ロケールを読むので使わない。決定性のため）
 - ラスタライズ: `FT_LOAD_NO_HINTING | FT_LOAD_NO_BITMAP`、`FT_RENDER_MODE_NORMAL`。
-  sideways は輪郭を 90° 回してから描く（ビットマップを回すのではなく）
+  sideways は輪郭を 90° 回してから描く（ビットマップを回すのではなく）。
+  失敗は必ず `Result` のエラーで返す（A19 の表）。空のビットマップを返すのは空白グリフだけ
+- `FontStore::load()`: 輪郭を持たないフォント（`FT_IS_SCALABLE` が偽。埋め込みビットマップ専用の
+  カラー絵文字フォントなど）は `FontLoad` で拒否する。ラスタライザは輪郭しか扱えないので、
+  「全部の字が消えた PNG」になる前に一番早い段で落とす（A19）
 - テスト用フォント: リポジトリに置かず、CMake の configure 時に版（コミット SHA）とハッシュを
   固定してダウンロードする（`cmake/TestAssets.cmake`）。Noto Sans JP（OFL）+ 欧文フォント 1 つ
   （フォールバックのテスト用）。パスはコンパイル定義でテストに渡す

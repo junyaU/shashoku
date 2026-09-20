@@ -6,6 +6,7 @@ shashoku_add_test(png_test
     encoder_test.cpp
     decoder_test.cpp
     round_trip_test.cpp
+    determinism_test.cpp
   LIBS shashoku::png ZLIB::ZLIBSTATIC)
 
 # encode の出力を外部の実装に検査させる。pngcheck が無い環境ではテストごと省く。

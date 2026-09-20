@@ -14,4 +14,5 @@ shashoku_add_test(layout_test
     error_test.cpp
     property_test.cpp
     writing_mode_property_test.cpp
+    invariance_test.cpp
   LIBS shashoku::layout)

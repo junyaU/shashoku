@@ -96,6 +96,25 @@ FontSet にない名前を飛ばすのは「黙って崩す」に当たらない
 縦横比を保つ（CSS では歪むが、OG 画像でアイコンが潰れるのは誰も望まない）。主軸方向の grow / shrink は
 CSS どおりに効く。`box-sizing` は content-box のみ（A11）なので、1200×630 の箱に padding 80px を
 入れるなら `width: 1040px; height: 470px` と書く。
+
+**A19. 計算量の回帰は「時間」ではなく「回数」で測る。** layout に計測カウンタ
+（[src/layout/counters.hpp](../src/layout/counters.hpp)）を置き、`layout()` の最後の引数
+（`Counters*`、既定は nullptr）で受け取る。数えるのは layout_block / content_intrinsic /
+インライン整形文脈の準備 / `shape()` の回数と文字数 / `metrics()` / 行ボックス数 /
+行の構築の作業バッファ要素数 / 背景スコープの走査回数。約束は 3 つ:
+**出力に影響させない**（カウンタの値を読んで分岐しない）、**グローバル状態にしない**
+（DESIGN.md §3-5。LayoutEngine が参照を持つ）、**公開 API に出さない**。
+数え漏れが起きないよう、`TextMeasurer` の呼び出しは `LayoutEngine::shape()` / `metrics()` に通す。
+時間で測らないのは、環境でぶれるうえ「遅いが通る」状態を見逃すため。
+
+**A20. 行の構築で使う作業バッファは、行ごとではなく段落で 1 回だけ確保する。** 行を 1 本組むたびに
+段落全体ぶん（アイテム数 N、スタイル数）の配列を作ると、狭い版面では行数 L が N に比例するので
+O(N×L) になる（issue #4）。`InlineFormatter` は placement をメンバとして使い回し
+（書いた `[line.begin, line.content_end)` しか読まないので、行をまたいで残る値は害にならない）、
+「この行でもう見たスタイル」は世代印で持つ。インライン背景も、行ごとに全スコープを舐めるのをやめ、
+スコープが文字位置 `begin` の昇順に並ぶこと（外側の span から順に作られる）を使って、
+行が進むのに合わせて「その行と交差するスコープ」だけを保つ。行内の範囲は、アイテムの `char_begin` が
+狭義単調増加なのを使って二分探索で出す。
 ---
 
 ## 2. モジュールと依存
@@ -344,7 +363,7 @@ struct Options {
 };
 struct ImageSize { float width, height; };  // <img> の固有寸法。名前 → 寸法は api が解決して渡す
 Result<BoxTree> layout(const style::StyledNode& root, const Options&, text::TextMeasurer&,
-                       /* 画像の固有寸法を引く口 */);
+                       /* 画像の固有寸法を引く口 */, Counters* = nullptr);
 std::string dump_json(const BoxTree&);
 }
 ```
@@ -367,6 +386,9 @@ std::string dump_json(const BoxTree&);
 - **ルビ**（Phase 7）: `<ruby>` 内の「親文字の並び + `<rt>`」を 1 組とし、組ごとに 1 つの Atomic。
   幅は max(親文字, ルビ)、短い方を中央に置く。行ボックスはルビのぶん block-start 側に広がる
 - **縦書き**（Phase 8）: 論理座標のまま。`TextStyle::direction = Vertical` で測るだけ
+- **計算量**: 1 つの IFC を組む仕事は、アイテム数 N に対して線形。行ごとに段落全体を舐めたり、
+  段落全体ぶんの作業バッファを確保したりしない（A20）。守れているかは計測カウンタ（A19）で
+  検査する（`tests/layout/complexity_test.cpp`）。時間ではなく回数で見る
 - テストは偽の `TextMeasurer`（全角 1em / 半角 0.5em、ascent 0.88em / descent 0.12em）で
   フォントなしに書き、`dump_json()` の座標を検証する（DESIGN.md §10-3）
 

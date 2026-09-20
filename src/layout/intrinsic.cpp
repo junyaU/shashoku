@@ -63,7 +63,8 @@ Result<Intrinsic> LayoutEngine::compute_intrinsic(const BlockInput& input, float
                                    .block_style = input.style,
                                    .content_inline_start = 0,
                                    .content_inline_size = percent_basis,
-                                   .content_block_start = 0};
+                                   .content_block_start = 0,
+                                   .location = input.location};
     return inline_intrinsic(inline_input, *this);
   }
 
@@ -92,7 +93,8 @@ Result<Intrinsic> LayoutEngine::compute_intrinsic(const BlockInput& input, float
                                      .block_style = input.style,
                                      .content_inline_start = 0,
                                      .content_inline_size = percent_basis,
-                                     .content_block_start = 0};
+                                     .content_block_start = 0,
+                                     .location = run.front().location};
       child = inline_intrinsic(inline_input, *this);
     } else {
       child = outer_intrinsic(children[i], percent_basis);

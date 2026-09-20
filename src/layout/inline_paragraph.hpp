@@ -97,9 +97,14 @@ struct PreparedParagraph {
   [[nodiscard]] const text::FontMetrics& metrics_of(std::size_t style) const {
     return metrics[styles.shaping_index(style)];
   }
-  // 「見た目が同じか」の鍵（TextFragment を切る単位）。行分割ポリシーは含めない。
+  // 「見た目が同じか」の鍵（TextFragment を切る単位）。行分割ポリシーと位置は含めない
+  // （含めると DrawGlyphs が無意味に分かれる。A27 の用途の表）。
   [[nodiscard]] std::size_t visual_key(std::size_t style) const {
     return styles.decoration_index(style);
+  }
+  // その文字を含むテキストノードの先頭（A31）。断片のダンプと豆腐の警告にだけ使う。
+  [[nodiscard]] const SourceLocation& location_of(std::size_t style) const {
+    return styles.location(style);
   }
   // [char_begin, char_end) の UTF-8（TextFragment のデバッグ用テキスト）。
   [[nodiscard]] std::string text_of(std::size_t char_begin, std::size_t char_end) const;

@@ -6,6 +6,7 @@
 
 #include "core/color.hpp"
 #include "layout/counters.hpp"
+#include "layout/engine.hpp"  // layout_without_memo（メモの有無で警告が変わらないことの検査）
 #include "layout/test_support.hpp"
 #include "linebreak/line_breaker.hpp"
 
@@ -716,6 +717,106 @@ TEST(LayoutInline, BreakingPolicySpansDoNotSplitShapingOrFragments) {
   EXPECT_EQ(mixed_counters.shape_calls, 1U);
   // 断片が分かれるのは色の境界だけ（2 つ: 黒 "AV" → 赤 "To" → 黒 "AV" で 3 つ）
   EXPECT_EQ(text_fragments(*all_lines(*mixed_tree)[0]).size(), 3U);
+}
+
+// ---- 豆腐の記録と元ノードの位置（A31 / issue #9）------------------------------------
+
+// **位置の層は見た目にもシェーピングにも効かない。** 位置だけが違う隣り合うテキストは
+// 1 回で組み、断片も分けない（分けると issue #8 と同じでカーニングと合字が消える）。
+TEST(LayoutMissingGlyph, LocationLayerDoesNotSplitShapingOrFragments) {
+  FakeMeasurer measurer;
+  const auto root = build({block({
+      at(text("AV"), 10),
+      at(inline_box({at(text("To"), 30)}), 20),
+      at(text("AV"), 50),
+  })});
+  Counters counters;
+  const auto tree = run_layout(root, make_options(400), measurer, counters);
+  ASSERT_TRUE(tree.has_value());
+  EXPECT_EQ(counters.shape_calls, 1U) << "位置の境界でシェーピングが切れている";
+  ASSERT_EQ(all_lines(*tree).size(), 1U);
+  const std::vector<const TextFragment*> fragments = text_fragments(*all_lines(*tree)[0]);
+  ASSERT_EQ(fragments.size(), 1U) << "位置の境界で断片が切れている";
+  // 断片の位置は先頭のグリフのもの（A31）
+  EXPECT_EQ(fragments[0]->location.offset, 10U);
+}
+
+// 断片は装飾の境界で切れる。切れたら 2 つめ以降はその位置のノードを指す。
+TEST(LayoutMissingGlyph, FragmentLocationFollowsTheFirstGlyphOfEachFragment) {
+  FakeMeasurer measurer;
+  const auto root = build({block({
+      at(text("AB"), 10),
+      at(inline_box({at(text("CD"), 30)}, [](ComputedStyle& style) { style.color = kRed; }), 20),
+  })});
+  const auto tree = run_layout(root, 400, measurer);
+  ASSERT_TRUE(tree.has_value());
+  const std::vector<const TextFragment*> fragments = text_fragments(*all_lines(*tree)[0]);
+  ASSERT_EQ(fragments.size(), 2U);
+  EXPECT_EQ(fragments[0]->location.offset, 10U);
+  EXPECT_EQ(fragments[1]->location.offset, 30U);
+}
+
+// 報告の粒度は (コードポイント, テキストノード) の組ごとに 1 件。
+// 並びは入力位置の昇順 → コードポイントの昇順。
+TEST(LayoutMissingGlyph, OneRecordPerCodepointAndNodeSortedByPosition) {
+  FakeMeasurer measurer;
+  measurer.missing_chars = U"😀😃";
+  const auto root = build({block({
+      at(text("😃あ😀😀"), 40),  // 同じノードの同じ絵文字は 1 件
+      at(text("😀"), 10),
+  })});
+  const auto tree = run_layout(root, 400, measurer);
+  ASSERT_TRUE(tree.has_value());
+  ASSERT_EQ(tree->missing_glyphs.size(), 3U);
+  EXPECT_EQ(tree->missing_glyphs[0].location.offset, 10U);
+  EXPECT_EQ(tree->missing_glyphs[0].codepoint, U'\U0001F600');
+  EXPECT_EQ(tree->missing_glyphs[1].location.offset, 40U);
+  EXPECT_EQ(tree->missing_glyphs[1].codepoint, U'\U0001F600');
+  EXPECT_EQ(tree->missing_glyphs[2].location.offset, 40U);
+  EXPECT_EQ(tree->missing_glyphs[2].codepoint, U'\U0001F603');
+}
+
+// <img> を含む段落は準備を共有しない（A29）ので、計測と配置で何度も組まれる。
+// それでも警告は重複しない（LayoutEngine が (位置, コードポイント) で除いている）。
+TEST(LayoutMissingGlyph, ParagraphsPreparedSeveralTimesDoNotDuplicateRecords) {
+  FakeMeasurer measurer;
+  measurer.missing_chars = U"😀";
+  const ImageLookup images = image_table({{.src = "p", .id = 0, .width = 24, .height = 12}});
+  const auto root = build({flex({block({at(text("あ😀"), 5), at(img("p"), 20)})})});
+  const auto tree = run_layout(root, make_options(400), measurer, images);
+  ASSERT_TRUE(tree.has_value());
+  EXPECT_GT(measurer.shape_calls, 1) << "この入力では段落が何度も組まれる前提";
+  ASSERT_EQ(tree->missing_glyphs.size(), 1U);
+  EXPECT_EQ(tree->missing_glyphs[0].location.offset, 5U);
+}
+
+// メモ（A29）の有無で警告の中身が変わらない。
+TEST(LayoutMissingGlyph, MemoDoesNotChangeTheRecords) {
+  const auto root = build({flex({block({at(text("あ😀"), 5)}), block({at(text("😃"), 40)})})});
+  FakeMeasurer with_memo;
+  with_memo.missing_chars = U"😀😃";
+  const auto memoized = run_layout(root, 400, with_memo);
+  ASSERT_TRUE(memoized.has_value());
+  FakeMeasurer plain;
+  plain.missing_chars = U"😀😃";
+  const auto without_memo = layout_without_memo(root, make_options(400), plain, ImageLookup{});
+  ASSERT_TRUE(without_memo.has_value());
+  EXPECT_EQ(memoized->missing_glyphs, without_memo->missing_glyphs);
+  EXPECT_EQ(dump_json(*memoized), dump_json(*without_memo));
+}
+
+// ルビ: 親文字は文字の表から、<rt> は組の rt_style から位置を引く。
+TEST(LayoutMissingGlyph, RubyBaseAndRubyTextAreBothRecorded) {
+  FakeMeasurer measurer;
+  measurer.missing_chars = U"😀😃";
+  const auto root = build({block({at(ruby({at(text("😀"), 10), at(rt("😃"), 20)}), 5)})});
+  const auto tree = run_layout(root, 400, measurer);
+  ASSERT_TRUE(tree.has_value());
+  ASSERT_EQ(tree->missing_glyphs.size(), 2U);
+  EXPECT_EQ(tree->missing_glyphs[0].codepoint, U'\U0001F600');
+  EXPECT_EQ(tree->missing_glyphs[0].location.offset, 10U);
+  EXPECT_EQ(tree->missing_glyphs[1].codepoint, U'\U0001F603');
+  EXPECT_EQ(tree->missing_glyphs[1].location.offset, 20U);
 }
 
 }  // namespace

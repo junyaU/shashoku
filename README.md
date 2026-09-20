@@ -57,8 +57,8 @@ if (!result) {
   return 1;
 }
 for (const shashoku::Warning& w : result->warnings) {   // 豆腐（グリフ欠落）だけは警告
-  std::cerr << w.detail << '\n';                        // no font has a glyph for U+1F600
-}
+  std::cerr << w.detail << '\n';         // no font has a glyph for U+1F600 at 3:14
+}                                        // w.location = その文字を含むテキストノードの先頭
 write_file("out.png", result->png);                     // PNG のバイト列
 ```
 

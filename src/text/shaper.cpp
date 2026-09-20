@@ -9,7 +9,6 @@
 #include <format>
 #include <map>
 #include <memory>
-#include <set>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -134,8 +133,6 @@ struct ShaperImpl {
   hb_buffer_t* probe_buffer = nullptr;
   hb_language_t language = nullptr;
   std::vector<hb_font_t*> shaping_fonts;  // FontId → シェーピング用 hb_font（遅延生成）
-  std::vector<MissingGlyph> missing;
-  std::set<char32_t> missing_seen;
   std::map<std::pair<FontId, char32_t>, bool> vertical_form_cache;
 
   explicit ShaperImpl(const FontStore& store)
@@ -205,15 +202,9 @@ struct ShaperImpl {
                                                          const std::vector<FontId>& stack,
                                                          bool vertical);
 
-  void record_missing(char32_t cp) {
-    if (missing_seen.insert(cp).second) {
-      missing.push_back(MissingGlyph{cp});
-    }
-  }
-
   Result<void> shape_run(std::u32string_view text, std::size_t begin, std::size_t end,
                          const CharPlan& plan, const TextStyle& style, int scale, ShapedText& out);
-  Result<void> emit_missing_run(std::u32string_view text, std::size_t begin, std::size_t end,
+  Result<void> emit_missing_run(std::size_t begin, std::size_t end,
                                 const std::vector<CharPlan>& plan, const std::vector<FontId>& stack,
                                 const TextStyle& style, ShapedText& out);
   Result<ShapedText> shape(std::u32string_view text, const TextStyle& style);
@@ -527,8 +518,10 @@ Result<void> ShaperImpl::shape_run(std::u32string_view text, std::size_t begin, 
   return {};
 }
 
-Result<void> ShaperImpl::emit_missing_run(std::u32string_view text, std::size_t begin,
-                                          std::size_t end, const std::vector<CharPlan>& plan,
+// 豆腐の run。どの文字が豆腐だったかは ShapedCluster::missing で返すだけで、
+// Shaper 自身は何も溜めない（A31。警告を組み立てるのは ③ レイアウトの仕事）。
+Result<void> ShaperImpl::emit_missing_run(std::size_t begin, std::size_t end,
+                                          const std::vector<CharPlan>& plan,
                                           const std::vector<FontId>& stack, const TextStyle& style,
                                           ShapedText& out) {
   // 豆腐は □（U+25A1）をフォールバック列の順に探し、最初に見つかったフォントのグリフで描く。
@@ -559,8 +552,6 @@ Result<void> ShaperImpl::emit_missing_run(std::u32string_view text, std::size_t 
       out.clusters.back().text_end = static_cast<std::uint32_t>(i + 1);
       continue;
     }
-    record_missing(text[i]);
-
     ShapedGlyph glyph;
     glyph.font = font;
     glyph.glyph_id = tofu_glyph;
@@ -716,7 +707,7 @@ Result<ShapedText> ShaperImpl::shape(std::u32string_view text, const TextStyle& 
       ++end;
     }
     const Result<void> done = (*plan)[begin].missing
-                                  ? emit_missing_run(text, begin, end, *plan, stack, style, out)
+                                  ? emit_missing_run(begin, end, *plan, stack, style, out)
                                   : shape_run(text, begin, end, (*plan)[begin], style, scale, out);
     if (!done) {
       return std::unexpected(done.error());
@@ -744,13 +735,6 @@ Result<FontMetrics> Shaper::metrics(const TextStyle& style) {
     return std::unexpected(ok.error());
   }
   return impl_->font_metrics(stack.front(), style.font_size);
-}
-
-std::vector<MissingGlyph> Shaper::take_missing_glyphs() {
-  std::vector<MissingGlyph> taken = std::move(impl_->missing);
-  impl_->missing.clear();
-  impl_->missing_seen.clear();
-  return taken;
 }
 
 }  // namespace shashoku::text

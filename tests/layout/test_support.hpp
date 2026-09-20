@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <functional>
 #include <optional>
 #include <string>
@@ -67,6 +68,7 @@ struct Tree {
   std::string image_src;  // <img> のみ
   std::optional<float> attr_width;
   std::optional<float> attr_height;
+  SourceLocation location;  // 既定は 0:1:1。at() で与える
 };
 
 [[nodiscard]] Tree text(std::string_view content);
@@ -85,6 +87,9 @@ struct Tree {
 // 任意のタグ・display のノード（img / ruby / flex などのエラー系テスト用）。
 [[nodiscard]] Tree element(std::string_view tag, style::Display display,
                            std::vector<Tree> children = {}, StyleFn style = nullptr);
+// ノードに入力位置を与える（豆腐の警告と断片のダンプ。A31）。行は 1、桁は offset + 1 に
+// するので、offset の大小がそのまま報告順になる。子の位置は変えない。
+[[nodiscard]] Tree at(Tree node, std::uint32_t offset);
 
 // 合成ルート "#root"（display: block）を作る。
 [[nodiscard]] style::StyledNode build(std::vector<Tree> children, StyleFn style = nullptr);

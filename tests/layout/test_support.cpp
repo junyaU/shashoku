@@ -78,6 +78,7 @@ style::StyledNode build_node(const Tree& tree, const style::ComputedStyle& paren
   node.image_src = tree.image_src;
   node.attr_width = tree.attr_width;
   node.attr_height = tree.attr_height;
+  node.location = tree.location;
   node.style = inherit(parent);
   if (tree.style) {
     tree.style(node.style);
@@ -162,6 +163,11 @@ Tree block(std::vector<Tree> children, StyleFn style) {
   };
   out.children = std::move(children);
   return out;
+}
+
+Tree at(Tree node, std::uint32_t offset) {
+  node.location = SourceLocation{.offset = offset, .line = 1, .column = offset + 1};
+  return node;
 }
 
 Tree inline_box(std::vector<Tree> children, StyleFn style) {

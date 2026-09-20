@@ -216,7 +216,9 @@ class LineBreaker {
 3. **縦書き（Phase 8）**: 主軸の転置（幅と高さの役割交換）＋ HarfBuzz の `vert` フィーチャーで約物グリフを差し替え＋縦中横（`text-combine-upright` 相当は将来）
 4. **ルビ（Phase 7）**: 親文字の上（縦書きなら右）に小サイズのグリフ列を配置。行高への影響（ルビぶんの行間確保）を含む
 5. **フォントフォールバック**: `FontStack` を順に cmap 引きし、最初にグリフを持つフォントを採用。テキストは「同一フォントで描ける区間（run）」に分割されてからシェーピングされる
-6. **豆腐検出**: どのフォントにもグリフがないコードポイントは警告リスト（コードポイント＋位置）として `RenderResult` に積み、□ を描画して続行する
+6. **豆腐検出**: どのフォントにもグリフがないコードポイントは警告リスト（コードポイント＋位置）として `RenderResult` に積み、□ を描画して続行する。
+   位置は「その文字を含むテキストノードの先頭」で、報告は (コードポイント, テキストノード) の組ごとに 1 件。
+   並びは入力位置の昇順 → コードポイントの昇順（ARCHITECTURE.md A31）
 
 ## 7. 技術選定（C++）
 
@@ -258,7 +260,9 @@ struct RenderOptions {
 // 超過は ErrorKind::LimitExceeded。詳細は ARCHITECTURE.md A25。
 struct RenderLimits { /* html_bytes, dom_nodes, text_code_points, font_size_device_px, … */ };
 
-struct Warning { WarningKind kind; std::string detail; };
+// 位置はその文字を含むテキストノードの先頭（ARCHITECTURE.md A31）
+struct Warning { WarningKind kind; std::string detail; char32_t codepoint;
+                 std::optional<SourceLocation> location; };
 
 struct RenderResult {
   std::vector<uint8_t> png;

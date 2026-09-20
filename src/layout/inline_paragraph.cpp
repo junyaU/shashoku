@@ -31,6 +31,12 @@ class ParagraphBuilder {
   [[nodiscard]] Result<std::size_t> build_text_items(std::size_t begin);
   // [begin, end) を 1 回でシェーピングする。返すのは runs の添字。
   [[nodiscard]] Result<std::size_t> shape_run(std::size_t begin, std::size_t end);
+  // (b') 豆腐を拾う（A31 / issue #9）。Shaper は何も溜めないので、どの文字が豆腐かは
+  // クラスタの missing から読み、位置は文字ごとの属性の表（A27 の位置の層）から引く。
+  void record_missing(const text::ShapedText& shaped, std::size_t char_begin);
+  // <rt> のルビ文字は chars に無い（RubyGroup::rt_text の中）ので別に拾う。
+  void record_missing_ruby(const text::ShapedText& shaped, const std::u32string& rt_text,
+                           std::size_t rt_style);
   // (c) このアイテムに効く行分割ポリシー（issue #2 / A28）。`style` はアイテムの代表の文字
   // （クラスタ先頭 / <img> / <br> / ルビ組の親文字の先頭）が属する要素の計算値の添字。
   [[nodiscard]] linebreak::Item policy_of(linebreak::Item item, std::size_t style) const {
@@ -61,7 +67,33 @@ Result<std::size_t> ParagraphBuilder::shape_run(std::size_t begin, std::size_t e
     return std::unexpected(shaped.error());
   }
   out_->runs.push_back(ShapedRun{.shaping = shaping, .shaped = std::move(*shaped)});
+  record_missing(out_->runs.back().shaped, begin);
   return out_->runs.size() - 1;
+}
+
+// 豆腐のクラスタは「先頭の文字 1 個」を代表にする。Shaper は結合文字・異体字セレクタ・
+// ZWJ の後ろを先頭の文字と同じクラスタにまとめる（A2）ので、代表はその基底文字になる。
+void ParagraphBuilder::record_missing(const text::ShapedText& shaped, std::size_t char_begin) {
+  for (const text::ShapedCluster& cluster : shaped.clusters) {
+    if (!cluster.missing) {
+      continue;
+    }
+    const std::size_t at = char_begin + cluster.text_begin;
+    if (at >= out_->chars.size()) {
+      continue;  // 起きないはずだが、クラスタの範囲を信用して添字を外に出さない
+    }
+    engine_->record_missing_glyph(out_->chars[at].cp, out_->styles.location(out_->chars[at].style));
+  }
+}
+
+void ParagraphBuilder::record_missing_ruby(const text::ShapedText& shaped,
+                                           const std::u32string& rt_text, std::size_t rt_style) {
+  const SourceLocation& location = out_->styles.location(rt_style);
+  for (const text::ShapedCluster& cluster : shaped.clusters) {
+    if (cluster.missing && cluster.text_begin < rt_text.size()) {
+      engine_->record_missing_glyph(rt_text[cluster.text_begin], location);
+    }
+  }
 }
 
 Result<void> ParagraphBuilder::build_ruby_item(std::size_t group_index) {
@@ -117,6 +149,7 @@ Result<void> ParagraphBuilder::build_ruby_item(std::size_t group_index) {
   }
   out_->runs.push_back(
       ShapedRun{.shaping = out_->styles.shaping_index(rt_style), .shaped = std::move(*rt_shaped)});
+  record_missing_ruby(out_->runs.back().shaped, group.rt_text, rt_style);
   piece.rt_run = out_->runs.size() - 1;
   piece.rt_style = rt_style;
   for (const text::ShapedCluster& cluster : out_->runs.back().shaped.clusters) {
@@ -261,7 +294,7 @@ Result<PreparedParagraph> prepare_paragraph(const InlineInput& input, LayoutEngi
   out.images = std::move(collected->images);
 
   // 支柱も文字と同じ表に入れる（行の高さの計算が 1 本道になる）。
-  out.strut_style = out.styles.intern(*input.block_style, engine.map().direction());
+  out.strut_style = out.styles.intern(*input.block_style, engine.map().direction(), input.location);
   out.metrics.reserve(out.styles.shaping_count());
   for (std::size_t i = 0; i < out.styles.shaping_count(); ++i) {
     Result<text::FontMetrics> metrics = engine.metrics(out.styles.shaping_at(i));

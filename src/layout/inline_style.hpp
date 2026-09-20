@@ -10,13 +10,14 @@
 
 #include "core/color.hpp"
 #include "linebreak/line_breaker.hpp"
+#include "shashoku/error.hpp"
 #include "style/computed_style.hpp"
 #include "text/text_measurer.hpp"
 
-// 平坦化したインライン列の「文字ごとの属性」の表（ARCHITECTURE.md A27 / issue #8, #2）。
+// 平坦化したインライン列の「文字ごとの属性」の表（ARCHITECTURE.md A27 / issue #8, #2, #9）。
 //
 // インライン整形文脈の中の 1 文字が持つスタイルを **層に分けて** 持つ。層ごとに値の表があり、
-// 文字は層ごとの添字の組（CharStyle）1 つだけを指す。いまの層は 3 つ:
+// 文字は層ごとの添字の組（CharStyle）1 つだけを指す。いまの層は 4 つ:
 //
 //   * **シェーピング属性**（text::TextStyle）… font-family / font-weight / font-size / direction。
 //     `shape()` はこの層が等しい連続ごとに 1 回だけ呼ぶ。色や line-height の境界で切ると
@@ -25,6 +26,8 @@
 //     シェーピングの結果を変えない。フラグメントを作るときにクラスタ境界で対応付ける
 //   * **行分割ポリシー**（BreakingStyle）… line-break / overflow-wrap。`linebreak::Item` の
 //     `strictness` / `break_anywhere`（A23）に写す。見た目には一切効かない
+//   * **元ノードの位置**（SourceLocation）… その文字を含むテキストノードの先頭（A31 / issue #9）。
+//     豆腐の警告と `--dump-stage box` に出すためだけの層。**見た目にもシェーピングにも効かない**
 //
 // **どの層を見るかは用途ごとに違う**（層を足しても、関係のない処理が細切れにならないように）:
 //
@@ -34,12 +37,14 @@
 //   | `TextFragment`（= `DrawGlyphs`）の区間 | シェーピング + 装飾 |
 //   | 行の高さ | シェーピング + 装飾 |
 //   | `linebreak::Item` のポリシー | 行分割ポリシー |
+//   | 豆腐の警告 / 断片のデバッグ表示 | 位置 |
+//
+// **位置をシェーピング属性にも装飾属性にも入れてはいけない。** 入れると、同じ見た目の
+// `<span>` を 2 つに割っただけで `shape()` が切れて（issue #8 と同じ不具合）、
+// `TextFragment` も無意味に分かれる。位置が違うだけで結果が変わってはならない。
 //
 // 層を足すときは BreakingStyle と同じ形で表を 1 本増やし、CharStyle に添字を 1 本足して
-// intern() で登録し、上の表に「どの用途が見るか」を書く。予定しているもの:
-//
-//   * **#9**: 元のノードの位置（SourceLocation）→ 豆腐の警告に入力位置を付ける
-//     （見た目にもシェーピングにも効かないので、上の表のどの行にも入らない層になる）
+// intern() で登録し、上の表に「どの用途が見るか」を書く。
 //
 // 添字の割り当ては intern() を呼んだ順（= 木を辿った順）なので決定的。
 // 索引に使う std::map は「同じ内容に同じ添字を与える」ためだけのもので、反復しない。
@@ -71,6 +76,7 @@ struct CharStyle {
   std::size_t shaping = 0;
   std::size_t decoration = 0;
   std::size_t breaking = 0;
+  std::size_t location = 0;
 
   bool operator==(const CharStyle&) const = default;
 };
@@ -121,14 +127,25 @@ struct BreakingLess {
   }
 };
 
+struct LocationLess {
+  std::uint64_t* probes = nullptr;
+
+  bool operator()(const SourceLocation& a, const SourceLocation& b) const {
+    ++*probes;
+    return std::tie(a.offset, a.line, a.column) < std::tie(b.offset, b.line, b.column);
+  }
+};
+
 }  // namespace detail
 
 class CharStyleTable {
  public:
   // ComputedStyle を層に分けて登録し、文字が指す添字を返す。内容が同じなら同じ添字。
+  // location はその文字を含むノードの先頭（StyledNode::location）。
   // 1 ノードにつき 1 回呼ぶ想定で、1 回のスタイルの比較は O(log(表の大きさ))
   // （線形探索だと色違いの span が S 個ある段落で O(S²) になる。issue #10）。
-  std::size_t intern(const style::ComputedStyle& style, text::Direction direction);
+  std::size_t intern(const style::ComputedStyle& style, text::Direction direction,
+                     const SourceLocation& location);
 
   // 索引を引くのに行ったスタイルの比較の回数（計測カウンタ用。A21）。
   [[nodiscard]] std::uint64_t probes() const { return *probes_; }
@@ -153,6 +170,10 @@ class CharStyleTable {
   [[nodiscard]] const BreakingStyle& breaking(std::size_t style) const {
     return breaking_[styles_[style].breaking];
   }
+  // その文字を含むテキストノードの先頭（A31）。豆腐の警告とダンプにしか使わない。
+  [[nodiscard]] const SourceLocation& location(std::size_t style) const {
+    return location_[styles_[style].location];
+  }
   // シェーピング属性の添字 → 値（metrics の表を引くときに使う）。
   [[nodiscard]] const text::TextStyle& shaping_at(std::size_t shaping) const {
     return shaping_[shaping];
@@ -162,6 +183,7 @@ class CharStyleTable {
   std::vector<text::TextStyle> shaping_;
   std::vector<DecorationStyle> decoration_;
   std::vector<BreakingStyle> breaking_;
+  std::vector<SourceLocation> location_;
   std::vector<CharStyle> styles_;
 
   // 比較の回数。比較器が指すので、表を move しても指し先が動かないようヒープに置く
@@ -174,7 +196,10 @@ class CharStyleTable {
       detail::DecorationLess{probes_.get()}};
   std::map<BreakingStyle, std::size_t, detail::BreakingLess> breaking_index_{
       detail::BreakingLess{probes_.get()}};
-  std::map<std::tuple<std::size_t, std::size_t, std::size_t>, std::size_t> style_index_;
+  std::map<SourceLocation, std::size_t, detail::LocationLess> location_index_{
+      detail::LocationLess{probes_.get()}};
+  std::map<std::tuple<std::size_t, std::size_t, std::size_t, std::size_t>, std::size_t>
+      style_index_;
 };
 
 }  // namespace shashoku::layout

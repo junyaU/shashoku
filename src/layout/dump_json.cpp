@@ -1,4 +1,5 @@
 #include <cstdint>
+#include <format>
 #include <string>
 #include <string_view>
 #include <variant>
@@ -6,12 +7,18 @@
 
 #include "core/json_writer.hpp"
 #include "layout/layout.hpp"
+#include "shashoku/error.hpp"
 
 // --dump-stage=box（DESIGN.md §3-3）。キー順は固定。
 // 既定値のキーは省く: 透明な背景、幅 0 の枠線、半径 0、padding が全部 0、sideways = false。
 // 座標はすべて論理座標（横書きなら物理座標と同じ値で読める。A1）。
 namespace shashoku::layout {
 namespace {
+
+// 入力位置は "行:桁"（1 始まり）。to_string(RenderError) の " at L:C" と同じ書式（A31）。
+std::string location_text(const SourceLocation& location) {
+  return std::to_string(location.line) + ':' + std::to_string(location.column);
+}
 
 std::string color_hex(const Color& color) {
   constexpr std::string_view kDigits = "0123456789abcdef";
@@ -45,6 +52,8 @@ void write_text_fragment(JsonWriter& writer, const TextFragment& fragment) {
   writer.key("inline_start").value(fragment.inline_start);
   writer.key("inline_size").value(fragment.inline_size);
   writer.key("baseline").value(fragment.baseline);
+  // 元のテキストノードの位置（issue #9）。断片の先頭のグリフのもの
+  writer.key("location").value(location_text(fragment.location));
   // グリフごとに [glyph_id, ペン位置の inline 座標, x_offset, y_offset]
   writer.key("glyphs").begin_array();
   for (const PositionedGlyph& glyph : fragment.glyphs) {
@@ -160,6 +169,18 @@ std::string dump_json(const BoxTree& tree) {
   }
   writer.key("root");
   write_block(writer, tree.root);
+  // 豆腐（A31）。1 件も無ければキーごと省く（既定値のキーは出さない）
+  if (!tree.missing_glyphs.empty()) {
+    writer.key("missing_glyphs").begin_array();
+    for (const MissingGlyph& missing : tree.missing_glyphs) {
+      writer.begin_object();
+      writer.key("codepoint")
+          .value(std::format("U+{:04X}", static_cast<std::uint32_t>(missing.codepoint)));
+      writer.key("location").value(location_text(missing.location));
+      writer.end_object();
+    }
+    writer.end_array();
+  }
   writer.end_object();
   return std::move(writer).str();
 }

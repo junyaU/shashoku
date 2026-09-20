@@ -342,6 +342,7 @@ TEST(LayoutVertical, DumpJson) {
                 "inline_start": 0,
                 "inline_size": 16,
                 "baseline": 8,
+                "location": "1:1",
                 "glyphs": [
                   [
                     12354,

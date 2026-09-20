@@ -1,4 +1,6 @@
 #include <cstddef>
+#include <cstdint>
+#include <format>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -251,31 +253,159 @@ TEST(OutputSize, EmptyDocumentWithExplicitHeightIsFine) {
 // 豆腐（DESIGN.md §3-6 の唯一の例外: エラーではなく警告で続行）
 // ---------------------------------------------------------------------------
 
+// 警告 1 件を「コードポイント + 行:桁」で書ける短縮形（期待値を読みやすくする）。
+struct ExpectedWarning {
+  char32_t codepoint = 0;
+  std::uint32_t line = 1;
+  std::uint32_t column = 1;
+};
+
+// 位置つきの警告（ARCHITECTURE.md A31 / issue #9）。位置は「その文字を含むテキストノードの
+// 先頭」で、報告の粒度は (コードポイント, テキストノード) の組ごとに 1 件。
+void expect_warnings(const std::vector<Warning>& warnings,
+                     const std::vector<ExpectedWarning>& expected, std::string_view what) {
+  ASSERT_EQ(warnings.size(), expected.size()) << what;
+  for (std::size_t i = 0; i < expected.size(); ++i) {
+    EXPECT_EQ(warnings[i].kind, WarningKind::MissingGlyph) << what << " #" << i;
+    EXPECT_EQ(warnings[i].codepoint, expected[i].codepoint) << what << " #" << i;
+    const SourceLocation location =
+        warnings[i].location.value_or(SourceLocation{.offset = 0, .line = 0, .column = 0});
+    EXPECT_EQ(location.line, expected[i].line) << what << " #" << i;
+    EXPECT_EQ(location.column, expected[i].column) << what << " #" << i;
+    // detail には RenderError と同じ書式で位置が入る
+    EXPECT_EQ(warnings[i].detail, std::format("no font has a glyph for U+{:04X} at {}:{}",
+                                              static_cast<std::uint32_t>(expected[i].codepoint),
+                                              expected[i].line, expected[i].column))
+        << what << " #" << i;
+  }
+}
+
 TEST(Warnings, MissingGlyphIsReportedAndRenderingContinues) {
+  //                                          1         2         3
+  //                                 123456789012345678901234567890
   const auto result = render(R"(<div style="font-size: 20px">ABC😀あ</div>)", latin_then_japanese(),
                              options_for(320));
   ASSERT_TRUE(result.has_value()) << to_string(result.error());
-  ASSERT_EQ(result->warnings.size(), 1U);
-  EXPECT_EQ(result->warnings[0].kind, WarningKind::MissingGlyph);
-  EXPECT_EQ(result->warnings[0].codepoint, U'\U0001F600');
-  EXPECT_EQ(result->warnings[0].detail, "no font has a glyph for U+1F600");
+  expect_warnings(result->warnings, {{U'\U0001F600', 1, 30}}, "tofu");
   EXPECT_FALSE(result->png.empty());
 }
 
-// 警告の並びはコードポイント昇順に固定する（出現順ではない）。
-TEST(Warnings, SortedByCodepoint) {
-  const auto result =
-      render(R"(<div style="font-size: 20px">😀あ😃</div>)", japanese_fonts(), options_for(320));
+// 同じテキストノードに同じ絵文字が何個あっても 1 件（粒度は「コードポイント × ノード」）。
+// 並びは入力位置の昇順 → コードポイントの昇順。
+TEST(Warnings, DeduplicatedPerNodeAndSortedByPositionThenCodepoint) {
+  //                       1         2         3
+  //              1234567890123456789012345678901234567
+  const auto result = render(R"(<div>😃あ😀😀</div><p>😀</p>)", japanese_fonts(), options_for(320));
   ASSERT_TRUE(result.has_value()) << to_string(result.error());
-  ASSERT_EQ(result->warnings.size(), 2U);
-  EXPECT_EQ(result->warnings[0].codepoint, U'\U0001F600');
-  EXPECT_EQ(result->warnings[1].codepoint, U'\U0001F603');
+  expect_warnings(result->warnings,
+                  {{U'\U0001F600', 1, 6}, {U'\U0001F603', 1, 6}, {U'\U0001F600', 1, 19}}, "dedup");
+}
+
+// 位置が違うだけの `<span>` は shape() を切らない（A27 / A31）が、警告は別件になる。
+TEST(Warnings, SameCodepointInDifferentNodesIsReportedSeparately) {
+  //                       1         2         3         4
+  //              1234567890123456789012345678901234567890123456
+  const auto result =
+      render(R"(<div><span>😀</span><span>😀</span></div>)", japanese_fonts(), options_for(320));
+  ASSERT_TRUE(result.has_value()) << to_string(result.error());
+  expect_warnings(result->warnings, {{U'\U0001F600', 1, 12}, {U'\U0001F600', 1, 26}}, "two spans");
+}
+
+// 文字参照（&#x1F600;）でも位置はテキストノードの先頭。桁をコードポイント単位で
+// 遡らないので、参照の綴りの長さに引きずられない。
+TEST(Warnings, CharacterReferenceReportsTheTextNodeStart) {
+  //                       1         2
+  //              1234567890123456789012345
+  const auto result = render(R"(<div>ab&#x1F600;</div>)", japanese_fonts(), options_for(320));
+  ASSERT_TRUE(result.has_value()) << to_string(result.error());
+  expect_warnings(result->warnings, {{U'\U0001F600', 1, 6}}, "character reference");
+}
+
+// 空白の畳み込み（A14）と改行をまたいでも、元のテキストノードの先頭が出る。
+TEST(Warnings, WhitespaceCollapsingKeepsTheNodeStart) {
+  constexpr std::string_view kHtml = R"(<div>
+  あ
+  😀
+</div>)";
+  const auto result = render(kHtml, japanese_fonts(), options_for(320));
+  ASSERT_TRUE(result.has_value()) << to_string(result.error());
+  expect_warnings(result->warnings, {{U'\U0001F600', 1, 6}}, "collapsed whitespace");
+}
+
+// <br> はテキストノードを割る。前後で別のノードなので位置も別。
+TEST(Warnings, BrSplitsTheTextNodes) {
+  //                       1         2
+  //              12345678901234567890123456
+  const auto result = render(R"(<div>😀<br>😃</div>)", japanese_fonts(), options_for(320));
+  ASSERT_TRUE(result.has_value()) << to_string(result.error());
+  expect_warnings(result->warnings, {{U'\U0001F600', 1, 6}, {U'\U0001F603', 1, 11}}, "br");
+}
+
+// ルビ: 親文字はそのテキストノード、<rt> は要素そのものの位置（ルビ文字は <rt> の子を
+// 連結して空白を畳み込んだ 1 本なので、個々のテキストノードには遡らない。A31）。
+TEST(Warnings, RubyBaseAndRtAreReportedAtTheirOwnNodes) {
+  //                       1         2         3         4
+  //              1234567890123456789012345678901234567890123456
+  const auto result =
+      render(R"(<div><ruby>😀<rt>😃</rt></ruby></div>)", japanese_fonts(), options_for(320));
+  ASSERT_TRUE(result.has_value()) << to_string(result.error());
+  expect_warnings(result->warnings, {{U'\U0001F600', 1, 12}, {U'\U0001F603', 1, 13}}, "ruby");
+}
+
+// フォールバックで run が分かれても（欧文 → 和文 → 豆腐）位置は変わらない。
+TEST(Warnings, FontFallbackRunBoundariesDoNotMoveThePosition) {
+  //                       1         2
+  //              1234567890123456789012345
+  const auto result = render(R"(<div>Aあ😀A</div>)", latin_then_japanese(), options_for(320));
+  ASSERT_TRUE(result.has_value()) << to_string(result.error());
+  expect_warnings(result->warnings, {{U'\U0001F600', 1, 6}}, "fallback");
+}
+
+// 無名ブロック（インラインとブロックが混ざった子）と flex アイテムの中でも同じ。
+TEST(Warnings, AnonymousBlocksAndFlexItemsKeepThePosition) {
+  //                       1         2         3         4         5
+  //              123456789012345678901234567890123456789012345678901234567890
+  const auto result = render(R"(<div>😀<div>あ</div></div><div style="display:flex">)"
+                             R"(<div>😃</div></div>)",
+                             japanese_fonts(), options_for(320));
+  ASSERT_TRUE(result.has_value()) << to_string(result.error());
+  expect_warnings(result->warnings, {{U'\U0001F600', 1, 6}, {U'\U0001F603', 1, 56}},
+                  "anonymous / flex");
+}
+
+// 縦書きでも同じ（豆腐は立てる。位置の出どころは書字方向に依らない）。
+TEST(Warnings, VerticalWritingModeReportsTheSamePosition) {
+  RenderOptions options = options_for(320);
+  options.viewport_height = 240;
+  //                       1         2         3         4
+  //              1234567890123456789012345678901234567890123456
+  const auto result =
+      render(R"(<div style="writing-mode: vertical-rl">あ😀</div>)", japanese_fonts(), options);
+  ASSERT_TRUE(result.has_value()) << to_string(result.error());
+  expect_warnings(result->warnings, {{U'\U0001F600', 1, 40}}, "vertical");
 }
 
 TEST(Warnings, NoneForOrdinaryJapanese) {
   const auto result = render(kSample, japanese_fonts(), options_for(320));
   ASSERT_TRUE(result.has_value()) << to_string(result.error());
   EXPECT_TRUE(result->warnings.empty());
+}
+
+// 受け入れ条件（issue #9）: --dump-stage box に豆腐の記録と断片の元位置が出る。
+TEST(Warnings, BoxDumpCarriesTofuRecordsAndFragmentLocations) {
+  const auto dumped =
+      dump(R"(<div>あ😀</div>)", japanese_fonts(), ImageSet{}, options_for(320), DumpStage::Box);
+  ASSERT_TRUE(dumped.has_value()) << to_string(dumped.error());
+  EXPECT_NE(dumped->find(R"("missing_glyphs")"), std::string::npos);
+  EXPECT_NE(dumped->find(R"("codepoint": "U+1F600")"), std::string::npos);
+  EXPECT_NE(dumped->find(R"("location": "1:6")"), std::string::npos);
+
+  // 豆腐が無ければキーごと出ない
+  const auto clean =
+      dump(R"(<div>あ</div>)", japanese_fonts(), ImageSet{}, options_for(320), DumpStage::Box);
+  ASSERT_TRUE(clean.has_value()) << to_string(clean.error());
+  EXPECT_EQ(clean->find(R"("missing_glyphs")"), std::string::npos);
+  EXPECT_NE(clean->find(R"("location": "1:6")"), std::string::npos);
 }
 
 // ---------------------------------------------------------------------------

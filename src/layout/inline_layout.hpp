@@ -20,6 +20,9 @@ struct InlineInput {
   float content_inline_start = 0;  // 絶対（論理座標）
   float content_inline_size = 0;  // 行分割の利用可能幅。<img> の `%` 幅の基準でもある
   float content_block_start = 0;  // 絶対（論理座標）
+  // IFC を持つブロックの位置（支柱の位置の層に入る。A31）。支柱は文字ではないので
+  // 豆腐にはならないが、位置の層に「どこにも属さない添字」を作らないために入れておく。
+  SourceLocation location;
 };
 
 // 行ボックスの列を block 方向に積んで返す。内容が空（子なし / 空白だけ）なら空の列。

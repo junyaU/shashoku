@@ -202,7 +202,8 @@ Result<BlockBox> LayoutEngine::layout_block(const BlockInput& input, const BoxSi
                                    .block_style = input.style,
                                    .content_inline_start = content_inline_start,
                                    .content_inline_size = sizing.content_inline_size,
-                                   .content_block_start = content_block_start};
+                                   .content_block_start = content_block_start,
+                                   .location = input.location};
     Result<std::vector<LineBox>> lines = layout_inline(inline_input, *this);
     if (!lines) {
       return std::unexpected(lines.error());
@@ -299,6 +300,9 @@ Result<BoxTree> layout_root(const style::StyledNode& root, const Options& option
   tree.viewport_width = options.viewport_width;
   tree.viewport_height = options.viewport_height;
   tree.root = std::move(*box);
+  // 豆腐の記録（A31）。同じ段落を計測と配置で何度組んでも重複しないよう LayoutEngine が
+  // (位置, コードポイント) で重複を除いて溜めており、並びも決定的（入力位置 → コードポイント）。
+  tree.missing_glyphs = engine.missing_glyphs();
   return tree;
 }
 

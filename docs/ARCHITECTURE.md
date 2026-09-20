@@ -413,6 +413,43 @@ A19 で `GlyphSource::rasterize()` を `Result` にしたが、計測側は値�
   `remember()` する）。偽の `TextMeasurer`（`tests/layout/test_support.hpp`）には失敗を注入する口
   （`fail_on` / `fail_metrics`）を足し、layout が伝播することをテストで固定した
 
+**A31. 豆腐の警告は ③ レイアウトが組み立てる。`Shaper` は何も溜めない。**
+DESIGN.md §6-6 は豆腐の警告を「コードポイント **＋位置**」と定めているのに、公開の `Warning` は
+位置を持たず、`Shaper` が「見たコードポイントの集合」を副作用として溜めていた（issue #9）。
+`Shaper` は素の `u32string_view` しか受け取らないので、原理的にどの要素の文字かを知らない。
+向きを変えて、**位置を知っている側（layout）が、シェーピングの結果から拾う**ようにした:
+
+- **`Shaper` は純粋になった。** `take_missing_glyphs()` と内部の集合を削除し、豆腐は
+  `ShapedCluster::missing` で返すだけにした。同じ入力からは必ず同じ結果が返るので、
+  固有寸法の計測で同じ段落を何度シェーピングしても結果が変わらない
+- **位置は文字ごとの属性の表（A27）の 4 つめの層。** `shape()` の区間も `TextFragment` も
+  この層では切らない。**位置をシェーピング属性や装飾属性に入れると、同じ見た目の `<span>` を
+  2 つに割っただけでカーニングと合字が消える**（issue #8 の再発）
+- **粒度は「その文字を含むテキストノードの先頭」**（= `StyledNode::location`）。文字単位の L:C は
+  文字参照（`&#x1F600;` は 9 バイトで 1 文字）と空白の畳み込み（A14）を遡らないと出せず、
+  html のテキストノードが「解決後の文字 → ソースのバイト位置」を持っていない。
+  **不正確な位置を出すくらいなら出さない**方を選んだ（html / style には手を入れていない。
+  必要になったときに足すものは下の「残した穴」）。`<rt>` のルビ文字だけは、子のテキストノードを
+  連結して空白を畳み込んだ 1 本なので `<rt>` 要素自身の位置を使う
+- **報告は (コードポイント, テキストノード) の組ごとに 1 件。** 同じノードに同じ絵文字が 5 個
+  あっても 1 件、別のノードなら別件。`LayoutEngine` が `std::set<MissingGlyph>` で重複を除き、
+  **入力位置の昇順 → コードポイントの昇順**で返す（`std::set` の順序がそのまま出力の順序。
+  ポインタ値も unordered の反復順も出力に出さない）。同じ段落は計測と配置で何度も組まれる
+  （配置は d² 回、`<img>` を含む段落は準備も複数回。A29）ので、「組むたびに積む」形では
+  重複する。メモの有無で内容が変わらないことは性質テスト（`layout_without_memo()`）で固定した
+- **運び方は `BoxTree::missing_glyphs`。** ダンプできない中間表現を作らない（DESIGN.md §3-3）ため、
+  `--dump-stage box` に `"missing_glyphs": [{"codepoint": "U+1F600", "location": "1:24"}]` が出る
+  （1 件も無ければキーごと省く）。同時に `TextFragment` にも `location` を足した（断片の先頭の
+  グリフが属するノード）ので、「この行のこの断片は HTML のどこから来たか」をダンプで引ける
+- **公開 API**: `Warning` に `std::optional<SourceLocation> location` を足し、`detail` の末尾に
+  `to_string(RenderError)` と同じ書式で ` at L:C` を付ける。CLI は detail をそのまま stderr に出す
+
+**残した穴**（直すなら html / style から）: 文字単位の桁を出すには、`html::Node` のテキストに
+「文字参照を解決したあとの文字 → ソースのバイト位置」の対応（例: 文字ごとのオフセット表、または
+「参照を含まない区間」の並び）が要る。平坦化の段では畳み込み前の添字まで追えている
+（`inline_collect.cpp` の `Collapsed::source`）ので、html が上の対応を持てば layout 側は
+`FlatChar` に「ノード内オフセット」を 1 本足すだけで桁まで出せる。
+
 ---
 
 ## 2. モジュールと依存
@@ -581,9 +618,8 @@ class FontStore {                       // フォント実体の唯一の所有�
   Result<FontId> load(std::span<const std::uint8_t> bytes);  // バイト列をコピーして保持。追加順 = フォールバック順
   // family 名・weight の照会、(cp → どのフォントのどのグリフか) の解決 など
 };
-class Shaper final : public TextMeasurer { /* FontStore を参照。HarfBuzz */ };
+class Shaper final : public TextMeasurer { /* FontStore を参照。HarfBuzz。副作用を持たない */ };
 class FreeTypeGlyphSource final : public raster::GlyphSource { /* FontStore を参照 */ };
-struct MissingGlyph { char32_t cp; };   // 豆腐の記録。Shaper が溜め、api が Warning に変換する
 }
 ```
 
@@ -606,7 +642,8 @@ struct MissingGlyph { char32_t cp; };   // 豆腐の記録。Shaper が溜め、
 - run 分割: コードポイントごとにフォールバック列を cmap 引きし、最初にグリフを持つフォントを採用。
   同じフォントが続く区間をまとめて HarfBuzz に渡す。結合文字・異体字セレクタ・ZWJ は直前の
   文字と同じ run に入れる（別フォントに割らない）
-- 豆腐: どのフォントにもないコードポイントは `MissingGlyph` に記録し、`□`（U+25A1）を
+- 豆腐: どのフォントにもないコードポイントは `ShapedCluster::missing` で返し（**Shaper は
+  溜めない**。警告を組み立てるのは ③ レイアウト。A31）、`□`（U+25A1）を
   **フォールバック列の順に全フォントから探して**、最初に見つかったフォントのグリフを
   1em の送りで出す（第一フォントだけを見ると、欧文フォントが先頭のときに幅の狭い `.notdef` が
   1em の枠の左端に出て不揃いになる）。どのフォントにも `□` が無ければ第一フォントの `.notdef`。
@@ -709,7 +746,9 @@ std::string dump_json(const BoxTree&);
 - ボックスツリーは論理座標・ルート原点からの絶対位置（A1）。型は `layout/box_tree.hpp` に
   layout の実装者が定義する。最低限: ブロックの border-box と塗り情報、行ボックス、
   行内のテキスト断片（FontId・サイズ・色・sideways・グリフごとの inline 位置と offset・
-  ベースライン / 中心軸の block 位置）、画像断片、インライン背景
+  ベースライン / 中心軸の block 位置・**元ノードの位置**）、画像断片、インライン背景。
+  加えて豆腐の記録（`BoxTree::missing_glyphs`。A31）を持つ。**絵には影響しない**
+  （paint は読まない）が、api が `Warning` にし、`dump_json()` が出す
 - **block**: 幅は親から降り、高さは子から戻る。`width: auto` は利用可能幅いっぱい。
   `margin: 0 auto` の中央寄せ。兄弟間のマージン相殺（A10）。子が inline と block の混在なら
   inline の連続を無名ブロックで包む
@@ -724,6 +763,8 @@ std::string dump_json(const BoxTree&);
   `TextFragment` は「同じ FontId・サイズ・色・sideways の連続」で切る（1 回の shape 結果を、
   装飾の境界とフォールバックの境界で複数の断片に切る。位置は動かない）。
   行の高さは行内の各断片の `line-height` の最大、ベースラインは半行間（half-leading）で決める。
+  (b) のあと、豆腐のクラスタ（`ShapedCluster::missing`）を文字ごとの属性の表の位置の層と
+  突き合わせて `LayoutEngine` に記録する（A31。段落が何度組まれても重複しない）。
   ファイルは段の境界で分けてある（A27 の末尾）。(a)〜(c) の結果 `PreparedParagraph` は
   行の幅に依らないので、固有寸法の計測と実際の配置で同じものを使える
   （`inline_intrinsic()` の min-content / max-content にもアイテムごとのポリシーが効く）
@@ -763,7 +804,11 @@ std::string dump_json(const BoxTree&);
 漏らさない。`FontSet` / `ImageSet` はバイト列を保持するだけで、解釈は `render()` の中で行う。
 
 出力サイズ: 幅 = `viewport_width`、高さ = `viewport_height`、未指定ならルートの内容の高さの切り上げ
-（0 なら `InvalidOption`）。どちらも `scale` を掛けて切り上げる。豆腐は `Warning` として返す。
+（0 なら `InvalidOption`）。どちらも `scale` を掛けて切り上げる。豆腐は `Warning` として返す:
+`BoxTree::missing_glyphs`（③ が入力位置の昇順 → コードポイントの昇順に並べたもの。A31）を
+そのまま写し、`detail` の末尾に `to_string(RenderError)` と同じ書式で ` at L:C` を付ける。
+api は並べ替えない（順序を決めるのは ③ の仕事）。CLI は `warning[missing-glyph]: <detail>` を
+stderr に出す。
 
 入力の上限（A25）は api が一手に引き受ける。順序は
 `validate(options)` → (a) `check_input_limits` → `html::parse` → (b) `check_dom_limits` →

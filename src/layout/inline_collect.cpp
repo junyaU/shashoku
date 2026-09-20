@@ -16,7 +16,6 @@
 namespace shashoku::layout {
 namespace {
 
-using style::ComputedStyle;
 using style::StyledNode;
 
 // CSS Text 3 §4.1.1 の collapsible white space（white-space: normal 固定）。
@@ -63,8 +62,10 @@ Result<void> collect(std::span<const StyledNode> nodes, LayoutEngine& engine, fl
 Result<void> collect_element(const StyledNode& node, LayoutEngine& engine, float percent_basis,
                              Collected& out);
 
-std::size_t style_index(Collected& out, const ComputedStyle& style, const LayoutEngine& engine) {
-  return out.styles.intern(style, engine.map().direction());
+// 文字の属性を登録する。位置の層（A31）には「その文字を含むノードの先頭」を入れる:
+// 豆腐の警告と --dump-stage box に出すためだけの層で、見た目にもシェーピングにも効かない。
+std::size_t style_index(Collected& out, const StyledNode& node, const LayoutEngine& engine) {
+  return out.styles.intern(node.style, engine.map().direction(), node.location);
 }
 
 Result<void> collect_image(const StyledNode& node, LayoutEngine& engine, float percent_basis,
@@ -86,7 +87,7 @@ Result<void> collect_image(const StyledNode& node, LayoutEngine& engine, float p
                                   .border_radius = std::max(node.style.border_radius, 0.0F)}});
   out.chars.push_back(FlatChar{.cp = U'￼',
                                .kind = FlatChar::Kind::Image,
-                               .style = style_index(out, node.style, engine),
+                               .style = style_index(out, node, engine),
                                .image = out.images.size() - 1});
   return {};
 }
@@ -119,7 +120,7 @@ Result<void> collect_ruby(const StyledNode& node, LayoutEngine& engine, float pe
       if (!text) {
         return std::unexpected(text.error());
       }
-      push_text(out, *text, style_index(out, child.style, engine));
+      push_text(out, *text, style_index(out, child, engine));
       continue;
     }
     if (child.style.display == style::Display::None) {
@@ -136,7 +137,7 @@ Result<void> collect_ruby(const StyledNode& node, LayoutEngine& engine, float pe
       }
       out.rubies.push_back(RubyGroup{.base_begin = base_begin,
                                      .base_end = out.chars.size(),
-                                     .rt_style = style_index(out, child.style, engine),
+                                     .rt_style = style_index(out, child, engine),
                                      .rt_text = std::move(*ruby)});
       base_begin = out.chars.size();
       continue;
@@ -163,7 +164,7 @@ Result<void> collect_element(const StyledNode& node, LayoutEngine& engine, float
   if (node.tag == "br") {
     out.chars.push_back(FlatChar{.cp = U'\n',
                                  .kind = FlatChar::Kind::ForcedBreak,
-                                 .style = style_index(out, node.style, engine),
+                                 .style = style_index(out, node, engine),
                                  .image = kNone});
     return {};
   }
@@ -213,7 +214,7 @@ Result<void> collect(std::span<const StyledNode> nodes, LayoutEngine& engine, fl
       if (!text) {
         return std::unexpected(text.error());
       }
-      push_text(out, *text, style_index(out, node.style, engine));
+      push_text(out, *text, style_index(out, node, engine));
       continue;
     }
     if (node.style.display == style::Display::None) {

@@ -16,7 +16,9 @@ namespace shashoku {
 
 struct RenderResult {
   std::vector<std::uint8_t> png;  // PNG バイト列（RGBA8 / 非インターレース）
-  std::vector<Warning> warnings;  // 豆腐など、続行できた問題。コードポイント昇順
+  // 豆腐など、続行できた問題。並びは入力位置の昇順 → コードポイントの昇順（決定的）。
+  // 同じ (コードポイント, テキストノード) の組は 1 件にまとまる（ARCHITECTURE.md A31）
+  std::vector<Warning> warnings;
   int width = 0;   // 出力画像の幅（デバイスピクセル = ceil(CSS px * scale)）
   int height = 0;  // 同・高さ
 };

@@ -82,6 +82,20 @@ flex コンテナの中では一切相殺しない。ブラウザとのピクセ
 **A15. 未知の font-family は読み飛ばす。** `font-family` はもともとフォールバック列なので、
 FontSet にない名前を飛ばすのは「黙って崩す」に当たらない。列を使い切ったら FontSet の追加順で探す。
 
+
+**A16. 行末の約物の空きは「収まらないときだけ」詰める。** `text-align: right` や justify の行末に
+句読点が来ると、句読点の後ろ半分の空き（0.5em）のぶん、字面が版面の端より内側に見える。
+これは CSS の `text-spacing-trim: normal`（allow-end）と同じ挙動で、ブラウザでも同じ絵になるので
+既定はこのままにする。常に詰めたい（行末約物半角）需要が出たら `linebreak::Config` にオプションを足す。
+
+**A17. `line-break: auto` は「エンジンの既定に従う」。** CSS では auto の中身は実装依存なので、
+`RenderOptions::line_break.strictness`（既定は Strict）を使う。CSS で strict / normal / loose が
+明示されたらそちらが優先。
+
+**A18. `<img>` は交差軸の stretch で歪めない。** flex アイテムの `<img>` は `align-items: stretch` でも
+縦横比を保つ（CSS では歪むが、OG 画像でアイコンが潰れるのは誰も望まない）。主軸方向の grow / shrink は
+CSS どおりに効く。`box-sizing` は content-box のみ（A11）なので、1200×630 の箱に padding 80px を
+入れるなら `width: 1040px; height: 470px` と書く。
 ---
 
 ## 2. モジュールと依存

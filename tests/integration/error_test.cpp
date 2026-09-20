@@ -114,15 +114,13 @@ TEST(RenderErrors, BrokenImageSaysWhichOne) {
   EXPECT_NE(result.error().message.find("broken"), std::string::npos) << result.error().message;
 }
 
-// ImageSet に無い名前は ImageNotFound（A12）。layout の第 2 段が入るまでは <img> 自体が
-// UnsupportedLayout なので、どちらでも「黙って無視しない」ことだけを見る。
-TEST(RenderErrors, UnknownImageNameIsNotIgnored) {
+// ImageSet に無い名前は ImageNotFound（A12）。黙って空白を描いたりしない。
+TEST(RenderErrors, UnknownImageName) {
   const auto result =
       render(R"(<img src="missing">)", japanese_fonts(), ImageSet{}, options_for(320));
   ASSERT_FALSE(result.has_value());
-  EXPECT_TRUE(result.error().kind == ErrorKind::ImageNotFound ||
-              result.error().kind == ErrorKind::UnsupportedLayout)
-      << to_string(result.error());
+  EXPECT_EQ(result.error().kind, ErrorKind::ImageNotFound) << to_string(result.error());
+  EXPECT_NE(result.error().message.find("missing"), std::string::npos) << result.error().message;
   EXPECT_TRUE(result.error().location.has_value());
 }
 

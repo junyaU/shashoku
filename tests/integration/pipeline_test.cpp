@@ -37,6 +37,67 @@ TEST(Determinism, FreshFontSetsGiveSameBytes) {
 }
 
 // ---------------------------------------------------------------------------
+// 画像の経路（A12）: ImageSet → png::decode → ImageLookup → ImageFragment
+//                    → DrawImage → ラスタライザの画像テーブル
+// ---------------------------------------------------------------------------
+
+constexpr std::string_view kImageHtml =
+    R"(<div style="padding: 6px"><img src="icon" style="width: 32px; height: 32px"> 図版</div>)";
+
+TEST(Images, RendersAndIsDeterministic) {
+  const auto first = render(kImageHtml, japanese_fonts(), icon_images(), options_for(200));
+  const auto second = render(kImageHtml, japanese_fonts(), icon_images(), options_for(200));
+  ASSERT_TRUE(first.has_value()) << to_string(first.error());
+  ASSERT_TRUE(second.has_value()) << to_string(second.error());
+  EXPECT_EQ(first->png, second->png);
+  EXPECT_TRUE(first->warnings.empty());
+}
+
+// 画像の固有寸法（64x64）が幅・高さの指定なしでそのまま使われる。
+// display: block で測る（インラインの画像はベースラインに乗るので、行ボックスに
+// フォントのディセントぶんが足される）。
+TEST(Images, IntrinsicSize) {
+  const auto result = render(R"(<img src="icon" style="display: block">)", japanese_fonts(),
+                             icon_images(), options_for(200));
+  ASSERT_TRUE(result.has_value()) << to_string(result.error());
+  EXPECT_EQ(result->height, 64);
+}
+
+// 名前が違えば別の画像として引ける（添字 = ImageId の対応が崩れていない）。
+TEST(Images, SeveralImagesKeepTheirNames) {
+  ImageSet images;
+  images.add("first", test_icon_bytes());
+  images.add("second", test_icon_bytes());
+  const auto result =
+      render(R"(<img src="second" style="display: block; width: 16px; height: 16px">)",
+             japanese_fonts(), images, options_for(200));
+  ASSERT_TRUE(result.has_value()) << to_string(result.error());
+  EXPECT_EQ(result->height, 16);
+}
+
+TEST(Images, BrokenPngIsRejected) {
+  ImageSet images;
+  std::vector<std::uint8_t> broken = test_icon_bytes();
+  ASSERT_GT(broken.size(), 40U);
+  broken[30] ^= 0xFFU;  // IHDR の中身を壊す（CRC が合わなくなる）
+  images.add("icon", broken);
+
+  const auto result = render(kImageHtml, japanese_fonts(), images, options_for(200));
+  ASSERT_FALSE(result.has_value());
+  EXPECT_EQ(result.error().kind, ErrorKind::ImageDecode) << to_string(result.error());
+  EXPECT_NE(result.error().message.find("icon"), std::string::npos) << result.error().message;
+}
+
+TEST(Images, DuplicateNameIsRejected) {
+  ImageSet images;
+  images.add("icon", test_icon_bytes());
+  images.add("icon", test_icon_bytes());
+  const auto result = render(kImageHtml, japanese_fonts(), images, options_for(200));
+  ASSERT_FALSE(result.has_value());
+  EXPECT_EQ(result.error().kind, ErrorKind::InvalidOption);
+}
+
+// ---------------------------------------------------------------------------
 // 出力サイズ（ARCHITECTURE.md §3.10）
 // ---------------------------------------------------------------------------
 

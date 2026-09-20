@@ -28,6 +28,30 @@ if(CASE STREQUAL "png_ok")
   file(READ "${output}" signature LIMIT 8 HEX)
   expect_equal("${signature}" "89504e470d0a1a0a" "PNG signature")
 
+elseif(CASE STREQUAL "image_ok")
+  # --image name=path の経路（A12）。OG カードはアイコンを引けないと ImageNotFound になる。
+  set(output "${WORK_DIR}/og_card.png")
+  file(REMOVE "${output}")
+  execute_process(
+    COMMAND "${CLI}" "${SOURCE_DIR}/examples/og_card.html"
+            --font "${FONT_DIR}/NotoSansJP-Bold.otf" --font "${font}"
+            --image "icon=${SOURCE_DIR}/tests/data/icon.png"
+            -o "${output}" --width 1200 --height 630 --scale 0.5
+    RESULT_VARIABLE status ERROR_VARIABLE stderr_text)
+  expect_equal("${status}" "0" "exit code (stderr: ${stderr_text})")
+  file(READ "${output}" signature LIMIT 8 HEX)
+  expect_equal("${signature}" "89504e470d0a1a0a" "PNG signature")
+
+  # 画像を渡さなければ ImageNotFound で落ちる（黙って描き飛ばさない）
+  execute_process(
+    COMMAND "${CLI}" "${SOURCE_DIR}/examples/og_card.html" --font "${font}"
+            -o "${WORK_DIR}/never.png" --width 1200 --height 630
+    RESULT_VARIABLE missing_status ERROR_VARIABLE missing_stderr)
+  expect_equal("${missing_status}" "1" "exit code without --image")
+  if(NOT missing_stderr MATCHES "image-not-found")
+    message(FATAL_ERROR "stderr に image-not-found がありません: ${missing_stderr}")
+  endif()
+
 elseif(CASE STREQUAL "unsupported_css")
   set(html "${WORK_DIR}/unsupported.html")
   file(WRITE "${html}" "<div style=\"float: left\">あ</div>\n")

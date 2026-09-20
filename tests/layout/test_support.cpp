@@ -105,13 +105,15 @@ text::ShapedText FakeMeasurer::shape(std::u32string_view text, const text::TextS
     if (combining) {
       advance = 0;  // 結合文字・異体字セレクタは直前のクラスタに吸収する（送り 0）
     }
+    const bool sideways =
+        style.direction == text::Direction::Vertical && sideways_latin_in_vertical && cp < 0x80;
     out.glyphs.push_back(
         text::ShapedGlyph{.font = fallback_chars.find(cp) == std::u32string::npos ? 0U : 1U,
                           .glyph_id = static_cast<GlyphId>(cp & 0xFFFFU),
                           .advance = advance,
                           .x_offset = 0,
                           .y_offset = 0,
-                          .sideways = false});
+                          .sideways = sideways});
     const auto glyph_end = static_cast<std::uint32_t>(out.glyphs.size());
     if (combining) {
       out.clusters.back().text_end = static_cast<std::uint32_t>(i + 1);
@@ -173,6 +175,33 @@ Tree br() {
   return out;
 }
 
+Tree ruby(std::vector<Tree> children, StyleFn style) {
+  Tree out;
+  out.tag = "ruby";
+  out.style = [style = std::move(style)](style::ComputedStyle& computed) {
+    computed.display = style::Display::Inline;
+    if (style) {
+      style(computed);
+    }
+  };
+  out.children = std::move(children);
+  return out;
+}
+
+Tree rt(std::string_view content, StyleFn style) {
+  Tree out;
+  out.tag = "rt";
+  out.style = [style = std::move(style)](style::ComputedStyle& computed) {
+    computed.display = style::Display::Inline;
+    computed.font_size = computed.font_size / 2;  // UA スタイル（ARCHITECTURE.md §3.7）
+    if (style) {
+      style(computed);
+    }
+  };
+  out.children.push_back(text(content));
+  return out;
+}
+
 Tree flex(std::vector<Tree> children, StyleFn style) {
   Tree out;
   out.tag = "div";
@@ -227,6 +256,21 @@ style::StyledNode build(std::vector<Tree> children, StyleFn style) {
   };
   root.children = std::move(children);
   return build_node(root, style::ComputedStyle{});
+}
+
+style::StyledNode build_vertical(std::vector<Tree> children, StyleFn style) {
+  return build(std::move(children), [style = std::move(style)](style::ComputedStyle& computed) {
+    computed.writing_mode = WritingMode::VerticalRl;
+    if (style) {
+      style(computed);
+    }
+  });
+}
+
+Options vertical_options(float viewport_width, float viewport_height) {
+  Options out = make_options(viewport_width);
+  out.viewport_height = viewport_height;
+  return out;
 }
 
 Options make_options(float viewport_width) {

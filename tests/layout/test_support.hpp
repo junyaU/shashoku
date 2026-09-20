@@ -40,6 +40,9 @@ class FakeMeasurer final : public text::TextMeasurer {
   // メトリクスの比率。既定は 0.88 / 0.12（dump の文字列固定テストだけ切りのいい値に変える）
   float ascent_ratio = kAscentRatio;
   float descent_ratio = kDescentRatio;
+  // 縦書き（TextStyle::direction == Vertical）では ASCII を横倒しにする
+  // （実物の Shaper が UAX #50 の Vertical_Orientation でやることの最小の模倣）。
+  bool sideways_latin_in_vertical = true;
   // shape() を呼んだ回数（A6「シェーピングは段落全体で 1 回」の検査用）
   int shape_calls = 0;
 };
@@ -65,6 +68,10 @@ struct Tree {
 [[nodiscard]] Tree block(std::vector<Tree> children, StyleFn style = nullptr);
 [[nodiscard]] Tree inline_box(std::vector<Tree> children, StyleFn style = nullptr);
 [[nodiscard]] Tree br();
+// <ruby>。子は親文字（text / inline_box）と rt() を交互に並べる。
+[[nodiscard]] Tree ruby(std::vector<Tree> children, StyleFn style = nullptr);
+// <rt>。UA スタイルの font-size 50% をここで当てる。
+[[nodiscard]] Tree rt(std::string_view content, StyleFn style = nullptr);
 // display: flex のブロック。
 [[nodiscard]] Tree flex(std::vector<Tree> children, StyleFn style = nullptr);
 // <img>（display: inline）。属性の width / height は attr_* で渡す。
@@ -76,9 +83,13 @@ struct Tree {
 
 // 合成ルート "#root"（display: block）を作る。
 [[nodiscard]] style::StyledNode build(std::vector<Tree> children, StyleFn style = nullptr);
+// writing-mode: vertical-rl のルート。
+[[nodiscard]] style::StyledNode build_vertical(std::vector<Tree> children, StyleFn style = nullptr);
 
 // ---- レイアウトの呼び出し --------------------------------------------------------
 [[nodiscard]] Options make_options(float viewport_width);
+// 縦書き用（viewport_height が必須）。
+[[nodiscard]] Options vertical_options(float viewport_width, float viewport_height);
 
 // テスト用の画像テーブル（src → ImageId と固有寸法）。
 struct ImageEntry {

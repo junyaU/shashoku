@@ -48,36 +48,6 @@ TEST(LayoutError, ImageNotFound) {
   EXPECT_EQ(flex_tree.error().kind, ErrorKind::ImageNotFound);
 }
 
-// ルビは flex コンテナの中でも未実装（第 3 段）。
-TEST(LayoutError, RubyInsideFlexIsNotImplementedYet) {
-  FakeMeasurer measurer;
-  const auto root = build({flex({element("ruby", Display::Inline, {text("漢")})})});
-  const auto tree = run_layout(root, 200, measurer);
-  ASSERT_FALSE(tree.has_value());
-  EXPECT_EQ(tree.error().kind, ErrorKind::UnsupportedLayout);
-  EXPECT_EQ(tree.error().message, "<ruby> layout is not implemented yet");
-}
-
-TEST(LayoutError, RubyIsNotImplementedYet) {
-  FakeMeasurer measurer;
-  const auto root = build({block({element("ruby", Display::Inline, {text("漢")})})});
-  const auto tree = run_layout(root, 200, measurer);
-  ASSERT_FALSE(tree.has_value());
-  EXPECT_EQ(tree.error().kind, ErrorKind::UnsupportedLayout);
-  EXPECT_EQ(tree.error().message, "<ruby> layout is not implemented yet");
-}
-
-TEST(LayoutError, VerticalWritingModeIsNotImplementedYet) {
-  FakeMeasurer measurer;
-  const auto root = build({block({text("あ")})}, [](ComputedStyle& style) {
-    style.writing_mode = WritingMode::VerticalRl;
-  });
-  const auto tree = run_layout(root, 200, measurer);
-  ASSERT_FALSE(tree.has_value());
-  EXPECT_EQ(tree.error().kind, ErrorKind::UnsupportedLayout);
-  EXPECT_EQ(tree.error().message, "vertical-rl writing mode is not implemented yet");
-}
-
 // A1: writing-mode は文書全体で 1 つ。
 TEST(LayoutError, MixedWritingModesAreRejected) {
   FakeMeasurer measurer;

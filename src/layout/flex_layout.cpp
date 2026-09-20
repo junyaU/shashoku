@@ -105,9 +105,14 @@ Result<std::vector<Item>> build_items(LayoutEngine& engine, const BlockInput& in
       ++i;
       continue;
     }
-    if (children[i].type == StyledNode::Type::Text) {
+    // テキストと <ruby> の連続は 1 つの無名アイテムにまとめる。<ruby> を単独の
+    // flex アイテムにするとブロック化されて親文字とルビの組が壊れるため。
+    const auto inline_like = [](const StyledNode& node) {
+      return node.type == StyledNode::Type::Text || node.tag == "ruby";
+    };
+    if (inline_like(children[i])) {
       std::size_t end = i;
-      while (end < children.size() && children[end].type == StyledNode::Type::Text) {
+      while (end < children.size() && inline_like(children[end])) {
         ++end;
       }
       const std::span<const StyledNode> run = children.subspan(i, end - i);
@@ -126,8 +131,8 @@ Result<std::vector<Item>> build_items(LayoutEngine& engine, const BlockInput& in
     }
     const StyledNode& child = children[i];
     ++i;
-    if (child.tag == "ruby" || child.tag == "rt") {
-      return fail(ErrorKind::UnsupportedLayout, "<" + child.tag + "> layout is not implemented yet",
+    if (child.tag == "rt") {
+      return fail(ErrorKind::UnsupportedLayout, "<rt> is only allowed inside <ruby>",
                   child.location);
     }
     Item item;

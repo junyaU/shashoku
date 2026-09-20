@@ -120,8 +120,18 @@ struct BackgroundScope {
   Color color;
   std::size_t begin = 0;  // 文字の範囲 [begin, end)
   std::size_t end = 0;
-  float ascent = 0;  // block 方向の範囲はその span 自身のフォントメトリクス
-  float descent = 0;
+  // block 方向の範囲。横書きは ascent / descent、縦書きは中心軸から ±(font-size / 2)
+  float start_extent = 0;
+  float size = 0;
+};
+
+// <ruby> の中の「親文字 + <rt>」1 組。親文字は chars の範囲で持つので、
+// 色・背景・フォールバックによる断片の分割は普通のテキストと同じに効く。
+struct RubyGroup {
+  std::size_t base_begin = 0;
+  std::size_t base_end = 0;
+  std::size_t rt_style = 0;
+  std::u32string rt_text;
 };
 
 struct Collected {
@@ -129,6 +139,7 @@ struct Collected {
   std::vector<RunStyle> styles;
   std::vector<BackgroundScope> scopes;  // 外側の span が先（描画順）
   std::vector<ImagePiece> images;
+  std::vector<RubyGroup> rubies;
 };
 
 std::size_t style_index(Collected& out, const ComputedStyle& style) {
@@ -142,8 +153,35 @@ std::size_t style_index(Collected& out, const ComputedStyle& style) {
   return out.styles.size() - 1;
 }
 
+void push_text(Collected& out, std::u32string_view text, std::size_t style_id) {
+  for (const char32_t cp : text) {
+    out.chars.push_back(
+        FlatChar{.cp = cp, .kind = FlatChar::Kind::Text, .style = style_id, .image = kNone});
+  }
+}
+
+// ルビ文字は折り返さないので、空白は 1 個に潰して前後を落としてから使う。
+std::u32string collapse_ruby_text(std::u32string_view text) {
+  std::u32string out;
+  bool pending = false;
+  for (const char32_t cp : text) {
+    if (is_collapsible_space(cp)) {
+      pending = !out.empty();
+      continue;
+    }
+    if (pending) {
+      out.push_back(U' ');
+      pending = false;
+    }
+    out.push_back(cp);
+  }
+  return out;
+}
+
 Result<void> collect(std::span<const StyledNode> nodes, LayoutEngine& engine, float percent_basis,
                      Collected& out);
+Result<void> collect_element(const StyledNode& node, LayoutEngine& engine, float percent_basis,
+                             Collected& out);
 
 Result<void> collect_image(const StyledNode& node, LayoutEngine& engine, float percent_basis,
                            Collected& out) {
@@ -169,6 +207,67 @@ Result<void> collect_image(const StyledNode& node, LayoutEngine& engine, float p
   return {};
 }
 
+// <rt> の中身（テキストだけ）を読む。
+Result<std::u32string> read_ruby_text(const StyledNode& node) {
+  std::u32string out;
+  for (const StyledNode& child : node.children) {
+    if (child.type != StyledNode::Type::Text) {
+      return fail(ErrorKind::UnsupportedLayout,
+                  "<rt> may only contain text (found <" + child.tag + ">)", child.location);
+    }
+    const Result<std::u32string> text = decode_utf8(child.text);
+    if (!text) {
+      return std::unexpected(text.error());
+    }
+    out += *text;
+  }
+  return collapse_ruby_text(out);
+}
+
+// <ruby>: 「<rt> 以外の連続（親文字）」+「直後の <rt>」を 1 組にする。
+// <rt> が続かない親文字はルビなしの普通のテキストとしてそのまま残る。
+Result<void> collect_ruby(const StyledNode& node, LayoutEngine& engine, float percent_basis,
+                          Collected& out) {
+  std::size_t base_begin = out.chars.size();
+  for (const StyledNode& child : node.children) {
+    if (child.type == StyledNode::Type::Text) {
+      const Result<std::u32string> text = decode_utf8(child.text);
+      if (!text) {
+        return std::unexpected(text.error());
+      }
+      push_text(out, *text, style_index(out, child.style));
+      continue;
+    }
+    if (child.style.display == style::Display::None) {
+      continue;
+    }
+    if (child.tag == "rt") {
+      if (out.chars.size() == base_begin) {
+        return fail(ErrorKind::UnsupportedLayout, "<rt> needs base text before it inside <ruby>",
+                    child.location);
+      }
+      Result<std::u32string> ruby = read_ruby_text(child);
+      if (!ruby) {
+        return std::unexpected(ruby.error());
+      }
+      out.rubies.push_back(RubyGroup{.base_begin = base_begin,
+                                     .base_end = out.chars.size(),
+                                     .rt_style = style_index(out, child.style),
+                                     .rt_text = std::move(*ruby)});
+      base_begin = out.chars.size();
+      continue;
+    }
+    if (child.tag == "ruby" || child.tag == "img" || child.tag == "br") {
+      return fail(ErrorKind::UnsupportedLayout,
+                  "<" + child.tag + "> is not supported inside <ruby>", child.location);
+    }
+    if (const Result<void> result = collect_element(child, engine, percent_basis, out); !result) {
+      return result;
+    }
+  }
+  return {};
+}
+
 // インライン box（span など）1 つ。
 Result<void> collect_element(const StyledNode& node, LayoutEngine& engine, float percent_basis,
                              Collected& out) {
@@ -187,20 +286,24 @@ Result<void> collect_element(const StyledNode& node, LayoutEngine& engine, float
   if (node.tag == "img") {
     return collect_image(node, engine, percent_basis, out);
   }
-  if (node.tag == "ruby" || node.tag == "rt") {
-    return fail(ErrorKind::UnsupportedLayout, "<" + node.tag + "> layout is not implemented yet",
-                node.location);
+  if (node.tag == "ruby") {
+    return collect_ruby(node, engine, percent_basis, out);
+  }
+  if (node.tag == "rt") {
+    return fail(ErrorKind::UnsupportedLayout, "<rt> is only allowed inside <ruby>", node.location);
   }
   // background-color があれば、行ごとの背景を出すために文字の範囲を覚える
   std::size_t scope = kNone;
   if (!node.style.background_color.transparent()) {
-    const text::FontMetrics metrics =
-        engine.measurer().metrics(text_style_of(run_style_of(node.style), engine.map()));
-    out.scopes.push_back(BackgroundScope{.color = node.style.background_color,
-                                         .begin = out.chars.size(),
-                                         .end = 0,
-                                         .ascent = metrics.ascent,
-                                         .descent = metrics.descent});
+    const RunStyle run = run_style_of(node.style);
+    const text::FontMetrics metrics = engine.measurer().metrics(text_style_of(run, engine.map()));
+    const bool vertical = engine.map().vertical();
+    out.scopes.push_back(
+        BackgroundScope{.color = node.style.background_color,
+                        .begin = out.chars.size(),
+                        .end = 0,
+                        .start_extent = vertical ? run.font_size / 2 : metrics.ascent,
+                        .size = vertical ? run.font_size : metrics.ascent + metrics.descent});
     scope = out.scopes.size() - 1;
   }
   if (const Result<void> result = collect(node.children, engine, percent_basis, out); !result) {
@@ -222,11 +325,7 @@ Result<void> collect(std::span<const StyledNode> nodes, LayoutEngine& engine, fl
       if (!text) {
         return std::unexpected(text.error());
       }
-      const std::size_t style_id = style_index(out, node.style);
-      for (const char32_t cp : *text) {
-        out.chars.push_back(
-            FlatChar{.cp = cp, .kind = FlatChar::Kind::Text, .style = style_id, .image = kNone});
-      }
+      push_text(out, *text, style_index(out, node.style));
       continue;
     }
     if (node.style.display == style::Display::None) {
@@ -291,21 +390,50 @@ Collapsed collapse_whitespace(const std::vector<FlatChar>& input) {
   return out;
 }
 
+// (b) 1 回の shape() の結果。
+struct ShapedRun {
+  std::size_t style = 0;
+  text::ShapedText shaped;
+};
+
+// ルビ組の親文字の 1 区間（スタイルが同じ連続）。
+struct BaseSegment {
+  std::size_t run = kNone;
+  std::size_t glyph_begin = 0;
+  std::size_t glyph_end = 0;
+  std::size_t style = 0;
+  std::size_t char_begin = 0;
+  std::size_t char_end = 0;
+  float advance = 0;  // クラスタの送りの合計（letter-spacing 込み）
+};
+
+// ルビ 1 組。行分割器から見れば Atomic 1 個で、組の内部では改行しない。
+struct RubyPiece {
+  std::vector<BaseSegment> base;
+  float base_width = 0;
+  std::size_t base_style = 0;
+  float base_ascent = 0;
+  float base_font_size = 0;
+
+  std::size_t rt_run = kNone;
+  std::size_t rt_style = 0;
+  float rt_width = 0;
+  float rt_ascent = 0;
+  float rt_descent = 0;
+  float rt_font_size = 0;
+  std::string rt_text;
+};
+
 // (c) linebreak::Item 1 個の出どころ。
 struct ItemSource {
-  std::size_t run = kNone;  // ForcedBreak と <img> は kNone
+  std::size_t run = kNone;  // ForcedBreak・<img>・ルビ組は kNone
   std::size_t glyph_begin = 0;
   std::size_t glyph_end = 0;
   std::size_t char_begin = 0;  // 畳み込み後の文字の範囲
   std::size_t char_end = 0;
   std::size_t style = 0;
   std::size_t image = kNone;
-};
-
-// (b) 1 回の shape() の結果。
-struct ShapedRun {
-  std::size_t style = 0;
-  text::ShapedText shaped;
+  std::size_t ruby = kNone;
 };
 
 // (e) 行内でアイテムが占めた inline の範囲（インライン背景の矩形に使う）。
@@ -323,7 +451,7 @@ struct FragmentKey {
   bool operator==(const FragmentKey&) const = default;
 };
 
-// ベースラインから上下への広がり。
+// ベースライン（縦書きでは中心軸）から block-start 側 / block-end 側への広がり。
 struct Extent {
   float above = 0;
   float below = 0;
@@ -335,10 +463,66 @@ struct Alignment {
   float justify_share = 0;  // 分割可能位置 1 か所あたりに入れる空き
 };
 
+// 行の断片を積んでいく。グリフを置きながら、フォント・sideways・スタイルが変わったら
+// 新しい TextFragment に切り替える。ベースラインの違うもの（ルビ）は close() で区切る。
+class FragmentWriter {
+ public:
+  FragmentWriter(std::vector<InlineFragment>& content, const std::vector<RunStyle>& styles)
+      : content_(&content), styles_(&styles) {}
+
+  void close() { open_ = kNone; }
+
+  // shaped の [begin, end) のグリフを pen から順に置く（pen はグリフの送りで進む）。
+  void add(const text::ShapedText& shaped, std::size_t begin, std::size_t end, std::size_t style_id,
+           float baseline, const std::string& text, float& pen) {
+    for (std::size_t g = begin; g < end; ++g) {
+      const text::ShapedGlyph& glyph = shaped.glyphs[g];
+      const FragmentKey key{.style = style_id, .font = glyph.font, .sideways = glyph.sideways};
+      if (open_ == kNone || key != key_) {
+        key_ = key;
+        content_->emplace_back(TextFragment{.font = glyph.font,
+                                            .font_size = (*styles_)[style_id].font_size,
+                                            .color = (*styles_)[style_id].color,
+                                            .sideways = glyph.sideways,
+                                            .baseline = baseline,
+                                            .inline_start = pen,
+                                            .inline_size = 0,
+                                            .glyphs = {},
+                                            .text = {}});
+        open_ = content_->size() - 1;
+      }
+      auto& fragment = std::get<TextFragment>((*content_)[open_]);
+      if (g == begin) {
+        fragment.text += text;
+      }
+      fragment.glyphs.push_back(PositionedGlyph{.glyph_id = glyph.glyph_id,
+                                                .inline_position = pen,
+                                                .x_offset = glyph.x_offset,
+                                                .y_offset = glyph.y_offset});
+      pen += glyph.advance;
+    }
+  }
+
+  // 開いている断片の inline 範囲を end まで広げる（letter-spacing と Spacing のぶん）。
+  void extend_to(float end) {
+    if (open_ == kNone) {
+      return;
+    }
+    auto& fragment = std::get<TextFragment>((*content_)[open_]);
+    fragment.inline_size = end - fragment.inline_start;
+  }
+
+ private:
+  std::vector<InlineFragment>* content_;
+  const std::vector<RunStyle>* styles_;
+  FragmentKey key_;
+  std::size_t open_ = kNone;
+};
+
 class InlineFormatter {
  public:
   InlineFormatter(const InlineInput& input, LayoutEngine& engine)
-      : input_(&input), engine_(&engine) {}
+      : input_(&input), engine_(&engine), vertical_(engine.map().vertical()) {}
 
   Result<std::vector<LineBox>> run();
   Result<Intrinsic> intrinsic();
@@ -346,11 +530,18 @@ class InlineFormatter {
  private:
   Result<void> prepare();
   void build_items();
+  void build_ruby_item(std::size_t group_index);
   [[nodiscard]] linebreak::Config config() const;
   void extend_line_height(std::size_t index, const text::FontMetrics& metrics,
                           Extent& extent) const;
+  [[nodiscard]] float ruby_above(const RubyPiece& piece) const;
+  [[nodiscard]] float ruby_baseline(const RubyPiece& piece, float baseline) const;
   [[nodiscard]] Extent measure_line(const linebreak::Line& line) const;
   [[nodiscard]] Alignment align_line(const linebreak::Line& line, bool is_last) const;
+  void place_image(const ImagePiece& image, float item_start, float baseline,
+                   std::vector<InlineFragment>& content) const;
+  void place_ruby(const RubyPiece& piece, float item_start, float advance, float baseline,
+                  FragmentWriter& writer) const;
   void place_line(const linebreak::Line& line, const linebreak::Breaks& breaks,
                   const Alignment& alignment, float baseline, std::vector<InlineFragment>& content,
                   std::vector<Placement>& placement) const;
@@ -358,29 +549,106 @@ class InlineFormatter {
       const linebreak::Line& line, const std::vector<Placement>& placement, float baseline) const;
   [[nodiscard]] LineBox build_line(const linebreak::Line& line, const linebreak::Breaks& breaks,
                                    bool is_last, float block_start) const;
-  [[nodiscard]] std::string item_text(const ItemSource& source) const;
+  [[nodiscard]] std::string text_of(std::size_t char_begin, std::size_t char_end) const;
 
   const InlineInput* input_;
   LayoutEngine* engine_;
+  bool vertical_ = false;
 
   std::vector<FlatChar> chars_;
   std::vector<RunStyle> styles_;
   std::vector<text::FontMetrics> metrics_;
   std::vector<BackgroundScope> scopes_;
   std::vector<ImagePiece> images_;
+  std::vector<RubyGroup> groups_;
+  std::vector<std::size_t> ruby_at_;  // 文字の位置 → そこから始まるルビ組
   RunStyle strut_;
   text::FontMetrics strut_metrics_;
 
   std::vector<ShapedRun> runs_;
+  std::vector<RubyPiece> rubies_;
   std::vector<linebreak::Item> items_;
   std::vector<ItemSource> sources_;
   std::vector<bool> opportunities_;  // text-align: justify のときだけ埋める
 };
 
+void InlineFormatter::build_ruby_item(std::size_t group_index) {
+  const RubyGroup& group = groups_[group_index];
+  RubyPiece piece;
+  piece.base_style = chars_[group.base_begin].style;
+
+  std::size_t i = group.base_begin;
+  while (i < group.base_end) {
+    const std::size_t style_id = chars_[i].style;
+    std::size_t end = i;
+    std::u32string text;
+    while (end < group.base_end && chars_[end].style == style_id) {
+      text.push_back(chars_[end].cp);
+      ++end;
+    }
+    runs_.push_back(ShapedRun{.style = style_id,
+                              .shaped = engine_->measurer().shape(
+                                  text, text_style_of(styles_[style_id], engine_->map()))});
+    const ShapedRun& run = runs_.back();
+    float advance = 0;
+    for (const text::ShapedCluster& cluster : run.shaped.clusters) {
+      advance += cluster.advance + styles_[style_id].letter_spacing;
+    }
+    piece.base.push_back(BaseSegment{.run = runs_.size() - 1,
+                                     .glyph_begin = 0,
+                                     .glyph_end = run.shaped.glyphs.size(),
+                                     .style = style_id,
+                                     .char_begin = i,
+                                     .char_end = end,
+                                     .advance = advance});
+    piece.base_width += advance;
+    i = end;
+  }
+
+  // ルビ文字。letter-spacing はルビには掛けない
+  const std::size_t rt_style = group.rt_style;
+  runs_.push_back(ShapedRun{.style = rt_style,
+                            .shaped = engine_->measurer().shape(
+                                group.rt_text, text_style_of(styles_[rt_style], engine_->map()))});
+  piece.rt_run = runs_.size() - 1;
+  piece.rt_style = rt_style;
+  for (const text::ShapedCluster& cluster : runs_.back().shaped.clusters) {
+    piece.rt_width += cluster.advance;
+  }
+  piece.rt_text = encode_utf8(group.rt_text);
+  piece.base_ascent = metrics_[piece.base_style].ascent;
+  piece.base_font_size = styles_[piece.base_style].font_size;
+  piece.rt_ascent = metrics_[rt_style].ascent;
+  piece.rt_descent = metrics_[rt_style].descent;
+  piece.rt_font_size = styles_[rt_style].font_size;
+
+  const float advance = std::max(piece.base_width, piece.rt_width);
+  const float em = piece.base_font_size;
+  items_.push_back(linebreak::Item{.kind = linebreak::ItemKind::Atomic,
+                                   .cp = chars_[group.base_begin].cp,
+                                   .advance = advance,
+                                   .em = em,
+                                   .no_break_before = false});
+  sources_.push_back(ItemSource{.run = kNone,
+                                .glyph_begin = 0,
+                                .glyph_end = 0,
+                                .char_begin = group.base_begin,
+                                .char_end = group.base_end,
+                                .style = piece.base_style,
+                                .image = kNone,
+                                .ruby = rubies_.size()});
+  rubies_.push_back(std::move(piece));
+}
+
 void InlineFormatter::build_items() {
-  const LogicalMap& map = engine_->map();
   std::size_t i = 0;
   while (i < chars_.size()) {
+    if (ruby_at_[i] != kNone) {
+      const std::size_t group = ruby_at_[i];
+      build_ruby_item(group);
+      i = groups_[group].base_end;
+      continue;
+    }
     const FlatChar& flat = chars_[i];
     if (flat.kind != FlatChar::Kind::Text) {
       const bool image = flat.kind == FlatChar::Kind::Image;
@@ -396,7 +664,8 @@ void InlineFormatter::build_items() {
                                     .char_begin = i,
                                     .char_end = i + 1,
                                     .style = flat.style,
-                                    .image = flat.image});
+                                    .image = flat.image,
+                                    .ruby = kNone});
       ++i;
       continue;
     }
@@ -404,14 +673,14 @@ void InlineFormatter::build_items() {
     std::size_t end = i;
     std::u32string text;
     while (end < chars_.size() && chars_[end].kind == FlatChar::Kind::Text &&
-           chars_[end].style == flat.style) {
+           chars_[end].style == flat.style && (end == i || ruby_at_[end] == kNone)) {
       text.push_back(chars_[end].cp);
       ++end;
     }
     const std::size_t style_id = flat.style;
-    runs_.push_back(ShapedRun{
-        .style = style_id,
-        .shaped = engine_->measurer().shape(text, text_style_of(styles_[style_id], map))});
+    runs_.push_back(ShapedRun{.style = style_id,
+                              .shaped = engine_->measurer().shape(
+                                  text, text_style_of(styles_[style_id], engine_->map()))});
     const std::size_t run = runs_.size() - 1;
     // (c) クラスタ → Item。letter-spacing は送りに足す
     for (const text::ShapedCluster& cluster : runs_[run].shaped.clusters) {
@@ -427,15 +696,16 @@ void InlineFormatter::build_items() {
                                     .char_begin = i + cluster.text_begin,
                                     .char_end = i + cluster.text_end,
                                     .style = style_id,
-                                    .image = kNone});
+                                    .image = kNone,
+                                    .ruby = kNone});
     }
     i = end;
   }
 }
 
-std::string InlineFormatter::item_text(const ItemSource& source) const {
+std::string InlineFormatter::text_of(std::size_t char_begin, std::size_t char_end) const {
   std::string out;
-  for (std::size_t i = source.char_begin; i < source.char_end && i < chars_.size(); ++i) {
+  for (std::size_t i = char_begin; i < char_end && i < chars_.size(); ++i) {
     append_utf8(out, chars_[i].cp);
   }
   return out;
@@ -443,6 +713,7 @@ std::string InlineFormatter::item_text(const ItemSource& source) const {
 
 // CSS 2.1 §10.8: line-height と FontMetrics から半行間（half-leading）を出し、
 // ベースラインより上（ascent + 半行間）と下（descent + 半行間）を広げる。
+// 縦書きでは「ベースライン」は行の中心軸なので、上下に line-height の半分ずつ広げる。
 void InlineFormatter::extend_line_height(std::size_t index, const text::FontMetrics& metrics,
                                          Extent& extent) const {
   const RunStyle& run = index == kNone ? strut_ : styles_[index];
@@ -458,9 +729,33 @@ void InlineFormatter::extend_line_height(std::size_t index, const text::FontMetr
       line_height = run.line_height.value;
       break;
   }
+  if (vertical_) {
+    const float half = line_height / 2;
+    extent.above = std::max(extent.above, half);
+    extent.below = std::max(extent.below, half);
+    return;
+  }
   const float half_leading = (line_height - (metrics.ascent + metrics.descent)) / 2;
   extent.above = std::max(extent.above, metrics.ascent + half_leading);
   extent.below = std::max(extent.below, metrics.descent + half_leading);
+}
+
+// ルビ組がベースライン（中心軸）より block-start 側に広がる量。
+float InlineFormatter::ruby_above(const RubyPiece& piece) const {
+  if (vertical_) {
+    return (piece.base_font_size / 2) + piece.rt_font_size;
+  }
+  return piece.base_ascent + piece.rt_ascent + piece.rt_descent;
+}
+
+// ルビ文字のベースライン（縦書きでは中心軸）の block 位置。
+float InlineFormatter::ruby_baseline(const RubyPiece& piece, float baseline) const {
+  if (vertical_) {
+    // block-start 側（右）へ、親文字の内容領域の半分 + ルビの半分ぶんずらす
+    return baseline + (piece.base_font_size / 2) + (piece.rt_font_size / 2);
+  }
+  // 親文字の内容領域の上端に、ルビの descent ぶんを足した位置
+  return baseline - piece.base_ascent - piece.rt_descent;
 }
 
 Extent InlineFormatter::measure_line(const linebreak::Line& line) const {
@@ -470,8 +765,24 @@ Extent InlineFormatter::measure_line(const linebreak::Line& line) const {
   for (std::size_t i = line.begin; i < line.content_end; ++i) {
     const ItemSource& source = sources_[i];
     if (source.image != kNone) {
-      // <img> は margin-box の下端がベースラインに乗る（CSS の既定の vertical-align）
-      extent.above = std::max(extent.above, images_[source.image].margin_block());
+      // 横書き: margin-box の下端がベースラインに乗る（CSS の既定の vertical-align）
+      // 縦書き: margin-box を中心軸に中央揃えする
+      const float span = images_[source.image].margin_block();
+      if (vertical_) {
+        extent.above = std::max(extent.above, span / 2);
+        extent.below = std::max(extent.below, span / 2);
+      } else {
+        extent.above = std::max(extent.above, span);
+      }
+      continue;
+    }
+    if (source.ruby != kNone) {
+      const RubyPiece& piece = rubies_[source.ruby];
+      if (!seen[piece.base_style]) {
+        seen[piece.base_style] = true;
+        extend_line_height(piece.base_style, metrics_[piece.base_style], extent);
+      }
+      extent.above = std::max(extent.above, ruby_above(piece));
       continue;
     }
     if (seen[source.style]) {
@@ -517,14 +828,55 @@ Alignment InlineFormatter::align_line(const linebreak::Line& line, bool is_last)
   return alignment;
 }
 
+void InlineFormatter::place_image(const ImagePiece& image, float item_start, float baseline,
+                                  std::vector<InlineFragment>& content) const {
+  const float inline_start = item_start + image.margin.inline_start;
+  const float block_start = vertical_
+                                ? baseline - (image.margin_block() / 2) + image.margin.block_start
+                                : baseline - image.margin.block_end - image.border_block();
+  content.emplace_back(ImageFragment{
+      .image = image.id,
+      .rect = LogicalRect{.inline_start = inline_start,
+                          .block_start = block_start,
+                          .inline_size = image.border_inline(),
+                          .block_size = image.border_block()},
+      .content_rect =
+          LogicalRect{.inline_start = inline_start + image.border + image.padding.inline_start,
+                      .block_start = block_start + image.border + image.padding.block_start,
+                      .inline_size = image.content_inline_size,
+                      .block_size = image.content_block_size},
+      .decoration = image.decoration});
+}
+
+// ルビ組: 親文字とルビの短い方を中央に置く（JLREQ の 1:2:1 の配分まではやらない）。
+void InlineFormatter::place_ruby(const RubyPiece& piece, float item_start, float advance,
+                                 float baseline, FragmentWriter& writer) const {
+  writer.close();
+  float pen = item_start + ((advance - piece.base_width) / 2);
+  for (const BaseSegment& segment : piece.base) {
+    const float start = pen;
+    writer.add(runs_[segment.run].shaped, segment.glyph_begin, segment.glyph_end, segment.style,
+               baseline, text_of(segment.char_begin, segment.char_end), pen);
+    pen = start + segment.advance;  // letter-spacing ぶんを足す
+    writer.extend_to(pen);
+  }
+  writer.close();
+
+  float ruby_pen = item_start + ((advance - piece.rt_width) / 2);
+  const text::ShapedText& ruby = runs_[piece.rt_run].shaped;
+  writer.add(ruby, 0, ruby.glyphs.size(), piece.rt_style, ruby_baseline(piece, baseline),
+             piece.rt_text, ruby_pen);
+  writer.extend_to(ruby_pen);
+  writer.close();
+}
+
 // (e) グリフと画像を置く。手順は line_breaker.hpp の「描画側の手順」どおり:
 //   pen += spacing.before → クラスタのグリフを順に置く → pen = 開始位置 + advance + spacing.after
 void InlineFormatter::place_line(const linebreak::Line& line, const linebreak::Breaks& breaks,
                                  const Alignment& alignment, float baseline,
                                  std::vector<InlineFragment>& content,
                                  std::vector<Placement>& placement) const {
-  FragmentKey key;
-  std::size_t open = kNone;  // 開いている TextFragment の content 内の添字
+  FragmentWriter writer(content, styles_);
   float pen = input_->content_inline_start + alignment.offset;
   for (std::size_t i = line.begin; i < line.content_end; ++i) {
     if (i > line.begin && alignment.justify_share > 0 && opportunities_[i]) {
@@ -535,56 +887,18 @@ void InlineFormatter::place_line(const linebreak::Line& line, const linebreak::B
     const ItemSource& source = sources_[i];
 
     if (source.image != kNone) {
-      const ImagePiece& image = images_[source.image];
-      const float inline_start = item_start + image.margin.inline_start;
-      const float block_start = baseline - image.margin.block_end - image.border_block();
-      content.emplace_back(ImageFragment{
-          .image = image.id,
-          .rect = LogicalRect{.inline_start = inline_start,
-                              .block_start = block_start,
-                              .inline_size = image.border_inline(),
-                              .block_size = image.border_block()},
-          .content_rect =
-              LogicalRect{.inline_start = inline_start + image.border + image.padding.inline_start,
-                          .block_start = block_start + image.border + image.padding.block_start,
-                          .inline_size = image.content_inline_size,
-                          .block_size = image.content_block_size},
-          .decoration = image.decoration});
-      open = kNone;
+      writer.close();
+      place_image(images_[source.image], item_start, baseline, content);
+    } else if (source.ruby != kNone) {
+      place_ruby(rubies_[source.ruby], item_start, items_[i].advance, baseline, writer);
+    } else if (source.run != kNone) {
+      float glyph_pen = item_start;
+      writer.add(runs_[source.run].shaped, source.glyph_begin, source.glyph_end, source.style,
+                 baseline, text_of(source.char_begin, source.char_end), glyph_pen);
     }
 
-    float glyph_pen = item_start;
-    for (std::size_t g = source.glyph_begin; source.run != kNone && g < source.glyph_end; ++g) {
-      const text::ShapedGlyph& glyph = runs_[source.run].shaped.glyphs[g];
-      const FragmentKey next{.style = source.style, .font = glyph.font, .sideways = glyph.sideways};
-      if (open == kNone || next != key) {
-        key = next;
-        content.emplace_back(TextFragment{.font = glyph.font,
-                                          .font_size = styles_[source.style].font_size,
-                                          .color = styles_[source.style].color,
-                                          .sideways = glyph.sideways,
-                                          .baseline = baseline,
-                                          .inline_start = glyph_pen,
-                                          .inline_size = 0,
-                                          .glyphs = {},
-                                          .text = {}});
-        open = content.size() - 1;
-      }
-      auto& fragment = std::get<TextFragment>(content[open]);
-      if (g == source.glyph_begin) {
-        fragment.text += item_text(source);
-      }
-      fragment.glyphs.push_back(PositionedGlyph{.glyph_id = glyph.glyph_id,
-                                                .inline_position = glyph_pen,
-                                                .x_offset = glyph.x_offset,
-                                                .y_offset = glyph.y_offset});
-      glyph_pen += glyph.advance;
-    }
     pen = item_start + items_[i].advance + breaks.spacing[i].after;
-    if (open != kNone) {
-      auto& fragment = std::get<TextFragment>(content[open]);
-      fragment.inline_size = pen - fragment.inline_start;
-    }
+    writer.extend_to(pen);
     placement[i] = Placement{.inline_start = item_start, .inline_end = pen};
   }
 }
@@ -608,9 +922,9 @@ std::vector<InlineBackground> InlineFormatter::build_backgrounds(
     backgrounds.push_back(InlineBackground{
         .rect =
             LogicalRect{.inline_start = placement[first].inline_start,
-                        .block_start = baseline - scope.ascent,
+                        .block_start = baseline - scope.start_extent,
                         .inline_size = placement[last].inline_end - placement[first].inline_start,
-                        .block_size = scope.ascent + scope.descent},
+                        .block_size = scope.size},
         .color = scope.color});
   }
   return backgrounds;
@@ -662,18 +976,27 @@ Result<void> InlineFormatter::prepare() {
   styles_ = std::move(collected.styles);
   scopes_ = std::move(collected.scopes);
   images_ = std::move(collected.images);
+  groups_ = std::move(collected.rubies);
 
   Collapsed collapsed = collapse_whitespace(collected.chars);
   chars_ = std::move(collapsed.chars);
-  // 背景スコープの範囲を畳み込み後の添字に移す
+  // 文字の範囲を覚えているもの（背景スコープ・ルビ組）を畳み込み後の添字に移す
+  const auto remap = [&collapsed](std::size_t index) {
+    return static_cast<std::size_t>(
+        std::lower_bound(collapsed.source.begin(), collapsed.source.end(), index) -
+        collapsed.source.begin());
+  };
   for (BackgroundScope& scope : scopes_) {
-    const auto begin =
-        std::lower_bound(collapsed.source.begin(), collapsed.source.end(), scope.begin) -
-        collapsed.source.begin();
-    const auto end = std::lower_bound(collapsed.source.begin(), collapsed.source.end(), scope.end) -
-                     collapsed.source.begin();
-    scope.begin = static_cast<std::size_t>(begin);
-    scope.end = static_cast<std::size_t>(end);
+    scope.begin = remap(scope.begin);
+    scope.end = remap(scope.end);
+  }
+  ruby_at_.assign(chars_.size(), kNone);
+  for (std::size_t i = 0; i < groups_.size(); ++i) {
+    groups_[i].base_begin = remap(groups_[i].base_begin);
+    groups_[i].base_end = remap(groups_[i].base_end);
+    if (groups_[i].base_begin < groups_[i].base_end) {
+      ruby_at_[groups_[i].base_begin] = i;
+    }
   }
 
   strut_ = run_style_of(*input_->block_style);

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/ids.hpp"
+#include "core/result.hpp"
 #include "raster/glyph_source.hpp"
 
 namespace shashoku::text {
@@ -20,9 +21,11 @@ class FreeTypeGlyphSource final : public raster::GlyphSource {
   FreeTypeGlyphSource(FreeTypeGlyphSource&&) = delete;
   FreeTypeGlyphSource& operator=(FreeTypeGlyphSource&&) = delete;
 
-  // 不正な FontId / glyph_id、空白グリフはいずれも空のビットマップ（落ちない）。
-  raster::GlyphBitmap rasterize(FontId font, GlyphId glyph_id, float pixel_size,
-                                bool sideways) override;
+  // 成功して空のビットマップを返すのは空白グリフ（描くものがない）だけ。
+  // 不正な FontId・契約違反の pixel_size は Internal、FreeType の失敗・輪郭を持たない
+  // グリフ・未対応の pixel_mode は FontLoad（glyph_source.hpp の契約。issue #3）。
+  Result<raster::GlyphBitmap> rasterize(FontId font, GlyphId glyph_id, float pixel_size,
+                                        bool sideways) override;
 
  private:
   const FontStore* fonts_;

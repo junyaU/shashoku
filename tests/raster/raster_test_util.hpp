@@ -11,6 +11,7 @@
 #include "core/bitmap.hpp"
 #include "core/color.hpp"
 #include "core/ids.hpp"
+#include "core/result.hpp"
 #include "raster/display_list.hpp"
 #include "raster/glyph_source.hpp"
 #include "raster/rasterizer.hpp"
@@ -33,13 +34,17 @@ class FakeGlyphSource : public GlyphSource {
   };
 
   void set(GlyphId glyph_id, GlyphBitmap bitmap);
-  GlyphBitmap rasterize(FontId font, GlyphId glyph_id, float pixel_size, bool sideways) override;
+  // このグリフを要求されたら失敗を返す（本物の GlyphSource の失敗を模す）。
+  void set_error(GlyphId glyph_id, Error error);
+  Result<GlyphBitmap> rasterize(FontId font, GlyphId glyph_id, float pixel_size,
+                                bool sideways) override;
 
   [[nodiscard]] const std::vector<Call>& calls() const { return calls_; }
 
  private:
   // 反復順が決まる map を使う（DESIGN.md §3-5: unordered_map の反復順を出力に影響させない）
   std::map<GlyphId, GlyphBitmap> glyphs_;
+  std::map<GlyphId, Error> errors_;
   std::vector<Call> calls_;
 };
 

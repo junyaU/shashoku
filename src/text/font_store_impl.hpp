@@ -18,6 +18,13 @@
 
 namespace shashoku::text::detail {
 
+// FreeType のエラーコードを人が読める文字列にする（FT_CONFIG_OPTION_ERROR_STRINGS が
+// 無効なビルドでは番号だけ）。font_store.cpp と freetype_glyph_source.cpp が使う。
+inline std::string ft_error_text(FT_Error error) {
+  const char* text = FT_Error_String(error);
+  return text != nullptr ? std::string(text) : ("FreeType error " + std::to_string(error));
+}
+
 // 1 face ぶんの実体。FontId は FontStoreImpl::fonts の添字。
 struct FontEntry {
   // FT_New_Memory_Face / hb_blob はバイト列を参照したままなので、face より長生きさせる。

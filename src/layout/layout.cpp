@@ -251,8 +251,7 @@ Result<BoxTree> layout(const style::StyledNode& root, const Options& options,
   const float viewport_inline_size =
       mode == WritingMode::VerticalRl ? *options.viewport_height : options.viewport_width;
   Counters discarded;  // 呼び出し側が数えないときの捨て場（null 判定を 1 か所で済ませる）
-  LayoutEngine engine(options, measurer, images, mode,
-                      counters != nullptr ? *counters : discarded);
+  LayoutEngine engine(options, measurer, images, mode, counters != nullptr ? *counters : discarded);
   Result<BoxSizing> sizing = engine.resolve_box(root.style, viewport_inline_size, root.location);
   if (!sizing) {
     return std::unexpected(sizing.error());

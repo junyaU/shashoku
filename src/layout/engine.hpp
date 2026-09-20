@@ -90,12 +90,13 @@ class LayoutEngine {
   [[nodiscard]] Counters& counters() const { return *counters_; }
 
   // 計測器の呼び出しは必ずここを通す（回数と文字数を数えるため。TextMeasurer 自体は公開しない）。
-  text::ShapedText shape(std::u32string_view text, const text::TextStyle& style) const {
+  [[nodiscard]] text::ShapedText shape(std::u32string_view text,
+                                       const text::TextStyle& style) const {
     ++counters_->shape_calls;
     counters_->shaped_chars += text.size();
     return measurer_->shape(text, style);
   }
-  text::FontMetrics metrics(const text::TextStyle& style) const {
+  [[nodiscard]] text::FontMetrics metrics(const text::TextStyle& style) const {
     ++counters_->metrics_calls;
     return measurer_->metrics(style);
   }

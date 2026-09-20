@@ -603,9 +603,9 @@ void InlineFormatter::build_ruby_item(std::size_t group_index) {
       text.push_back(chars_[end].cp);
       ++end;
     }
-    runs_.push_back(
-        ShapedRun{.style = style_id,
-                  .shaped = engine_->shape(text, text_style_of(styles_[style_id], engine_->map()))});
+    runs_.push_back(ShapedRun{
+        .style = style_id,
+        .shaped = engine_->shape(text, text_style_of(styles_[style_id], engine_->map()))});
     const ShapedRun& run = runs_.back();
     float advance = 0;
     for (const text::ShapedCluster& cluster : run.shaped.clusters) {
@@ -695,9 +695,9 @@ void InlineFormatter::build_items() {
       ++end;
     }
     const std::size_t style_id = flat.style;
-    runs_.push_back(
-        ShapedRun{.style = style_id,
-                  .shaped = engine_->shape(text, text_style_of(styles_[style_id], engine_->map()))});
+    runs_.push_back(ShapedRun{
+        .style = style_id,
+        .shaped = engine_->shape(text, text_style_of(styles_[style_id], engine_->map()))});
     const std::size_t run = runs_.size() - 1;
     // (c) クラスタ → Item。letter-spacing は送りに足す
     for (const text::ShapedCluster& cluster : runs_[run].shaped.clusters) {

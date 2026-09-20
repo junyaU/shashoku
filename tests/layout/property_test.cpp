@@ -48,7 +48,6 @@ class Generator {
 
   // available は生成中に分かる利用可能幅。子ブロックが親の content からはみ出さないよう、
   // 幅と余白はこの値から選ぶ（不変条件 (3) を「はみ出さない入力」で検査するため）。
-  // NOLINTNEXTLINE(misc-no-recursion): テスト用の木の生成
   Tree make_block(int depth, float available) {
     const float unit = available / 16;
     const float padding = chance(0.4) ? pick_float(0, unit) : 0;
@@ -121,7 +120,6 @@ std::string without_spaces(std::string_view text) {
   return out;
 }
 
-// NOLINTNEXTLINE(misc-no-recursion): テスト用の木の走査
 void collect_source_text(const style::StyledNode& node, std::string& out) {
   if (node.type == style::StyledNode::Type::Text) {
     out += node.text;
@@ -132,7 +130,6 @@ void collect_source_text(const style::StyledNode& node, std::string& out) {
   }
 }
 
-// NOLINTNEXTLINE(misc-no-recursion): テスト用の木の走査
 void collect_laid_out_text(const BlockBox& box, std::string& out) {
   if (const std::vector<LineBox>* lines = box.lines()) {
     for (const LineBox& line : *lines) {
@@ -147,7 +144,6 @@ void collect_laid_out_text(const BlockBox& box, std::string& out) {
   }
 }
 
-// NOLINTNEXTLINE(misc-no-recursion): テスト用の木の走査
 void check_geometry(const BlockBox& box) {
   const std::vector<BlockBox>* blocks = box.blocks();
   if (blocks == nullptr) {

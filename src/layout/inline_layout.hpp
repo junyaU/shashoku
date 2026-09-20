@@ -5,9 +5,8 @@
 
 #include "core/result.hpp"
 #include "layout/box_tree.hpp"
-#include "layout/layout.hpp"
+#include "layout/engine.hpp"
 #include "style/computed_style.hpp"
-#include "text/text_measurer.hpp"
 
 namespace shashoku::layout {
 
@@ -19,12 +18,16 @@ struct InlineInput {
   // 無名ブロックのときは親ブロックのスタイル（CSS の無名ボックスの継承）。
   const style::ComputedStyle* block_style = nullptr;
   float content_inline_start = 0;  // 絶対（論理座標）
-  float content_inline_size = 0;   // 行分割の利用可能幅
+  float content_inline_size = 0;   // 行分割の利用可能幅。<img> の `%` 幅の基準でもある
   float content_block_start = 0;   // 絶対（論理座標）
 };
 
 // 行ボックスの列を block 方向に積んで返す。内容が空（子なし / 空白だけ）なら空の列。
-Result<std::vector<LineBox>> layout_inline(const InlineInput& input, const Options& options,
-                                           text::TextMeasurer& measurer, WritingMode mode);
+Result<std::vector<LineBox>> layout_inline(const InlineInput& input, LayoutEngine& engine);
+
+// この IFC の固有 inline サイズ。
+//   max-content = 強制改行でしか折り返さないときの最大の行幅
+//   min-content = 分割不能な最長区間の幅
+Result<Intrinsic> inline_intrinsic(const InlineInput& input, LayoutEngine& engine);
 
 }  // namespace shashoku::layout

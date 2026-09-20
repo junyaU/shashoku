@@ -5,7 +5,11 @@
 shashoku_add_module(layout
   SOURCES
     east_asian_width.cpp
+    engine.cpp
+    image.cpp
+    intrinsic.cpp
     inline_layout.cpp
+    flex_layout.cpp
     layout.cpp
     dump_json.cpp
   DEPS shashoku::core shashoku::linebreak)

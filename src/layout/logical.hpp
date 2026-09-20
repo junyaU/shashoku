@@ -44,6 +44,14 @@ class LogicalMap {
                            .block_end = physical.bottom};
   }
 
+  // 物理的な大きさ（<img> の固有寸法など）を論理方向に読み替える。
+  [[nodiscard]] float inline_of(float width, float height) const {
+    return vertical_ ? height : width;
+  }
+  [[nodiscard]] float block_of(float width, float height) const {
+    return vertical_ ? width : height;
+  }
+
   // シェーピングに渡す字送り方向。
   [[nodiscard]] text::Direction direction() const {
     return vertical_ ? text::Direction::Vertical : text::Direction::Horizontal;

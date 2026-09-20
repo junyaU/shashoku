@@ -1,5 +1,9 @@
-// 生成データ: LineBreak.txt 18.0.0 の Line_Break プロパティを break_class.cpp の
-// クラス寄せ表で変換し、隣り合う同クラスの範囲を併合したもの。既定値 Al の範囲は載せていない。
+// このファイルは scripts/gen_unicode_tables.py が生成する。手で編集しない。
+// 生成元: Unicode 18.0.0 の UCD
+//   LineBreak.txt  sha256 ae8cf1970c73f3f1a12d77852df96c4b2b1723ca8b388e36bb5739250c6849de
+// 規則: Line_Break プロパティを break_class.cpp のクラス寄せ表
+//   （ARCHITECTURE.md §3.4 (1)）で変換し、隣り合う同クラスの範囲を併合したもの。
+//   既定値 Al の範囲は載せない（break_class_of() が表外で返す）。
 // このファイルは break_class.cpp の kClassTable の初期化子としてのみ include する。
     {0x0000, 0x0008, BreakClass::Cm},
     {0x0009, 0x0009, BreakClass::Ba},

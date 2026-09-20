@@ -13,10 +13,8 @@
 namespace shashoku::layout::test {
 namespace {
 
-using style::AlignItems;
 using style::ComputedStyle;
 using style::Dimension;
-using style::Display;
 using style::FlexDirection;
 
 // 幅 400 × 高さ 200 の縦書き。行の長さ（inline 方向）は 200 になる。
@@ -34,8 +32,7 @@ TEST(LayoutVertical, LinesAdvanceAlongTheBlockAxis) {
   const auto tree = flow_vertical(root, measurer);
   ASSERT_TRUE(tree.has_value());
   EXPECT_EQ(tree->writing_mode, WritingMode::VerticalRl);
-  EXPECT_EQ(line_texts(*tree),
-            (std::vector<std::string>{"あいうえおかきくけこさし", "す"}));
+  EXPECT_EQ(line_texts(*tree), (std::vector<std::string>{"あいうえおかきくけこさし", "す"}));
 
   const std::vector<const LineBox*> lines = all_lines(*tree);
   ASSERT_EQ(lines.size(), 2U);
@@ -111,9 +108,8 @@ TEST(LayoutVertical, PhysicalPropertiesMapToLogicalDirections) {
 // （inline 方向が高さ側なので、auto の伸びるのは inline = 高さの方）。
 TEST(LayoutVertical, AutoInlineSizeFillsTheViewportHeight) {
   FakeMeasurer measurer;
-  const auto root = build_vertical({block({text("あ")}, [](ComputedStyle& style) {
-    style.padding = {10, 0, 10, 0};
-  })});
+  const auto root = build_vertical(
+      {block({text("あ")}, [](ComputedStyle& style) { style.padding = {10, 0, 10, 0}; })});
   const auto tree = flow_vertical(root, measurer);
   ASSERT_TRUE(tree.has_value());
   const std::vector<BlockRect> rects = block_rects(*tree);
@@ -127,8 +123,8 @@ TEST(LayoutVertical, AutoInlineSizeFillsTheViewportHeight) {
 TEST(LayoutVertical, TextAlignWorksOnTheInlineAxis) {
   FakeMeasurer measurer;
   const auto make = [](style::TextAlign align) {
-    return build_vertical({block({text("あいうえお")},
-                                 [align](ComputedStyle& style) { style.text_align = align; })});
+    return build_vertical(
+        {block({text("あいうえお")}, [align](ComputedStyle& style) { style.text_align = align; })});
   };
   const auto start = flow_vertical(make(style::TextAlign::Start), measurer);
   ASSERT_TRUE(start.has_value());
@@ -167,8 +163,7 @@ TEST(LayoutVertical, ProhibitionAndHangingWork) {
   const auto root = build_vertical({block({text("あいうえお。かきくけこ")})});
   const auto tree = run_layout(root, vertical_options(400, 80), measurer);
   ASSERT_TRUE(tree.has_value());
-  EXPECT_EQ(line_texts(*tree),
-            (std::vector<std::string>{"あいうえ", "お。かきく", "けこ"}));
+  EXPECT_EQ(line_texts(*tree), (std::vector<std::string>{"あいうえ", "お。かきく", "けこ"}));
 
   // ぶら下げ: 行の inline 方向の端（下）の外に出る
   const auto hanging = build_vertical({block({text("あいうえお。")})});
@@ -192,8 +187,7 @@ TEST(LayoutVertical, OikomiTightensPunctuation) {
   const auto tree = run_layout(root, options, measurer);
   ASSERT_TRUE(tree.has_value());
   ASSERT_EQ(all_lines(*tree).size(), 1U);
-  EXPECT_EQ(glyph_positions(*all_lines(*tree)[0]),
-            (std::vector<float>{0, 16, 24, 40, 56, 72, 88}));
+  EXPECT_EQ(glyph_positions(*all_lines(*tree)[0]), (std::vector<float>{0, 16, 24, 40, 56, 72, 88}));
 }
 
 // ---- インライン背景 ----------------------------------------------------------------
@@ -270,18 +264,13 @@ TEST(LayoutVertical, FlexRowRunsAlongTheInlineAxis) {
 // column の主軸は block 方向（縦書きでは右から左）。
 TEST(LayoutVertical, FlexColumnRunsAlongTheBlockAxis) {
   FakeMeasurer measurer;
-  const auto root = build_vertical({flex({block({},
-                                                [](ComputedStyle& style) {
-                                                  style.width = Dimension::px(20);
-                                                }),
-                                          block({},
-                                                [](ComputedStyle& style) {
-                                                  style.width = Dimension::px(30);
-                                                })},
-                                         [](ComputedStyle& style) {
-                                           style.flex_direction = FlexDirection::Column;
-                                           style.row_gap = 10;
-                                         })});
+  const auto root = build_vertical(
+      {flex({block({}, [](ComputedStyle& style) { style.width = Dimension::px(20); }),
+             block({}, [](ComputedStyle& style) { style.width = Dimension::px(30); })},
+            [](ComputedStyle& style) {
+              style.flex_direction = FlexDirection::Column;
+              style.row_gap = 10;
+            })});
   const auto tree = flow_vertical(root, measurer);
   ASSERT_TRUE(tree.has_value());
   const std::vector<BlockBox>& items = *tree->root.blocks()->front().blocks();

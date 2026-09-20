@@ -189,18 +189,17 @@ Result<void> collect_image(const StyledNode& node, LayoutEngine& engine, float p
   if (!image) {
     return std::unexpected(image.error());
   }
-  out.images.push_back(
-      ImagePiece{.id = image->id,
-                 .margin = engine.resolve_margin(node.style, percent_basis),
-                 .padding = engine.map().edges(node.style.padding),
-                 .border = std::max(node.style.border_width, 0.0F),
-                 .content_inline_size = image->inline_size,
-                 .content_block_size = image->block_size,
-                 .decoration = BoxDecoration{
-                     .background_color = node.style.background_color,
-                     .border_width = std::max(node.style.border_width, 0.0F),
-                     .border_color = node.style.border_color,
-                     .border_radius = std::max(node.style.border_radius, 0.0F)}});
+  out.images.push_back(ImagePiece{
+      .id = image->id,
+      .margin = engine.resolve_margin(node.style, percent_basis),
+      .padding = engine.map().edges(node.style.padding),
+      .border = std::max(node.style.border_width, 0.0F),
+      .content_inline_size = image->inline_size,
+      .content_block_size = image->block_size,
+      .decoration = BoxDecoration{.background_color = node.style.background_color,
+                                  .border_width = std::max(node.style.border_width, 0.0F),
+                                  .border_color = node.style.border_color,
+                                  .border_radius = std::max(node.style.border_radius, 0.0F)}});
   out.chars.push_back(FlatChar{.cp = U'￼',
                                .kind = FlatChar::Kind::Image,
                                .style = style_index(out, node.style),
@@ -244,8 +243,8 @@ Result<void> collect_ruby(const StyledNode& node, LayoutEngine& engine, float pe
     }
     if (child.tag == "rt") {
       if (out.chars.size() == base_begin) {
-        return fail(ErrorKind::UnsupportedLayout,
-                    "<rt> needs base text before it inside <ruby>", child.location);
+        return fail(ErrorKind::UnsupportedLayout, "<rt> needs base text before it inside <ruby>",
+                    child.location);
       }
       Result<std::u32string> ruby = read_ruby_text(child);
       if (!ruby) {
@@ -381,9 +380,8 @@ Collapsed collapse_whitespace(const std::vector<FlatChar>& input) {
       drop = true;  // A14: 和文どうしに挟まれたソース改行は消す
     }
     if (!drop) {
-      out.chars.push_back(
-          FlatChar{.cp = U' ', .kind = FlatChar::Kind::Text, .style = current.style,
-                   .image = kNone});
+      out.chars.push_back(FlatChar{
+          .cp = U' ', .kind = FlatChar::Kind::Text, .style = current.style, .image = kNone});
       out.source.push_back(i);
       last = U' ';
     }
@@ -475,8 +473,8 @@ class FragmentWriter {
   void close() { open_ = kNone; }
 
   // shaped の [begin, end) のグリフを pen から順に置く（pen はグリフの送りで進む）。
-  void add(const text::ShapedText& shaped, std::size_t begin, std::size_t end,
-           std::size_t style_id, float baseline, const std::string& text, float& pen) {
+  void add(const text::ShapedText& shaped, std::size_t begin, std::size_t end, std::size_t style_id,
+           float baseline, const std::string& text, float& pen) {
     for (std::size_t g = begin; g < end; ++g) {
       const text::ShapedGlyph& glyph = shaped.glyphs[g];
       const FragmentKey key{.style = style_id, .font = glyph.font, .sideways = glyph.sideways};
@@ -545,8 +543,8 @@ class InlineFormatter {
   void place_ruby(const RubyPiece& piece, float item_start, float advance, float baseline,
                   FragmentWriter& writer) const;
   void place_line(const linebreak::Line& line, const linebreak::Breaks& breaks,
-                  const Alignment& alignment, float baseline,
-                  std::vector<InlineFragment>& content, std::vector<Placement>& placement) const;
+                  const Alignment& alignment, float baseline, std::vector<InlineFragment>& content,
+                  std::vector<Placement>& placement) const;
   [[nodiscard]] std::vector<InlineBackground> build_backgrounds(
       const linebreak::Line& line, const std::vector<Placement>& placement, float baseline) const;
   [[nodiscard]] LineBox build_line(const linebreak::Line& line, const linebreak::Breaks& breaks,
@@ -588,9 +586,9 @@ void InlineFormatter::build_ruby_item(std::size_t group_index) {
       text.push_back(chars_[end].cp);
       ++end;
     }
-    runs_.push_back(ShapedRun{
-        .style = style_id,
-        .shaped = engine_->measurer().shape(text, text_style_of(styles_[style_id], engine_->map()))});
+    runs_.push_back(ShapedRun{.style = style_id,
+                              .shaped = engine_->measurer().shape(
+                                  text, text_style_of(styles_[style_id], engine_->map()))});
     const ShapedRun& run = runs_.back();
     float advance = 0;
     for (const text::ShapedCluster& cluster : run.shaped.clusters) {
@@ -609,10 +607,9 @@ void InlineFormatter::build_ruby_item(std::size_t group_index) {
 
   // ルビ文字。letter-spacing はルビには掛けない
   const std::size_t rt_style = group.rt_style;
-  runs_.push_back(ShapedRun{
-      .style = rt_style,
-      .shaped = engine_->measurer().shape(group.rt_text,
-                                          text_style_of(styles_[rt_style], engine_->map()))});
+  runs_.push_back(ShapedRun{.style = rt_style,
+                            .shaped = engine_->measurer().shape(
+                                group.rt_text, text_style_of(styles_[rt_style], engine_->map()))});
   piece.rt_run = runs_.size() - 1;
   piece.rt_style = rt_style;
   for (const text::ShapedCluster& cluster : runs_.back().shaped.clusters) {
@@ -681,18 +678,18 @@ void InlineFormatter::build_items() {
       ++end;
     }
     const std::size_t style_id = flat.style;
-    runs_.push_back(ShapedRun{
-        .style = style_id,
-        .shaped = engine_->measurer().shape(text, text_style_of(styles_[style_id], engine_->map()))});
+    runs_.push_back(ShapedRun{.style = style_id,
+                              .shaped = engine_->measurer().shape(
+                                  text, text_style_of(styles_[style_id], engine_->map()))});
     const std::size_t run = runs_.size() - 1;
     // (c) クラスタ → Item。letter-spacing は送りに足す
     for (const text::ShapedCluster& cluster : runs_[run].shaped.clusters) {
-      items_.push_back(linebreak::Item{
-          .kind = linebreak::ItemKind::Text,
-          .cp = cluster.text_begin < text.size() ? text[cluster.text_begin] : 0,
-          .advance = cluster.advance + styles_[style_id].letter_spacing,
-          .em = styles_[style_id].font_size,
-          .no_break_before = false});
+      items_.push_back(
+          linebreak::Item{.kind = linebreak::ItemKind::Text,
+                          .cp = cluster.text_begin < text.size() ? text[cluster.text_begin] : 0,
+                          .advance = cluster.advance + styles_[style_id].letter_spacing,
+                          .em = styles_[style_id].font_size,
+                          .no_break_before = false});
       sources_.push_back(ItemSource{.run = run,
                                     .glyph_begin = cluster.glyph_begin,
                                     .glyph_end = cluster.glyph_end,
@@ -923,11 +920,11 @@ std::vector<InlineBackground> InlineFormatter::build_backgrounds(
       continue;
     }
     backgrounds.push_back(InlineBackground{
-        .rect = LogicalRect{.inline_start = placement[first].inline_start,
-                            .block_start = baseline - scope.start_extent,
-                            .inline_size =
-                                placement[last].inline_end - placement[first].inline_start,
-                            .block_size = scope.size},
+        .rect =
+            LogicalRect{.inline_start = placement[first].inline_start,
+                        .block_start = baseline - scope.start_extent,
+                        .inline_size = placement[last].inline_end - placement[first].inline_start,
+                        .block_size = scope.size},
         .color = scope.color});
   }
   return backgrounds;
@@ -1050,7 +1047,8 @@ Result<std::vector<LineBox>> InlineFormatter::run() {
   lines.reserve(breaks.lines.size());
   float block_cursor = input_->content_block_start;
   for (std::size_t i = 0; i < breaks.lines.size(); ++i) {
-    lines.push_back(build_line(breaks.lines[i], breaks, i + 1 == breaks.lines.size(), block_cursor));
+    lines.push_back(
+        build_line(breaks.lines[i], breaks, i + 1 == breaks.lines.size(), block_cursor));
     block_cursor = lines.back().rect.block_end();
   }
   return lines;

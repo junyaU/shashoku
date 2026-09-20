@@ -105,8 +105,8 @@ text::ShapedText FakeMeasurer::shape(std::u32string_view text, const text::TextS
     if (combining) {
       advance = 0;  // 結合文字・異体字セレクタは直前のクラスタに吸収する（送り 0）
     }
-    const bool sideways = style.direction == text::Direction::Vertical &&
-                          sideways_latin_in_vertical && cp < 0x80;
+    const bool sideways =
+        style.direction == text::Direction::Vertical && sideways_latin_in_vertical && cp < 0x80;
     out.glyphs.push_back(
         text::ShapedGlyph{.font = fallback_chars.find(cp) == std::u32string::npos ? 0U : 1U,
                           .glyph_id = static_cast<GlyphId>(cp & 0xFFFFU),

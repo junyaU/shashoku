@@ -84,8 +84,7 @@ struct Tree {
 // 合成ルート "#root"（display: block）を作る。
 [[nodiscard]] style::StyledNode build(std::vector<Tree> children, StyleFn style = nullptr);
 // writing-mode: vertical-rl のルート。
-[[nodiscard]] style::StyledNode build_vertical(std::vector<Tree> children,
-                                               StyleFn style = nullptr);
+[[nodiscard]] style::StyledNode build_vertical(std::vector<Tree> children, StyleFn style = nullptr);
 
 // ---- レイアウトの呼び出し --------------------------------------------------------
 [[nodiscard]] Options make_options(float viewport_width);

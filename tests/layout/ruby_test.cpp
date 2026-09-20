@@ -12,7 +12,6 @@ namespace shashoku::layout::test {
 namespace {
 
 using style::ComputedStyle;
-using style::Dimension;
 using style::Display;
 
 // 親文字 16px / ルビ 8px（UA スタイルの 50%）。
@@ -66,8 +65,7 @@ TEST(LayoutRuby, SinglePair) {
   EXPECT_FLOAT_EQ(base[0]->inline_start, 0);
   EXPECT_FLOAT_EQ(ruby[0]->inline_start, 0);
   // ルビのベースライン = 親文字の内容領域の上端 − ルビの descent
-  EXPECT_FLOAT_EQ(ruby[0]->baseline,
-                  lines[0]->baseline - fake_ascent(kBase) - fake_descent(kRuby));
+  EXPECT_FLOAT_EQ(ruby[0]->baseline, lines[0]->baseline - fake_ascent(kBase) - fake_descent(kRuby));
   // 行はルビのぶん上に広がる
   EXPECT_FLOAT_EQ(lines[0]->baseline,
                   fake_ascent(kBase) + fake_ascent(kRuby) + fake_descent(kRuby));
@@ -108,8 +106,7 @@ TEST(LayoutRuby, ShorterRubyIsCentred) {
 // 1 つの <ruby> に複数組。
 TEST(LayoutRuby, MultiplePairsInOneRubyElement) {
   FakeMeasurer measurer;
-  const auto root =
-      build({block({ruby({text("東"), rt("とう"), text("京"), rt("きょう")})})});
+  const auto root = build({block({ruby({text("東"), rt("とう"), text("京"), rt("きょう")})})});
   const auto tree = run_layout(root, 400, measurer);
   ASSERT_TRUE(tree.has_value());
   const LineBox& line = *all_lines(*tree)[0];
@@ -140,9 +137,9 @@ TEST(LayoutRuby, BaseWithoutAnnotationStaysPlainText) {
 TEST(LayoutRuby, BaseKeepsSpanStyling) {
   FakeMeasurer measurer;
   measurer.fallback_chars = U"京";
-  const auto root = build({block({inline_box(
-      {ruby({text("東"), text("京"), rt("とうきょう")})},
-      [](ComputedStyle& style) { style.background_color = Color{0, 255, 0, 255}; })})});
+  const auto root = build({block(
+      {inline_box({ruby({text("東"), text("京"), rt("とうきょう")})},
+                  [](ComputedStyle& style) { style.background_color = Color{0, 255, 0, 255}; })})});
   const auto tree = run_layout(root, 400, measurer);
   ASSERT_TRUE(tree.has_value());
   const LineBox& line = *all_lines(*tree)[0];
@@ -202,8 +199,7 @@ TEST(LayoutRuby, DoesNotBreakInsideAPair) {
 // 組どうしの間では割れる。
 TEST(LayoutRuby, BreaksBetweenPairs) {
   FakeMeasurer measurer;
-  const auto root =
-      build({block({ruby({text("東"), rt("とう"), text("京"), rt("きょう")})})});
+  const auto root = build({block({ruby({text("東"), rt("とう"), text("京"), rt("きょう")})})});
   const auto tree = run_layout(root, 20, measurer);
   ASSERT_TRUE(tree.has_value());
   EXPECT_EQ(line_texts(*tree), (std::vector<std::string>{"東とう", "京きょう"}));
@@ -225,11 +221,9 @@ TEST(LayoutRuby, PunctuationAfterAPairNeverStartsALine) {
 // ルビを含む段落の両端揃え（A13）。組は 1 アイテムなので、その前後だけが広がる。
 TEST(LayoutRuby, JustifyTreatsThePairAsOneItem) {
   FakeMeasurer measurer;
-  const auto root = build({block({text("あいうえお"), ruby({text("漢"), rt("かん")}),
-                                  text("かきくけこさしすせそ")},
-                                 [](ComputedStyle& style) {
-                                   style.text_align = style::TextAlign::Justify;
-                                 })});
+  const auto root = build(
+      {block({text("あいうえお"), ruby({text("漢"), rt("かん")}), text("かきくけこさしすせそ")},
+             [](ComputedStyle& style) { style.text_align = style::TextAlign::Justify; })});
   const auto tree = run_layout(root, 200, measurer);
   ASSERT_TRUE(tree.has_value());
   const std::vector<const LineBox*> lines = all_lines(*tree);
@@ -262,11 +256,11 @@ TEST(LayoutRuby, VerticalRubyGoesToTheBlockStartSide) {
 
 TEST(LayoutRuby, WorksInsideAFlexItem) {
   FakeMeasurer measurer;
-  const auto root = build({flex({block({ruby({text("東"), rt("とうきょう")})})},
-                                [](ComputedStyle& style) {
-                                  style.flex_direction = style::FlexDirection::Column;
-                                  style.align_items = style::AlignItems::FlexStart;
-                                })});
+  const auto root =
+      build({flex({block({ruby({text("東"), rt("とうきょう")})})}, [](ComputedStyle& style) {
+        style.flex_direction = style::FlexDirection::Column;
+        style.align_items = style::AlignItems::FlexStart;
+      })});
   const auto tree = run_layout(root, 400, measurer);
   ASSERT_TRUE(tree.has_value());
   const std::vector<BlockBox>& items = *tree->root.blocks()->front().blocks();
@@ -312,8 +306,7 @@ TEST(LayoutRuby, ElementInsideRtIsRejected) {
 
 TEST(LayoutRuby, NestedRubyIsRejected) {
   FakeMeasurer measurer;
-  const auto root =
-      build({block({ruby({ruby({text("漢"), rt("かん")}), rt("ふりがな")})})});
+  const auto root = build({block({ruby({ruby({text("漢"), rt("かん")}), rt("ふりがな")})})});
   const auto tree = run_layout(root, 400, measurer);
   ASSERT_FALSE(tree.has_value());
   EXPECT_EQ(tree.error().kind, ErrorKind::UnsupportedLayout);

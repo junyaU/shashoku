@@ -8,6 +8,7 @@
 
 #include <gtest/gtest.h>
 
+#include "core/geometry.hpp"
 #include "layout/test_support.hpp"
 
 // 性質テスト（DESIGN.md §10-4）。種を固定した乱数でランダムなスタイル付きツリーを作り、
@@ -36,7 +37,7 @@ constexpr auto kWords = std::to_array<std::string_view>({
 
 class Generator {
  public:
-  explicit Generator(std::uint32_t seed) : rng_(seed) {}
+  Generator(std::uint32_t seed, bool vertical) : vertical_(vertical), rng_(seed) {}
 
   std::size_t pick(std::size_t count) {
     return std::uniform_int_distribution<std::size_t>(0, count - 1)(rng_);
@@ -74,13 +75,19 @@ class Generator {
       }
       children.push_back(make_inline());
     }
+    const bool vertical = vertical_;
     return block(std::move(children), [=](ComputedStyle& style) {
       style.padding = {padding, padding, padding, padding};
       style.border_width = border;
-      style.margin = {Dimension::px(margin_block), Dimension::px(margin_end),
-                      Dimension::px(margin_block), Dimension::px(margin_start)};
+      // margin は inline 方向の 2 辺（横書き: 左右 / 縦書き: 上下）を start / end に使う
+      style.margin =
+          vertical ? Edges<Dimension>{Dimension::px(margin_start), Dimension::px(margin_block),
+                                      Dimension::px(margin_end), Dimension::px(margin_block)}
+                   : Edges<Dimension>{Dimension::px(margin_block), Dimension::px(margin_end),
+                                      Dimension::px(margin_block), Dimension::px(margin_start)};
       if (percent_width) {
-        style.width = Dimension::percent(percent);
+        // inline 方向のサイズを決めるプロパティは書字方向で入れ替わる（A1）
+        (vertical ? style.height : style.width) = Dimension::percent(percent);
       }
       style.font_size = font_size;
     });
@@ -128,6 +135,7 @@ class Generator {
         style.flex_basis = Dimension::px(0);
       }));
     }
+    const bool vertical = vertical_;
     return element("flex", style::Display::Flex, std::move(children), [=](ComputedStyle& style) {
       style.flex_direction = column ? style::FlexDirection::Column : style::FlexDirection::Row;
       style.justify_content = justify;
@@ -135,7 +143,9 @@ class Generator {
       style.column_gap = gap;
       style.row_gap = gap;
       if (fixed_height) {
-        style.height = Dimension::px(height);
+        // block 方向のサイズだけを確定させる（縦書きでは width がその役）。inline 方向を
+        // 勝手に確定させると親からはみ出してしまう
+        (vertical ? style.width : style.height) = Dimension::px(height);
       }
     });
   }
@@ -143,6 +153,13 @@ class Generator {
   Tree make_inline() {
     if (chance(0.1)) {
       return img("p");
+    }
+    if (chance(0.12)) {
+      // ルビ 1 組 / 2 組 / ルビなしの親文字つき
+      if (chance(0.5)) {
+        return ruby({text("漢"), rt("かん")});
+      }
+      return ruby({text("東"), rt("とう"), text("京"), rt("きょう"), text("都")});
     }
     if (chance(0.15)) {
       return br();
@@ -167,6 +184,7 @@ class Generator {
     return available - extra > 0 ? available - extra : 0;
   }
 
+  bool vertical_ = false;
   std::mt19937 rng_;
 };
 
@@ -219,7 +237,8 @@ void check_geometry(const BlockBox& box) {
     // align-items: center / flex-end で交差軸がはみ出す「unsafe」な寄せ。どちらも CSS どおり）。
     if (!flex) {
       EXPECT_GE(child.rect.inline_start, content.inline_start - kTolerance) << box.tag;
-      EXPECT_LE(child.rect.inline_end(), content.inline_end() + kTolerance) << box.tag;
+      EXPECT_LE(child.rect.inline_end(), content.inline_end() + kTolerance)
+          << box.tag << " > " << child.tag;
     }
     EXPECT_GE(child.rect.inline_size, 0);
     EXPECT_GE(child.rect.block_size, 0);
@@ -236,38 +255,54 @@ void check_geometry(const BlockBox& box) {
   }
 }
 
+// 1 つの種で木を作り、指定の書字方向で組んで不変条件を検査する。
+void check_seed(std::uint32_t seed, bool vertical) {
+  Generator generator(seed, vertical);
+  const float inline_size = generator.pick_float(80, 800);
+  std::vector<Tree> children;
+  const std::size_t count = 1 + generator.pick(3);
+  for (std::size_t i = 0; i < count; ++i) {
+    children.push_back(generator.make_block(3, inline_size));
+  }
+  // 縦書きでは inline 方向が高さなので、viewport の高さを行の長さにする
+  const style::StyledNode root =
+      vertical ? build_vertical(std::move(children)) : build(std::move(children));
+  const Options options = vertical ? vertical_options(400, inline_size) : make_options(inline_size);
+
+  FakeMeasurer measurer;
+  const ImageLookup images = image_table({{.src = "p", .id = 1, .width = 24, .height = 12}});
+  const auto tree = run_layout(root, options, measurer, images);
+  ASSERT_TRUE(tree.has_value()) << "seed " << seed << ": " << to_string(tree.error());
+
+  // (2) 入力のクラスタはちょうど 1 回ずつどこかの行に現れる（空白の畳み込みぶんを除く）
+  std::string source;
+  collect_source_text(root, source);
+  std::string laid_out;
+  collect_laid_out_text(tree->root, laid_out);
+  EXPECT_EQ(without_spaces(laid_out), without_spaces(source)) << "seed " << seed;
+
+  // (3)(4) 幾何の不変条件
+  SCOPED_TRACE(testing::Message() << "seed " << seed << (vertical ? " vertical" : " horizontal"));
+  check_geometry(tree->root);
+  EXPECT_FLOAT_EQ(tree->root.rect.inline_size, inline_size) << "seed " << seed;
+
+  // (5) 同じ入力 → 同じ出力
+  FakeMeasurer again;
+  const auto twice = run_layout(root, options, again, images);
+  ASSERT_TRUE(twice.has_value());
+  EXPECT_EQ(dump_json(*tree), dump_json(*twice)) << "seed " << seed;
+}
+
 TEST(LayoutProperty, RandomTreesKeepTheInvariants) {
-  for (std::uint32_t seed = 1; seed <= 200; ++seed) {
-    Generator generator(seed);
-    const float viewport = generator.pick_float(80, 800);
-    std::vector<Tree> children;
-    const std::size_t count = 1 + generator.pick(3);
-    for (std::size_t i = 0; i < count; ++i) {
-      children.push_back(generator.make_block(3, viewport));
-    }
-    const style::StyledNode root = build(std::move(children));
+  for (std::uint32_t seed = 1; seed <= 150; ++seed) {
+    check_seed(seed, false);
+  }
+}
 
-    FakeMeasurer measurer;
-    const ImageLookup images = image_table({{.src = "p", .id = 1, .width = 24, .height = 12}});
-    const auto tree = run_layout(root, viewport, measurer, images);
-    ASSERT_TRUE(tree.has_value()) << "seed " << seed << ": " << to_string(tree.error());
-
-    // (2) 入力のクラスタはちょうど 1 回ずつどこかの行に現れる（空白の畳み込みぶんを除く）
-    std::string source;
-    collect_source_text(root, source);
-    std::string laid_out;
-    collect_laid_out_text(tree->root, laid_out);
-    EXPECT_EQ(without_spaces(laid_out), without_spaces(source)) << "seed " << seed;
-
-    // (3)(4) 幾何の不変条件
-    check_geometry(tree->root);
-    EXPECT_FLOAT_EQ(tree->root.rect.inline_size, viewport) << "seed " << seed;
-
-    // (5) 同じ入力 → 同じ出力
-    FakeMeasurer again;
-    const auto twice = run_layout(root, viewport, again, images);
-    ASSERT_TRUE(twice.has_value());
-    EXPECT_EQ(dump_json(*tree), dump_json(*twice)) << "seed " << seed;
+// 縦書きでも同じ不変条件が成り立つ（論理座標のまま組んでいるので、軸が入れ替わるだけ）。
+TEST(LayoutProperty, RandomTreesKeepTheInvariantsInVerticalWritingMode) {
+  for (std::uint32_t seed = 1; seed <= 150; ++seed) {
+    check_seed(seed, true);
   }
 }
 

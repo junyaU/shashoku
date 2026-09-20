@@ -192,8 +192,14 @@ Result<BoxSizing> LayoutEngine::resolve_box(const style::ComputedStyle& style,
   const Dimension block_size = map_.block_size(style);
   if (!block_size.is_auto()) {
     if (block_size.kind == Dimension::Kind::Percent) {
-      // ② が弾いている（computed_style.hpp）。ここに来たら値が対応外
-      return fail(ErrorKind::UnsupportedValue, "percentage height is not supported", location);
+      // block 方向のパーセントは包含ブロックの block サイズが要るが、それは内容から決まる。
+      // ② が弾いている（computed_style.hpp）が、縦書きでは width がこちら側に来る
+      return fail(ErrorKind::UnsupportedValue,
+                  map_.vertical()
+                      ? "percentage width is not supported in vertical-rl (it sizes the block "
+                        "direction)"
+                      : "percentage height is not supported",
+                  location);
     }
     sizing.content_block_size = std::max(block_size.value, 0.0F);
   }

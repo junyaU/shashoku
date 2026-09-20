@@ -144,6 +144,22 @@ TEST(OutputSize, NothingToRender) {
   EXPECT_NE(result.error().message.find("nothing to render"), std::string::npos);
 }
 
+// 縦書きでは内容が伸びる向きが横なので、高さを推定できない（ARCHITECTURE.md §3.8 / A1）。
+TEST(OutputSize, VerticalNeedsExplicitHeight) {
+  constexpr std::string_view kVertical =
+      R"(<div style="writing-mode: vertical-rl">縦書き</div>)";
+  const auto without = render(kVertical, japanese_fonts(), options_for(320));
+  ASSERT_FALSE(without.has_value());
+  EXPECT_EQ(without.error().kind, ErrorKind::InvalidOption) << to_string(without.error());
+
+  RenderOptions options = options_for(320);
+  options.viewport_height = 240;
+  const auto with = render(kVertical, japanese_fonts(), options);
+  ASSERT_TRUE(with.has_value()) << to_string(with.error());
+  EXPECT_EQ(with->width, 320);
+  EXPECT_EQ(with->height, 240);
+}
+
 TEST(OutputSize, EmptyDocumentWithExplicitHeightIsFine) {
   RenderOptions options = options_for(320);
   options.viewport_height = 40;

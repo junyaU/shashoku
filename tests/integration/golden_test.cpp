@@ -297,6 +297,68 @@ TEST(Golden, OgCard) {
 }
 
 // ---------------------------------------------------------------------------
+// 10. ルビ（DESIGN.md Phase 7）
+//
+// 単一組 / 複数組（東京 → とう・きょう）/ ルビの方が長い組 / <rp> / span の中のルビ /
+// ルビを含む行の折り返し。<rp> の括弧は描かれない。
+// ---------------------------------------------------------------------------
+
+TEST(Golden, RubyHorizontal) {
+  const Result<std::vector<std::uint8_t>> source =
+      read_file(std::filesystem::path(SHASHOKU_EXAMPLES_DIR) / "ruby.html");
+  ASSERT_TRUE(source.has_value()) << "examples/ruby.html を読めません";
+  const std::string html(source->begin(), source->end());
+
+  const Bitmap bitmap = render_bitmap(html, japanese_fonts(), options_for(460));
+  EXPECT_TRUE(expect_golden(bitmap, "ruby_horizontal"));
+}
+
+// ---------------------------------------------------------------------------
+// 11. 縦書き（DESIGN.md Phase 8 / ARCHITECTURE.md A1）
+//
+// 約物の縦組み字形、長音符、欧文と数字の横倒し、禁則、ルビ（親文字の右側）。
+// 縦書きでは block 方向が横なので viewport_height が要る。
+// ---------------------------------------------------------------------------
+
+TEST(Golden, VerticalText) {
+  const Result<std::vector<std::uint8_t>> source =
+      read_file(std::filesystem::path(SHASHOKU_EXAMPLES_DIR) / "vertical.html");
+  ASSERT_TRUE(source.has_value()) << "examples/vertical.html を読めません";
+  const std::string html(source->begin(), source->end());
+
+  RenderOptions options = options_for(520);
+  options.viewport_height = 560;
+  const Bitmap bitmap = render_bitmap(html, japanese_fonts(), options);
+  EXPECT_TRUE(expect_golden(bitmap, "vertical_text"));
+}
+
+// 縦書きの中の flex（row は字送り方向 = 縦に並ぶ）と <img>（回転しない）。
+TEST(Golden, VerticalFlex) {
+  constexpr std::string_view kHtml = R"(
+<style>
+  .page { writing-mode: vertical-rl; width: 216px; background-color: #eef1f4;
+          padding: 12px; font-size: 16px; color: #212529; }
+  .bar  { display: flex; align-items: center; gap: 12px; background-color: #d8dee4; }
+  .icon { width: 44px; height: 44px; border-radius: 22px; }
+  .box  { width: 28px; height: 60px; background-color: #4c6ef5; }
+  .grow { flex: 1; width: 28px; background-color: #f76707; }
+</style>
+<div class="page">
+  <div class="bar">
+    <img class="icon" src="icon">
+    <div>flex は行の向きに並ぶ</div>
+    <div class="box"></div>
+    <div class="grow"></div>
+  </div>
+</div>)";
+
+  RenderOptions options = options_for(240);
+  options.viewport_height = 340;
+  const Bitmap bitmap = render_bitmap(kHtml, japanese_fonts(), icon_images(), options);
+  EXPECT_TRUE(expect_golden(bitmap, "vertical_flex"));
+}
+
+// ---------------------------------------------------------------------------
 // README のサンプル（DESIGN.md Phase 5 の受け入れ条件）
 // ---------------------------------------------------------------------------
 

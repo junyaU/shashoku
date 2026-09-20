@@ -1,0 +1,24 @@
+<!-- 縦書き（writing-mode: vertical-rl）の見本。520x560 で組むことを想定している。
+     縦書きでは高さが先に決まらないので --height が必須。
+
+       shashoku examples/vertical.html --font NotoSansJP-Regular.otf -o vertical.png \
+         --width 520 --height 560
+
+     writing-mode を書けるのはトップレベル要素だけ（ARCHITECTURE.md A1）。
+-->
+<style>
+  .tategaki { writing-mode: vertical-rl; width: 472px; background-color: #f7f4ec; padding: 24px;
+              font-size: 19px; line-height: 1.9; color: #1c1813; }
+  h1        { font-size: 26px; margin-top: 0; margin-bottom: 18px; color: #7a2018; }
+  p         { margin-top: 0; margin-bottom: 14px; }
+  .last     { margin-bottom: 0; }
+  .quiet    { color: #6b6152; font-size: 16px; }
+</style>
+<div class="tategaki">
+  <h1><ruby>縦書<rt>たてが</rt></ruby>きの<ruby>組版<rt>くみはん</rt></ruby>。</h1>
+  <p>「約物は縦組み用の字形に差し替わります」と、彼は言った——長音符「ー」も、
+  括弧（かっこ）も、句読点も、すべて縦に流れる。</p>
+  <p class="quiet">欧文と数字は横倒しになります: HTML 5 と CSS 3、そして C++23。
+  ルビは親文字の<ruby>右側<rt>みぎがわ</rt></ruby>に付きます。</p>
+  <p class="last quiet">行頭に「。」や「、」が落ちないことは、縦書きでも同じです。</p>
+</div>

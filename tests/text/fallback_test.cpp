@@ -154,6 +154,64 @@ TEST(TextFallback, BoldGlyphsDifferFromRegular) {
   EXPECT_NE(regular.glyphs[0].font, bold.glyphs[0].font);
 }
 
+// 豆腐の □ は第一フォントだけでなくフォールバック列全体から探す。
+// 欧文フォントが先頭のとき、第一フォントの .notdef（幅が狭い）で描くと不揃いになる。
+TEST(TextFallback, TofuBoxComesFromTheWholeFallbackChain) {
+  FontStore store;
+  const FontId latin = *store.load(noto_sans());
+  const FontId japanese = *store.load(noto_sans_jp_regular());
+  ASSERT_FALSE(store.has_glyph(latin, U'□'));
+  ASSERT_TRUE(store.has_glyph(japanese, U'□'));
+  Shaper shaper(store);
+
+  const ShapedText shaped = shaper.shape(U"😀", style_at());
+  ASSERT_EQ(shaped.glyphs.size(), 1U);
+  EXPECT_EQ(shaped.glyphs[0].font, japanese) << "第一フォントに □ が無ければ次を探す";
+  EXPECT_EQ(shaped.glyphs[0].glyph_id, store.glyph_for(japanese, U'□'));
+  EXPECT_NE(shaped.glyphs[0].glyph_id, 0);
+
+  // 送りと豆腐の記録はこれまでどおり
+  ASSERT_EQ(shaped.clusters.size(), 1U);
+  EXPECT_TRUE(shaped.clusters[0].missing);
+  EXPECT_NEAR(shaped.clusters[0].advance, 32.0F, 0.02F);
+  const std::vector<MissingGlyph> missing = shaper.take_missing_glyphs();
+  ASSERT_EQ(missing.size(), 1U);
+  EXPECT_EQ(missing[0].cp, U'\U0001F600');
+}
+
+// font-family で並べ替えたフォールバック列の順に探す（FontStore の追加順ではなく）。
+TEST(TextFallback, TofuBoxFollowsTheResolvedFontOrder) {
+  FontStore store;
+  ASSERT_TRUE(store.load(noto_sans_jp_regular()).has_value());
+  const FontId bold = *store.load(noto_sans_jp_bold());
+  Shaper shaper(store);
+
+  TextStyle style = style_at();
+  style.font_family = {"Noto Sans JP"};
+  style.font_weight = 700;
+  const ShapedText shaped = shaper.shape(U"😀", style);
+  ASSERT_EQ(shaped.glyphs.size(), 1U);
+  EXPECT_EQ(shaped.glyphs[0].font, bold);
+  EXPECT_EQ(shaped.glyphs[0].glyph_id, store.glyph_for(bold, U'□'));
+}
+
+TEST(TextFallback, TofuBoxIsUprightInVerticalText) {
+  FontStore store;
+  ASSERT_TRUE(store.load(noto_sans()).has_value());
+  const FontId japanese = *store.load(noto_sans_jp_regular());
+  Shaper shaper(store);
+
+  TextStyle style = style_at();
+  style.direction = Direction::Vertical;
+  const ShapedText shaped = shaper.shape(U"😀", style);
+  ASSERT_EQ(shaped.glyphs.size(), 1U);
+  EXPECT_EQ(shaped.glyphs[0].font, japanese);
+  EXPECT_FALSE(shaped.glyphs[0].sideways);
+  EXPECT_NEAR(shaped.glyphs[0].advance, 32.0F, 0.02F);
+  EXPECT_NEAR(shaped.glyphs[0].x_offset, -16.0F, 0.02F);
+  EXPECT_GT(shaped.glyphs[0].y_offset, 0.0F);
+}
+
 TEST(TextFallback, SwitchesFontsRepeatedlyWithinOneRun) {
   FontStore store;
   const FontId latin = *store.load(noto_sans());

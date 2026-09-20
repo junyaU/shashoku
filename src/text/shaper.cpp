@@ -428,9 +428,19 @@ void ShaperImpl::emit_missing_run(std::u32string_view text, std::size_t begin, s
                                   const std::vector<CharPlan>& plan,
                                   const std::vector<FontId>& stack, const TextStyle& style,
                                   ShapedText& out) {
-  // 豆腐は第一フォントの □（U+25A1）、無ければ .notdef を 1em の送りで出す。
-  const FontId font = stack.empty() ? FontId{0} : stack.front();
-  const GlyphId tofu_glyph = fonts->glyph_for(font, kTofu);
+  // 豆腐は □（U+25A1）をフォールバック列の順に探し、最初に見つかったフォントのグリフで描く。
+  // 第一フォントだけを見ると、欧文フォントが先頭のときに幅の狭い .notdef が 1em の枠の
+  // 左端に出て不揃いになる。どのフォントにも □ が無いときだけ第一フォントの .notdef。
+  FontId font = stack.empty() ? FontId{0} : stack.front();
+  GlyphId tofu_glyph = 0;
+  for (const FontId candidate : stack) {
+    const GlyphId glyph = fonts->glyph_for(candidate, kTofu);
+    if (glyph != 0) {
+      font = candidate;
+      tofu_glyph = glyph;
+      break;
+    }
+  }
   const bool vertical = style.direction == Direction::Vertical;
   const float ascent = vertical ? font_metrics(font, style.font_size).ascent : 0.0F;
 

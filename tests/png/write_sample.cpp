@@ -53,46 +53,14 @@ Bitmap make_gradient(std::uint32_t width, std::uint32_t height) {
   return bitmap;
 }
 
-Bitmap make_sample(std::string_view pattern) {
-  if (pattern == "tiny") {
-    return {1, 1, Color{0x12, 0x34, 0x56, 0x78}};
-  }
-  if (pattern == "solid") {
-    return {64, 48, Color{0x20, 0x40, 0x80, 0xFF}};
-  }
-  if (pattern == "odd") {
-    Bitmap bitmap(7, 13, Color{0, 0, 0, 255});
-    for (std::uint32_t y = 0; y < bitmap.height; ++y) {
-      bitmap.set_pixel(y % bitmap.width, y, Color{255, 255, 255, 255});
-    }
-    return bitmap;
-  }
-  if (pattern == "alpha") {
-    Bitmap bitmap(40, 40);
-    for (std::uint32_t y = 0; y < bitmap.height; ++y) {
-      for (std::uint32_t x = 0; x < bitmap.width; ++x) {
-        bitmap.set_pixel(x, y,
-                         Color{static_cast<std::uint8_t>(x * 6), 0x80,
-                               static_cast<std::uint8_t>(y * 6), static_cast<std::uint8_t>(x * 6)});
-      }
-    }
-    return bitmap;
-  }
-  if (pattern == "noise") {
-    Bitmap bitmap(53, 31);
-    Rng rng(20260919);
-    for (std::uint8_t& v : bitmap.rgba) {
-      v = rng.byte();
-    }
-    return bitmap;
-  }
-  // 以下はフィルタ選択の最適化（A32）の前後でバイト列が一致することを確かめるための大きめの絵。
-  // 5 種のフィルタがどれも選ばれるように、傾き・平坦・ノイズ・極端な縦横比を混ぜてある。
+// フィルタ選択の最適化（A32）の前後でバイト列が一致することを確かめるための大きめの絵。
+// 5 種のフィルタがどれも選ばれるように、傾き・平坦・ノイズ・極端な縦横比を混ぜてある。
+std::optional<Bitmap> make_large_sample(std::string_view pattern) {
   if (pattern == "big-gradient") {
     return make_gradient(1200, 630);
   }
   if (pattern == "solid-big") {
-    return {1200, 630, Color{0x12, 0x26, 0x3F, 0xFF}};
+    return Bitmap{1200, 630, Color{0x12, 0x26, 0x3F, 0xFF}};
   }
   if (pattern == "photo") {
     // 写真風: なめらかな 2 次元の傾きに弱いノイズを乗せる（Paeth が勝ちやすい絵）。
@@ -125,6 +93,45 @@ Bitmap make_sample(std::string_view pattern) {
     // 高さだけが大きい絵（行の本数が多く、行ごとの固定費が効く）。
     Bitmap bitmap(3, 4096);
     Rng rng(20260920);
+    for (std::uint8_t& v : bitmap.rgba) {
+      v = rng.byte();
+    }
+    return bitmap;
+  }
+  return std::nullopt;
+}
+
+Bitmap make_sample(std::string_view pattern) {
+  if (std::optional<Bitmap> large = make_large_sample(pattern); large) {
+    return std::move(*large);
+  }
+  if (pattern == "tiny") {
+    return {1, 1, Color{0x12, 0x34, 0x56, 0x78}};
+  }
+  if (pattern == "solid") {
+    return {64, 48, Color{0x20, 0x40, 0x80, 0xFF}};
+  }
+  if (pattern == "odd") {
+    Bitmap bitmap(7, 13, Color{0, 0, 0, 255});
+    for (std::uint32_t y = 0; y < bitmap.height; ++y) {
+      bitmap.set_pixel(y % bitmap.width, y, Color{255, 255, 255, 255});
+    }
+    return bitmap;
+  }
+  if (pattern == "alpha") {
+    Bitmap bitmap(40, 40);
+    for (std::uint32_t y = 0; y < bitmap.height; ++y) {
+      for (std::uint32_t x = 0; x < bitmap.width; ++x) {
+        bitmap.set_pixel(x, y,
+                         Color{static_cast<std::uint8_t>(x * 6), 0x80,
+                               static_cast<std::uint8_t>(y * 6), static_cast<std::uint8_t>(x * 6)});
+      }
+    }
+    return bitmap;
+  }
+  if (pattern == "noise") {
+    Bitmap bitmap(53, 31);
+    Rng rng(20260919);
     for (std::uint8_t& v : bitmap.rgba) {
       v = rng.byte();
     }

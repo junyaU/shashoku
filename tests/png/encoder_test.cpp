@@ -201,8 +201,8 @@ TEST(PngEncode, RejectsCompressionLevelsOutsideZeroToNine) {
     // message には「いくつを渡したか」と「許される範囲」が入る（fail loudly）。
     EXPECT_NE(encoded.error().message.find(std::to_string(level)), std::string::npos)
         << encoded.error().message;
-    EXPECT_NE(encoded.error().message.find("0"), std::string::npos) << encoded.error().message;
-    EXPECT_NE(encoded.error().message.find("9"), std::string::npos) << encoded.error().message;
+    EXPECT_NE(encoded.error().message.find("between 0 and 9"), std::string::npos)
+        << encoded.error().message;
   }
 }
 

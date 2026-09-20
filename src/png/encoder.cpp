@@ -48,20 +48,26 @@ std::uint8_t paeth_predictor(std::uint8_t a, std::uint8_t b, std::uint8_t c) {
   return c;
 }
 
-// 1 バイトぶんの残差（PNG 仕様 §9.2）。a=左, b=上, c=左上。差は 8bit の剰余で取る。
+// F の予測値（PNG 仕様 §9.2）。a=左, b=上, c=左上。
+template <Filter F>
+unsigned predictor(std::uint8_t a, std::uint8_t b, std::uint8_t c) {
+  if constexpr (F == Filter::Sub) {
+    return a;
+  } else if constexpr (F == Filter::Up) {
+    return b;
+  } else if constexpr (F == Filter::Average) {
+    return (unsigned{a} + unsigned{b}) / 2U;
+  } else if constexpr (F == Filter::Paeth) {
+    return paeth_predictor(a, b, c);
+  } else {
+    return 0U;  // None
+  }
+}
+
+// 1 バイトぶんの残差。差は 8bit の剰余で取る（PNG 仕様 §9.2）。
 template <Filter F>
 std::uint8_t residual(std::uint8_t x, std::uint8_t a, std::uint8_t b, std::uint8_t c) {
-  unsigned pred = 0;
-  if constexpr (F == Filter::Sub) {
-    pred = a;
-  } else if constexpr (F == Filter::Up) {
-    pred = b;
-  } else if constexpr (F == Filter::Average) {
-    pred = (unsigned{a} + unsigned{b}) / 2U;
-  } else if constexpr (F == Filter::Paeth) {
-    pred = paeth_predictor(a, b, c);
-  }
-  return static_cast<std::uint8_t>(unsigned{x} - pred);
+  return static_cast<std::uint8_t>(unsigned{x} - predictor<F>(a, b, c));
 }
 
 // 1 行に F を適用して out に書く。raw / prior / out は同じ長さ。

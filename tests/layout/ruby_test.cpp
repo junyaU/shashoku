@@ -17,6 +17,8 @@ using style::Display;
 // 親文字 16px / ルビ 8px（UA スタイルの 50%）。
 constexpr float kBase = 16;
 constexpr float kRuby = 8;
+// 「ちょうど行の端に接する」を許すための許容差（float の積み上げ誤差ぶん）。
+constexpr float kTolerance = 1.0F / 1024.0F;
 
 // 注意: 共有ヘルパーの line_texts() は行の全 TextFragment を描画順に連結するので、
 // ルビ文字もそこに入る（「親文字 → ルビ」の順）。親文字だけを見たいときは
@@ -237,6 +239,7 @@ TEST(LayoutRuby, JustifyTreatsThePairAsOneItem) {
 // ---- 縦書きのルビ ------------------------------------------------------------------
 
 // 縦書きではルビは親文字の右（block-start 側）に来る。
+// block 座標は右端からの距離なので、block-start 側 = 値が小さい側（横書きの「上」と同じ向き）。
 TEST(LayoutRuby, VerticalRubyGoesToTheBlockStartSide) {
   FakeMeasurer measurer;
   const auto root = build_vertical({block({ruby({text("漢"), rt("かん")})})});
@@ -246,10 +249,64 @@ TEST(LayoutRuby, VerticalRubyGoesToTheBlockStartSide) {
   const std::vector<const TextFragment*> ruby = ruby_fragments(line);
   ASSERT_EQ(ruby.size(), 1U);
   // 中心軸から親文字の半分 + ルビの半分ぶん block-start 側（= 紙面の右）へ
-  EXPECT_FLOAT_EQ(ruby[0]->baseline, line.baseline + (kBase / 2) + (kRuby / 2));
-  EXPECT_GT(ruby[0]->baseline, line.baseline);
+  EXPECT_FLOAT_EQ(ruby[0]->baseline, line.baseline - (kBase / 2) - (kRuby / 2));
+  EXPECT_LT(ruby[0]->baseline, line.baseline);
   // 行は中心軸から block-start 側に「親文字の半分 + ルビ」ぶん広がる
   EXPECT_FLOAT_EQ(line.baseline, (kBase / 2) + kRuby);
+  // 空けた側と置いた側が同じ: ルビは行の block-start 端の内側に収まる
+  EXPECT_GE(ruby[0]->baseline - (kRuby / 2), line.rect.block_start - kTolerance);
+}
+
+// 横書きのルビも block-start 側（= 上 = block 座標が小さい側）。
+TEST(LayoutRuby, HorizontalRubyIsOnTheBlockStartSide) {
+  FakeMeasurer measurer;
+  const auto root = build({block({ruby({text("漢"), rt("かん")})})});
+  const auto tree = run_layout(root, 400, measurer);
+  ASSERT_TRUE(tree.has_value());
+  const LineBox& line = *all_lines(*tree)[0];
+  const std::vector<const TextFragment*> ruby = ruby_fragments(line);
+  ASSERT_EQ(ruby.size(), 1U);
+  EXPECT_LT(ruby[0]->baseline, line.baseline);
+  EXPECT_GE(ruby[0]->baseline - fake_ascent(kRuby), line.rect.block_start - kTolerance);
+}
+
+// line-height が小さいとき、行の block-start 端はルビを含むところまで広がる。
+TEST(LayoutRuby, VerticalLineGrowsOnTheBlockStartSideForRuby) {
+  FakeMeasurer measurer;
+  const auto tight = [](ComputedStyle& style) {
+    style.line_height = style::LineHeight{style::LineHeight::Kind::Px, 16};
+  };
+  const auto plain = build_vertical({block({text("漢")}, tight)});
+  const auto annotated = build_vertical({block({ruby({text("漢"), rt("かん")})}, tight)});
+  const auto a = run_layout(plain, vertical_options(400, 200), measurer);
+  const auto b = run_layout(annotated, vertical_options(400, 200), measurer);
+  ASSERT_TRUE(a.has_value());
+  ASSERT_TRUE(b.has_value());
+  const LineBox& without = *all_lines(*a)[0];
+  const LineBox& with = *all_lines(*b)[0];
+  // ルビのぶん行が広がり、広がったのは block-start 側（中心軸が block-end 寄りに動く）
+  EXPECT_GT(with.rect.block_size, without.rect.block_size);
+  EXPECT_GT(with.baseline, without.baseline);
+  EXPECT_FLOAT_EQ(with.rect.block_end() - with.baseline,
+                  without.rect.block_end() - without.baseline);
+}
+
+// 前の行（block-start 側 = 右隣）とルビが重ならない。
+TEST(LayoutRuby, VerticalRubyDoesNotReachIntoThePreviousLine) {
+  FakeMeasurer measurer;
+  // 1 行目は普通の文字、2 行目にルビ。行の長さ 32（全角 2 文字）で折り返す
+  const auto root = build_vertical({block({text("あい"), br(), ruby({text("漢"), rt("かん")})})});
+  const auto tree = run_layout(root, vertical_options(400, 32), measurer);
+  ASSERT_TRUE(tree.has_value());
+  const std::vector<const LineBox*> lines = all_lines(*tree);
+  ASSERT_EQ(lines.size(), 2U);
+  // 行は block 方向に隙間なく積まれる
+  EXPECT_FLOAT_EQ(lines[0]->rect.block_end(), lines[1]->rect.block_start);
+  const std::vector<const TextFragment*> ruby = ruby_fragments(*lines[1]);
+  ASSERT_EQ(ruby.size(), 1U);
+  // ルビの block-start 端が 1 行目に食い込まない
+  EXPECT_GE(ruby[0]->baseline - (kRuby / 2), lines[1]->rect.block_start - kTolerance);
+  EXPECT_GE(ruby[0]->baseline - (kRuby / 2), lines[0]->rect.block_end() - kTolerance);
 }
 
 // ---- flex / 固有寸法 ----------------------------------------------------------------

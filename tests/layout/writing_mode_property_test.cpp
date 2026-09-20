@@ -632,6 +632,10 @@ TEST(WritingModeProperty, InlineImage) {
 // 小さな文法からランダムに木を作る。同じ種からは同じ形が出るので、書字方向ごとに
 // 引き直せば「同じ内容」を 2 通りに組める（ARCHITECTURE.md §4: ファジングは種を固定して
 // 通常のテストに含める）。
+// `std::uniform_int_distribution` の列は標準ライブラリの実装で違いうるので、libc++ と
+// libstdc++ では**違う木**が出る（どちらも正しいランダムな木なので、性質の検査としては
+// これでよい。ただし CI が落ちた種をそのまま手元で再現できるとは限らない）。
+// tests/linebreak/property_test.cpp と同じやり方。
 class TreeMaker {
  public:
   TreeMaker(std::uint32_t seed, bool vertical) : rng_(seed), vertical_(vertical) {}

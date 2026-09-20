@@ -4,6 +4,8 @@ shashoku_add_test(layout_test
     test_support.cpp
     block_test.cpp
     inline_test.cpp
+    flex_test.cpp
+    image_test.cpp
     line_break_test.cpp
     dump_json_test.cpp
     error_test.cpp

@@ -40,8 +40,8 @@ Result<Intrinsic> LayoutEngine::content_intrinsic(const BlockInput& input, float
     }
     return Intrinsic{.min_content = image->inline_size, .max_content = image->inline_size};
   }
-  if (input.style->display == style::Display::Flex) {
-    return flex_intrinsic(*this, input, percent_basis);
+  if (!input.anonymous && input.style->display == style::Display::Flex) {
+    return flex_intrinsic(*this, input, percent_basis);  // 無名ボックスは常にブロックコンテナ
   }
 
   if (!has_block_child(input)) {

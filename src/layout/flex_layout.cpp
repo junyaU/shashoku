@@ -240,23 +240,19 @@ Result<void> prepare_cross(LayoutEngine& engine, std::vector<Item>& items,
 
 Result<void> prepare_base_row(LayoutEngine& engine, std::vector<Item>& items, float main_size) {
   for (Item& item : items) {
-    Result<Intrinsic> intrinsic = item_intrinsic(engine, item, main_size);
-    if (!intrinsic) {
-      return std::unexpected(intrinsic.error());
+    // 自動最小サイズは「中身の min-content」で決まる。width が確定していてもそれは
+    // 上限（§4.5 の content-based minimum size = min(指定サイズ, 内容サイズ)）にしかならない
+    Result<Intrinsic> content = engine.content_intrinsic(item.input, main_size);
+    if (!content) {
+      return std::unexpected(content.error());
     }
     const Dimension main = main_dimension(item, engine.map(), true);
-    if (main.is_auto()) {
-      item.base = intrinsic->max_content;
-    } else {
-      item.base = std::max(resolve_length(main, main_size), 0.0F);
-    }
-    // 自動最小サイズ: min-content 幅（主軸のサイズが確定ならその値と小さい方）
-    item.min_main = intrinsic->min_content;
-    if (!main.is_auto()) {
-      item.min_main = std::min(item.min_main, item.base);
-    }
+    item.base = main.is_auto() ? content->max_content
+                               : std::max(resolve_length(main, main_size), 0.0F);
+    item.min_main = main.is_auto() ? content->min_content
+                                   : std::min(content->min_content, item.base);
     if (item.replaced) {
-      item.min_main = item.base;  // 画像は内容サイズより小さくしない
+      item.min_main = std::max(content->min_content, 0.0F);  // 画像は内容サイズより縮めない
     }
   }
   return {};

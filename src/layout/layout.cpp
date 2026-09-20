@@ -156,7 +156,10 @@ Result<BlockBox> LayoutEngine::layout_block(const BlockInput& input, const BoxSi
   if (input.replaced != nullptr) {
     return layout_image_box(input, sizing, content_inline_start, block_start);
   }
-  if (input.style->display == style::Display::Flex) {
+  // 無名ボックス（テキストの連続を包んだもの）は自分のスタイルを持たない。display は
+  // 親から借りているだけなので、flex コンテナとして扱ってはいけない（CSS の無名ボックスは
+  // 常にブロックコンテナ）。
+  if (!input.anonymous && input.style->display == style::Display::Flex) {
     return layout_flex(*this, input, sizing, content_inline_start, block_start);
   }
 

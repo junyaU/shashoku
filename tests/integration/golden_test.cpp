@@ -187,6 +187,116 @@ TEST(Golden, StylesheetAndClasses) {
 }
 
 // ---------------------------------------------------------------------------
+// 7. flexbox の見本（DESIGN.md Phase 6）
+//
+// justify-content の 6 値・align-items の 4 値・gap・flex-grow の配分が一目で分かる形。
+// 色つきの箱だけなのでフォントに依存する部分が少なく、配置の回帰を見つけやすい。
+// ---------------------------------------------------------------------------
+
+TEST(Golden, FlexAlignment) {
+  constexpr std::string_view kHtml = R"(
+<style>
+  .sheet  { background: #ffffff; padding: 14px; font-size: 12px; color: #343a40; }
+  .label  { margin-top: 9px; margin-bottom: 3px; color: #868e96; }
+  .row    { display: flex; height: 30px; background: #f1f3f5; }
+  .b      { width: 52px; height: 18px; background: #4c6ef5; }
+  .s      { width: 52px; height: 10px; background: #4c6ef5; }
+  .m      { width: 52px; height: 18px; background: #f76707; }
+  .l      { width: 52px; height: 26px; background: #2f9e44; }
+  .n      { width: 52px; background: #7048e8; }
+  .start  { justify-content: flex-start; }
+  .end    { justify-content: flex-end; }
+  .center { justify-content: center; }
+  .between{ justify-content: space-between; }
+  .around { justify-content: space-around; }
+  .evenly { justify-content: space-evenly; }
+  .top    { align-items: flex-start; }
+  .middle { align-items: center; }
+  .bottom { align-items: flex-end; }
+  .stretch{ align-items: stretch; }
+  .gap    { gap: 16px; }
+  .g1     { flex: 1; height: 18px; background: #4c6ef5; }
+  .g2     { flex: 2; height: 18px; background: #f76707; }
+</style>
+<div class="sheet">
+  <div class="label">justify-content: flex-start</div>
+  <div class="row start"><div class="b"></div><div class="b"></div><div class="b"></div></div>
+  <div class="label">justify-content: center</div>
+  <div class="row center"><div class="b"></div><div class="b"></div><div class="b"></div></div>
+  <div class="label">justify-content: flex-end</div>
+  <div class="row end"><div class="b"></div><div class="b"></div><div class="b"></div></div>
+  <div class="label">justify-content: space-between</div>
+  <div class="row between"><div class="b"></div><div class="b"></div><div class="b"></div></div>
+  <div class="label">justify-content: space-around</div>
+  <div class="row around"><div class="b"></div><div class="b"></div><div class="b"></div></div>
+  <div class="label">justify-content: space-evenly</div>
+  <div class="row evenly"><div class="b"></div><div class="b"></div><div class="b"></div></div>
+  <div class="label">align-items: flex-start / center / flex-end</div>
+  <div class="row top gap"><div class="s"></div><div class="m"></div><div class="l"></div></div>
+  <div class="row middle gap"><div class="s"></div><div class="m"></div><div class="l"></div></div>
+  <div class="row bottom gap"><div class="s"></div><div class="m"></div><div class="l"></div></div>
+  <div class="label">align-items: stretch（高さ未指定の子が伸びる）+ gap: 16px</div>
+  <div class="row stretch gap"><div class="n"></div><div class="n"></div><div class="n"></div></div>
+  <div class="label">flex-grow 1 : 2（残りを 1 対 2 で分ける）</div>
+  <div class="row middle gap"><div class="g1"></div><div class="g2"></div></div>
+</div>)";
+
+  const Bitmap bitmap = render_bitmap(kHtml, japanese_fonts(), options_for(600));
+  EXPECT_TRUE(expect_golden(bitmap, "flex_alignment"));
+}
+
+// ---------------------------------------------------------------------------
+// 8. <img>（A12）
+//
+// 文中のインライン画像（ベースライン揃え）、border-radius による円形クリップ、
+// display: block + margin: 0 auto の中央寄せ、枠線・padding・角丸つきの画像。
+// ---------------------------------------------------------------------------
+
+TEST(Golden, InlineImage) {
+  constexpr std::string_view kHtml = R"(
+<style>
+  .sheet  { background: #ffffff; padding: 18px; font-size: 17px; line-height: 1.9; color: #212529; }
+  .inline { width: 22px; height: 22px; }
+  .round  { width: 40px; height: 40px; border-radius: 20px; }
+  .framed { display: block; width: 96px; height: 96px; margin: 14px auto;
+            border: 4px solid #1971c2; padding: 8px; border-radius: 20px;
+            background-color: #e7f5ff; }
+  p { margin-top: 0; margin-bottom: 0; }
+</style>
+<div class="sheet">
+  <p>文中の画像 <img class="inline" src="icon"> はベースラインに揃います。丸い
+     <img class="round" src="icon"> も同じ行に流れます。</p>
+  <img class="framed" src="icon">
+  <p>上は display: block と margin: 0 auto による中央寄せ（枠線・padding・角丸つき）。</p>
+</div>)";
+
+  const Bitmap bitmap = render_bitmap(kHtml, japanese_fonts(), icon_images(), options_for(480));
+  EXPECT_TRUE(expect_golden(bitmap, "inline_image"));
+}
+
+// ---------------------------------------------------------------------------
+// 9. OG カード（DESIGN.md Phase 6 の受け入れ条件: アイコン + タイトル + フッター）
+//
+// 実寸は 1200x630 だが、ゴールデンは scale 0.5 の 600x315 で持つ（リポジトリを太らせない）。
+// ---------------------------------------------------------------------------
+
+TEST(Golden, OgCard) {
+  const Result<std::vector<std::uint8_t>> source =
+      read_file(std::filesystem::path(SHASHOKU_EXAMPLES_DIR) / "og_card.html");
+  ASSERT_TRUE(source.has_value()) << "examples/og_card.html を読めません";
+  const std::string html(source->begin(), source->end());
+
+  RenderOptions options = options_for(1200);
+  options.viewport_height = 630;
+  options.scale = 0.5F;
+
+  const Bitmap bitmap = render_bitmap(html, japanese_fonts(), icon_images(), options);
+  EXPECT_EQ(bitmap.width, 600U);
+  EXPECT_EQ(bitmap.height, 315U);
+  EXPECT_TRUE(expect_golden(bitmap, "og_card"));
+}
+
+// ---------------------------------------------------------------------------
 // README のサンプル（DESIGN.md Phase 5 の受け入れ条件）
 // ---------------------------------------------------------------------------
 

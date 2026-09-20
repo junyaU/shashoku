@@ -13,7 +13,7 @@ if(SHASHOKU_BUILD_TESTS)
   include(TestAssets)
   # スモークテスト（ARCHITECTURE.md §4）。引数の組み立てと終了コードの検査を
   # シェルに頼らず CMake スクリプトで行う。
-  foreach(case png_ok unsupported_css dump_box)
+  foreach(case png_ok image_ok unsupported_css dump_box)
     add_test(NAME Cli.${case}
       COMMAND ${CMAKE_COMMAND}
         -DCLI=$<TARGET_FILE:shashoku_cli>

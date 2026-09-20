@@ -1,7 +1,11 @@
 #pragma once
 
+#include <cstdint>
+#include <filesystem>
 #include <string>
 #include <string_view>
+#include <utility>
+#include <vector>
 
 #include <gtest/gtest.h>
 
@@ -34,10 +38,28 @@ inline FontSet latin_then_japanese() {
   return fonts;
 }
 
+// tests/data/ の小さな PNG（64x64）。四隅の緑は border-radius のクリップで消える目印。
+inline std::vector<std::uint8_t> test_icon_bytes() {
+  const Result<std::vector<std::uint8_t>> bytes =
+      read_file(std::filesystem::path(SHASHOKU_TEST_DATA_DIR) / "icon.png");
+  if (!bytes) {
+    ADD_FAILURE() << "tests/data/icon.png を読めません: " << to_string(bytes.error());
+    return {};
+  }
+  return *bytes;
+}
+
+// `<img src="icon">` で引ける ImageSet。
+inline ImageSet icon_images(std::string name = "icon") {
+  ImageSet images;
+  images.add(std::move(name), test_icon_bytes());
+  return images;
+}
+
 // render() → PNG → Bitmap。失敗したらその場でテストを落とす。
-inline Bitmap render_bitmap(std::string_view html, const FontSet& fonts,
+inline Bitmap render_bitmap(std::string_view html, const FontSet& fonts, const ImageSet& images,
                             const RenderOptions& options) {
-  const auto result = render(html, fonts, options);
+  const auto result = render(html, fonts, images, options);
   if (!result) {
     ADD_FAILURE() << "render: " << to_string(result.error());
     return {};
@@ -50,6 +72,11 @@ inline Bitmap render_bitmap(std::string_view html, const FontSet& fonts,
   EXPECT_EQ(static_cast<int>(bitmap->width), result->width);
   EXPECT_EQ(static_cast<int>(bitmap->height), result->height);
   return std::move(*bitmap);
+}
+
+inline Bitmap render_bitmap(std::string_view html, const FontSet& fonts,
+                            const RenderOptions& options) {
+  return render_bitmap(html, fonts, ImageSet{}, options);
 }
 
 // 幅だけ指定して高さは内容に追従させる（ゴールデンの既定）。

@@ -37,6 +37,15 @@
       }
     },
     {
+      "name": "tsan",
+      "displayName": "ThreadSanitizer（clang-18 + libc++ / RelWithDebInfo）",
+      "inherits": ["base", "clang-libcxx"],
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "SHASHOKU_SANITIZE_THREAD": "ON"
+      }
+    },
+    {
       "name": "release",
       "displayName": "リリース（clang-18 + libc++ / Release）",
       "inherits": ["base", "clang-libcxx"],
@@ -52,6 +61,7 @@
   "buildPresets": [
     { "name": "dev", "configurePreset": "dev" },
     { "name": "asan", "configurePreset": "asan" },
+    { "name": "tsan", "configurePreset": "tsan" },
     { "name": "release", "configurePreset": "release" },
     { "name": "gcc", "configurePreset": "gcc" }
   ],
@@ -63,6 +73,7 @@
     },
     { "name": "dev", "inherits": "base", "configurePreset": "dev" },
     { "name": "asan", "inherits": "base", "configurePreset": "asan" },
+    { "name": "tsan", "inherits": "base", "configurePreset": "tsan" },
     { "name": "release", "inherits": "base", "configurePreset": "release" },
     { "name": "gcc", "inherits": "base", "configurePreset": "gcc" }
   ]

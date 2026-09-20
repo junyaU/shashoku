@@ -9,6 +9,13 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  # FetchContent のソースとテスト用フォントを、全プリセット共通のディレクトリに置く
+  # （プリセットごとの build/<preset>/ に置くと、同じものをジョブの数だけキャッシュすることになる）。
+  DEPS_ARGS: >-
+    -DFETCHCONTENT_BASE_DIR=${{ github.workspace }}/build/_deps
+    -DSHASHOKU_TEST_ASSETS_DIR=${{ github.workspace }}/build/_assets
+
 jobs:
   build:
     name: ${{ matrix.name }}
@@ -32,19 +39,43 @@ jobs:
             packages: g++-14
             cc: gcc-14
             cxx: g++-14
+    env:
+      # コンパイル結果のキャッシュ。CMake は初回 configure でこの環境変数を読む。
+      # ビルド時間の大半は FreeType / HarfBuzz と、変更のないソースの再コンパイルが占める。
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
+      CCACHE_MAXSIZE: 400M
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install toolchain
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends ninja-build ${{ matrix.packages }}
+          sudo apt-get install -y --no-install-recommends ninja-build ccache pngcheck ${{ matrix.packages }}
+      - name: Cache dependency sources and test fonts
+        uses: actions/cache@v5
+        with:
+          path: |
+            build/_deps/*-src
+            build/_deps/*-subbuild
+            build/_assets
+          key: deps-${{ hashFiles('cmake/Dependencies.cmake', 'cmake/TestAssets.cmake') }}
+      - name: Cache ccache
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/ccache
+          # キーは毎回変えて必ず保存し、復元は同じプリセットの直近のものから行う
+          key: ccache-${{ matrix.preset }}-${{ github.run_id }}
+          restore-keys: ccache-${{ matrix.preset }}-
       - name: Configure
         env:
           CC: ${{ matrix.cc }}
           CXX: ${{ matrix.cxx }}
-        run: cmake --preset ${{ matrix.preset }}
+        run: cmake --preset ${{ matrix.preset }} $DEPS_ARGS
       - name: Build
-        run: cmake --build --preset ${{ matrix.preset }}
+        run: |
+          ccache --zero-stats
+          cmake --build --preset ${{ matrix.preset }}
+          ccache --show-stats
       - name: Test
         run: ctest --preset ${{ matrix.preset }}
 
@@ -52,7 +83,9 @@ jobs:
     name: clang-format + clang-tidy
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0  # clang-tidy の対象を base との差分から決めるため
       - name: Install toolchain
         run: |
           sudo apt-get update
@@ -60,7 +93,22 @@ jobs:
             ninja-build clang-18 clang-format-18 clang-tidy-18 libc++-18-dev libc++abi-18-dev
       - name: clang-format
         run: scripts/format.sh --check
+      - name: Cache dependency sources and test fonts
+        uses: actions/cache@v5
+        with:
+          path: |
+            build/_deps/*-src
+            build/_deps/*-subbuild
+            build/_assets
+          key: deps-${{ hashFiles('cmake/Dependencies.cmake', 'cmake/TestAssets.cmake') }}
       - name: Configure (compile_commands.json と依存ヘッダの取得)
-        run: cmake --preset dev
-      - name: clang-tidy
+        run: cmake --preset dev $DEPS_ARGS
+      # PR では、変更された .cpp と「変更されたヘッダを include している .cpp」だけにかける
+      # （選び方は scripts/tidy_select.py。lint に影響する設定が変わっていれば全ファイル）。
+      - name: clang-tidy (changed files)
+        if: github.event_name == 'pull_request'
+        run: scripts/tidy.sh --changed "origin/${{ github.base_ref }}" build/dev
+      # main への push では全ファイル。PR の差分検査をすり抜けたものをここで拾う。
+      - name: clang-tidy (all files)
+        if: github.event_name != 'pull_request'
         run: scripts/tidy.sh build/dev

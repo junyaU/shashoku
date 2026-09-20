@@ -46,7 +46,8 @@ cmake --build --preset dev    # ビルド
 ctest --preset dev            # 全テスト
 ctest --preset dev -R Png     # 名前で絞る
 scripts/format.sh             # clang-format（--check で検査のみ）
-scripts/tidy.sh               # clang-tidy（build/dev の compile_commands.json を使う）
+scripts/tidy.sh               # clang-tidy を全ファイルに（build/dev の compile_commands.json を使う）
+scripts/tidy.sh --changed origin/main   # 変更した .cpp と、変更したヘッダを include している .cpp だけ（速い）
 ```
 
 プリセット: `dev`（Debug）/ `asan`（ASan+UBSan）/ `release` / `gcc`（libstdc++ での移植性確認。`CXX=g++-14` 等で指定）。
@@ -61,7 +62,7 @@ src/<module>/       内部実装。パイプラインの段ごとに 1 モジュ
 tests/<module>/     GoogleTest（実行ファイル名は <module>_test）。end-to-end は tests/integration/、期待画像は tests/golden/
 tools/shashoku/     CLI
 cmake/              CompilerOptions（警告・決定性フラグ）/ Modules（shashoku_add_module, shashoku_add_test）/ Dependencies（FetchContent）
-scripts/            format.sh / tidy.sh
+scripts/            format.sh / tidy.sh / tidy_select.py（tidy の対象を差分から選ぶ）
 examples/           サンプル HTML（README から参照。統合テストのゴールデンにもなっている）
 docs/               DESIGN.md / ARCHITECTURE.md / images/
 ```

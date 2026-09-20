@@ -9,9 +9,14 @@
 # ライセンス: いずれも SIL Open Font License 1.1。
 include_guard(GLOBAL)
 
+# 保存先。既定はビルドディレクトリの中。CI では全プリセット共通のディレクトリを指して
+# actions/cache に載せる（-DSHASHOKU_TEST_ASSETS_DIR=...）。
+set(SHASHOKU_TEST_ASSETS_DIR "${CMAKE_BINARY_DIR}/test_assets"
+    CACHE PATH "テスト用アセット（フォント）の保存先")
+
 # include_guard(GLOBAL) の下では 2 回目以降の include が何もしないので、
 # ディレクトリスコープではなくキャッシュに置いて、どこから include しても見えるようにする。
-set(SHASHOKU_TEST_FONT_DIR "${CMAKE_BINARY_DIR}/test_assets/fonts"
+set(SHASHOKU_TEST_FONT_DIR "${SHASHOKU_TEST_ASSETS_DIR}/fonts"
     CACHE INTERNAL "テスト用フォントの保存先")
 
 # 既に同じ SHA256 のファイルがあればダウンロードしない（file(DOWNLOAD) の仕様）。

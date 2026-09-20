@@ -749,12 +749,16 @@ float InlineFormatter::ruby_above(const RubyPiece& piece) const {
 }
 
 // ルビ文字のベースライン（縦書きでは中心軸）の block 位置。
+// ルビは親文字の block-start 側（横書きは上、縦書きは紙面の右）に付く。block 座標は
+// どちらの書字方向でも block-start 側が小さいので（縦書きは paint が
+// x = viewport_width − block で右端から引く）、**引く**のが block-start 側になる。
+// ruby_above() が空けているのと同じ側であること（逆にすると隣の行に食い込む）。
 float InlineFormatter::ruby_baseline(const RubyPiece& piece, float baseline) const {
   if (vertical_) {
-    // block-start 側（右）へ、親文字の内容領域の半分 + ルビの半分ぶんずらす
-    return baseline + (piece.base_font_size / 2) + (piece.rt_font_size / 2);
+    // 中心軸から、親文字の内容領域の半分 + ルビの半分ぶん block-start 側へ
+    return baseline - (piece.base_font_size / 2) - (piece.rt_font_size / 2);
   }
-  // 親文字の内容領域の上端に、ルビの descent ぶんを足した位置
+  // 親文字の内容領域の上端から、さらにルビの descent ぶん上
   return baseline - piece.base_ascent - piece.rt_descent;
 }
 

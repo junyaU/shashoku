@@ -1,0 +1,12 @@
+---
+# テストコードには静的解析器（clang-analyzer-*）をかけない。
+#
+# 実測（tests/layout/flex_test.cpp 1 本）: パース 2 秒 / 通常のチェック 9 秒 / 静的解析器 33 秒。
+# 静的解析器は関数の実行経路を 1 本ずつ辿る（path-sensitive）ので、GoogleTest のマクロが展開された
+# 巨大な TEST 本体（テーブル駆動テスト）で経路数が爆発する。テストは lint 対象の 2/3 を占めるため、
+# 4 コアの CI では lint ジョブ全体が 15 分を超えていた。
+# テストコードのメモリ安全性は ASan + UBSan のジョブが実行時に検査している。製品コード（src/）には
+# 引き続き静的解析器をかける。
+InheritParentConfig: true
+Checks: '-clang-analyzer-*'
+...

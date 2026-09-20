@@ -61,8 +61,10 @@ INSTANTIATE_TEST_SUITE_P(
         // ③ layout
         ErrorCase{"inline-padding", R"(<span style="padding: 4px">あ</span>)",
                   ErrorKind::UnsupportedLayout, "padding"}),
-    [](const ::testing::TestParamInfo<ErrorCase>& info) {
-      std::string name(info.param.name);
+    // 引数名を `info` にすると、GoogleTest のマクロが内部で使う同名の引数と衝突して
+    // gcc の -Wshadow に掛かる（clang は検出しない）。
+    [](const ::testing::TestParamInfo<ErrorCase>& param_info) {
+      std::string name(param_info.param.name);
       for (char& c : name) {
         if (c == '-') {
           c = '_';

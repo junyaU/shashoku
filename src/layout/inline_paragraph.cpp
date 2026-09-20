@@ -16,7 +16,11 @@ class ParagraphBuilder {
  public:
   ParagraphBuilder(PreparedParagraph& out, const std::vector<std::size_t>& ruby_at,
                    const std::vector<RubyGroup>& groups, LayoutEngine& engine)
-      : out_(&out), ruby_at_(&ruby_at), groups_(&groups), engine_(&engine) {}
+      : out_(&out),
+        ruby_at_(&ruby_at),
+        groups_(&groups),
+        engine_(&engine),
+        default_strictness_(engine.options().line_break.strictness) {}
 
   void build();
 
@@ -24,11 +28,22 @@ class ParagraphBuilder {
   void build_ruby_item(std::size_t group_index);
   // [begin, end) を 1 回でシェーピングする。返すのは runs の添字。
   std::size_t shape_run(std::size_t begin, std::size_t end);
+  // (c) このアイテムに効く行分割ポリシー（issue #2 / A28）。`style` はアイテムの代表の文字
+  // （クラスタ先頭 / <img> / <br> / ルビ組の親文字の先頭）が属する要素の計算値の添字。
+  [[nodiscard]] linebreak::Item policy_of(linebreak::Item item, std::size_t style) const {
+    const BreakingStyle& breaking = out_->styles.breaking(style);
+    item.strictness = resolve_strictness(breaking.line_break, default_strictness_);
+    item.break_anywhere = resolve_break_anywhere(breaking.overflow_wrap);
+    return item;
+  }
 
   PreparedParagraph* out_;
   const std::vector<std::size_t>* ruby_at_;
   const std::vector<RubyGroup>* groups_;
   LayoutEngine* engine_;
+  // `line-break: auto` の解決先（A17）。段落ではなくエンジンの既定であることに注意:
+  // 段落のブロックが strict でも、span が `auto` ならエンジンの既定に戻る（CSS どおり）。
+  linebreak::Strictness default_strictness_;
 };
 
 std::size_t ParagraphBuilder::shape_run(std::size_t begin, std::size_t end) {
@@ -62,10 +77,11 @@ void ParagraphBuilder::build_ruby_item(std::size_t group_index) {
     std::size_t first = 0;
     while (first < clusters.size()) {
       const std::size_t style_id = out_->chars[i + clusters[first].text_begin].style;
+      const std::size_t visual = out_->visual_key(style_id);
       float advance = 0;
       std::size_t last = first;
       while (last < clusters.size() &&
-             out_->chars[i + clusters[last].text_begin].style == style_id) {
+             out_->visual_key(out_->chars[i + clusters[last].text_begin].style) == visual) {
         advance += clusters[last].advance + out_->letter_spacing(style_id);
         ++last;
       }
@@ -101,11 +117,14 @@ void ParagraphBuilder::build_ruby_item(std::size_t group_index) {
 
   const float advance = std::max(piece.base_width, piece.rt_width);
   const float em = piece.base_font_size;
-  out_->items.push_back(linebreak::Item{.kind = linebreak::ItemKind::Atomic,
-                                        .cp = out_->chars[group.base_begin].cp,
-                                        .advance = advance,
-                                        .em = em,
-                                        .no_break_before = false});
+  // ルビ組は Atomic 1 個（組の内部には分割可能位置がない）。ポリシーは親文字の先頭の文字の
+  // ものを使う（A28）。親文字の途中や <rt> の中の指定は、割る場所がないので効かない
+  out_->items.push_back(policy_of(linebreak::Item{.kind = linebreak::ItemKind::Atomic,
+                                                  .cp = out_->chars[group.base_begin].cp,
+                                                  .advance = advance,
+                                                  .em = em,
+                                                  .no_break_before = false},
+                                  piece.base_style));
   out_->sources.push_back(ItemSource{.run = kNone,
                                      .glyph_begin = 0,
                                      .glyph_end = 0,
@@ -128,13 +147,16 @@ void ParagraphBuilder::build() {
     }
     const FlatChar& flat = out_->chars[i];
     if (flat.kind != FlatChar::Kind::Text) {
+      // <img> と <br> はその要素自身の計算値を使う（A28）
       const bool image = flat.kind == FlatChar::Kind::Image;
-      out_->items.push_back(linebreak::Item{
-          .kind = image ? linebreak::ItemKind::Atomic : linebreak::ItemKind::ForcedBreak,
-          .cp = flat.cp,
-          .advance = image ? out_->images[flat.image].margin_inline() : 0,
-          .em = out_->font_size(flat.style),
-          .no_break_before = false});
+      out_->items.push_back(
+          policy_of(linebreak::Item{.kind = image ? linebreak::ItemKind::Atomic
+                                                  : linebreak::ItemKind::ForcedBreak,
+                                    .cp = flat.cp,
+                                    .advance = image ? out_->images[flat.image].margin_inline() : 0,
+                                    .em = out_->font_size(flat.style),
+                                    .no_break_before = false},
+                    flat.style));
       out_->sources.push_back(ItemSource{.run = kNone,
                                          .glyph_begin = 0,
                                          .glyph_end = 0,
@@ -157,17 +179,18 @@ void ParagraphBuilder::build() {
       ++end;
     }
     const std::size_t run = shape_run(i, end);
-    // (c) クラスタ → Item。装飾・行高は**クラスタ先頭の文字**のものを対応付ける（A27）。
-    //     letter-spacing は送りに足す
+    // (c) クラスタ → Item。装飾・行高と行分割ポリシーは**クラスタ先頭の文字**のものを
+    //     対応付ける（A27 / A28）。letter-spacing は送りに足す
     for (const text::ShapedCluster& cluster : out_->runs[run].shaped.clusters) {
       const std::size_t at = i + cluster.text_begin;
       const std::size_t style_id = at < end ? out_->chars[at].style : flat.style;
       out_->items.push_back(
-          linebreak::Item{.kind = linebreak::ItemKind::Text,
-                          .cp = at < end ? out_->chars[at].cp : 0,
-                          .advance = cluster.advance + out_->letter_spacing(style_id),
-                          .em = out_->font_size(style_id),
-                          .no_break_before = false});
+          policy_of(linebreak::Item{.kind = linebreak::ItemKind::Text,
+                                    .cp = at < end ? out_->chars[at].cp : 0,
+                                    .advance = cluster.advance + out_->letter_spacing(style_id),
+                                    .em = out_->font_size(style_id),
+                                    .no_break_before = false},
+                    style_id));
       out_->sources.push_back(ItemSource{.run = run,
                                          .glyph_begin = cluster.glyph_begin,
                                          .glyph_end = cluster.glyph_end,

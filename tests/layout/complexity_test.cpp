@@ -54,6 +54,13 @@ TEST(LayoutComplexity, NarrowLongParagraphKeepsLineWorkLinear) {
   // 行の構築で確保・初期化する作業バッファは、段落全体で O(N)。
   // 行ごとに段落全体ぶん確保していると N×L になる
   EXPECT_LE(counters.line_scratch, 4 * kChars);
+
+  // 行分割器の中も N に線形（A24）。layout が渡した計測カウンタで見る
+  EXPECT_EQ(counters.line_breaker.lines, kChars);
+  EXPECT_LE(counters.line_breaker.line_scan, 4 * kChars);
+  EXPECT_LE(counters.line_breaker.width_items, 8 * kChars);
+  EXPECT_LE(counters.line_breaker.mandatory_scan, 4 * kChars);
+  EXPECT_LE(counters.line_breaker.rule_scan, 4 * kChars);
 }
 
 // #4 の「ついで」: 背景スコープが多い段落でも、行ごとに全スコープを舐めない。

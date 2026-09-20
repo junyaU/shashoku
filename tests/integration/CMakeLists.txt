@@ -8,6 +8,7 @@ shashoku_add_test(integration_test
     limits_test.cpp
     pipeline_test.cpp
     shaping_test.cpp
+    line_policy_test.cpp
     fuzz_test.cpp
   LIBS shashoku::shashoku shashoku_test_support)
 

@@ -556,5 +556,167 @@ TEST(LayoutInline, ClusterAcrossADecorationBoundaryTakesTheFirstCharsDecoration)
   EXPECT_EQ(glyph_positions(*lines[0]), (std::vector<float>{0, 16, 16}));
 }
 
+// ---- インライン要素の行分割ポリシー（issue #2 / A23・A28）-------------------------------
+//
+// `line-break` / `overflow-wrap` は CSS ではテキスト（インラインボックス）に適用される
+// 継承プロパティなので、段落の途中の <span> で値が変わりうる。layout はその値を
+// **クラスタ先頭の文字**の計算値として `linebreak::Item` に写す。
+// 偽の TextMeasurer は全角 = 16px / 半角 = 8px。
+
+StyleFn anywhere() {
+  return [](ComputedStyle& style) { style.overflow_wrap = style::OverflowWrap::Anywhere; };
+}
+StyleFn line_break(style::LineBreak value) {
+  return [value](ComputedStyle& style) { style.line_break = value; };
+}
+StyleFn loose() { return line_break(style::LineBreak::Loose); }
+StyleFn normal() { return line_break(style::LineBreak::Normal); }
+StyleFn strict() { return line_break(style::LineBreak::Strict); }
+
+// issue #2 の表の 2 行目。span に書いた overflow-wrap が効く（黙って無視されない）。
+TEST(LayoutInline, OverflowWrapOnASpanBreaksInsideIt) {
+  FakeMeasurer measurer;
+  // 幅 24px = 半角 3 文字。指定なしでは割れずにはみ出す（A4）
+  EXPECT_EQ(flow(measurer, {text("ABCDEFGH")}, 24), (std::vector<std::string>{"ABCDEFGH"}));
+  // ブロックに書いた場合（従来から動いていた）
+  EXPECT_EQ(flow(measurer, {text("ABCDEFGH")}, 24, anywhere()),
+            (std::vector<std::string>{"ABC", "DEF", "GH"}));
+  // span に書いた場合（#2 で直したところ）。同じ結果になる
+  EXPECT_EQ(flow(measurer, {inline_box({text("ABCDEFGH")}, anywhere())}, 24),
+            (std::vector<std::string>{"ABC", "DEF", "GH"}));
+}
+
+// span に書いた line-break が効く（loose: 小書き仮名・中点などの前で割ってよい）。
+TEST(LayoutInline, LineBreakOnASpanChangesTheClassOfItsOwnCharacters) {
+  FakeMeasurer measurer;
+  // 既定は strict（Options）。「・」の前では割らない
+  EXPECT_EQ(flow(measurer, {text("あ・い")}, 16), (std::vector<std::string>{"あ・", "い"}));
+  EXPECT_EQ(flow(measurer, {inline_box({text("あ・い")}, loose())}, 16),
+            (std::vector<std::string>{"あ", "・", "い"}));
+  // normal: 小書きの仮名の前で割ってよい
+  EXPECT_EQ(flow(measurer, {text("あっい")}, 16), (std::vector<std::string>{"あっ", "い"}));
+  EXPECT_EQ(flow(measurer, {inline_box({text("あっい")}, normal())}, 16),
+            (std::vector<std::string>{"あ", "っ", "い"}));
+}
+
+// 入れ子（div: strict → span: loose → span: strict）。値はその文字が属する要素のもの。
+TEST(LayoutInline, NestedSpansEachUseTheirOwnPolicy) {
+  FakeMeasurer measurer;
+  // 「・」を 3 つ、外側 strict / 中 loose / 内 strict に置く。幅 16px = 全角 1 文字。
+  // strict の「・」は NS なので前で割れず、「あ・」「う・」は禁則を守ってはみ出す（A4）。
+  // loose の「・」だけが ID に格下げされ、その前で割れる
+  const std::vector<std::string> lines = flow(
+      measurer,
+      {text("あ・"), inline_box({text("い・"), inline_box({text("う・え")}, strict())}, loose())},
+      16, strict());
+  EXPECT_EQ(lines, (std::vector<std::string>{"あ・", "い", "・", "う・", "え"}));
+}
+
+// A23 の境界の規則: 緊急分割は位置の両側が anywhere のときだけ。
+// anywhere の span の内部でだけ割れ、span の境界では割れない。
+TEST(LayoutInline, EmergencyBreaksStayInsideTheAnywhereSpan) {
+  FakeMeasurer measurer;
+  // 前半 4 文字だけ anywhere。後半は割れないので、そのまま次の行へ出てはみ出す
+  EXPECT_EQ(flow(measurer, {inline_box({text("ABCD")}, anywhere()), text("EFGH")}, 24),
+            (std::vector<std::string>{"ABC", "DEFGH"}));
+  // 逆向き: 後半だけ anywhere
+  EXPECT_EQ(flow(measurer, {text("ABCD"), inline_box({text("EFGH")}, anywhere())}, 24),
+            (std::vector<std::string>{"ABCDE", "FGH"}));
+  // 隣り合う 2 つの anywhere の span。境界（D と E の間）も**両側が anywhere** なので割れる
+  // = 1 つの anywhere の範囲として振る舞う（A23 の「両側が true のときだけ許す」の裏返し）
+  EXPECT_EQ(
+      flow(measurer,
+           {inline_box({text("ABCD")}, anywhere()), inline_box({text("EFGH")}, anywhere())}, 24),
+      (std::vector<std::string>{"ABC", "DEF", "GH"}));
+}
+
+// 性質: ブロックに書いた場合と、全文を包む span に書いた場合で行分割の結果が同じ
+// （issue #10 の 2「段の境界で情報を落としていないか」の一般形）。
+TEST(LayoutInline, BlockLevelAndSpanLevelPoliciesAgree) {
+  struct Case {
+    std::string text;
+    float width = 0;
+    StyleFn style;
+  };
+  const std::vector<Case> cases = {
+      {"ABCDEFGH", 24, anywhere()},       {"あ・い・う", 16, loose()},
+      {"あっいっう", 16, normal()},       {"あっいっう", 16, strict()},
+      {"ab cdef ghij", 40, anywhere()},   {"あ、い。う", 32, loose()},
+      {"わたしの写植です", 48, normal()},
+  };
+  for (const Case& test_case : cases) {
+    FakeMeasurer measurer;
+    const std::vector<std::string> on_block =
+        flow(measurer, {text(test_case.text)}, test_case.width, test_case.style);
+    const std::vector<std::string> on_span =
+        flow(measurer, {inline_box({text(test_case.text)}, test_case.style)}, test_case.width);
+    EXPECT_EQ(on_span, on_block) << test_case.text << " / 幅 " << test_case.width;
+  }
+}
+
+// <br> と <img> は自分自身の計算値を使う（A28）。<br> は必ず改行するので結果には効かない。
+TEST(LayoutInline, ForcedBreakInsideAnAnywhereSpanStillBreaks) {
+  FakeMeasurer measurer;
+  EXPECT_EQ(flow(measurer, {inline_box({text("ABC"), br(), text("DEF")}, anywhere())}, 400),
+            (std::vector<std::string>{"ABC", "DEF"}));
+}
+
+// 固有寸法（min-content / max-content）にもアイテムごとの strictness が効く。
+// flex の column + align-items: flex-start で shrink-to-fit を通して測る。
+TEST(LayoutInline, IntrinsicSizesFollowSpanLevelPolicies) {
+  const auto measure_min_content = [](const StyleFn& span_style) {
+    FakeMeasurer measurer;
+    const auto root =
+        build({flex({block({inline_box({text("あっい")}, span_style)})}, [](ComputedStyle& style) {
+          style.flex_direction = style::FlexDirection::Column;
+          style.align_items = style::AlignItems::FlexStart;
+        })});
+    const auto tree = run_layout(root, 8, measurer);  // 利用可能幅を min-content より狭く
+    EXPECT_TRUE(tree.has_value());
+    if (!tree) {
+      return 0.0F;
+    }
+    return tree->root.blocks()->front().blocks()->front().rect.inline_size;
+  };
+
+  // 既定は strict: 「あっ」は分離できないので min-content は 2 文字ぶん
+  EXPECT_FLOAT_EQ(measure_min_content(nullptr), 32);
+  // span に normal を書けば小書きの仮名の前で割れるので、1 文字ぶんまで下がる
+  EXPECT_FLOAT_EQ(measure_min_content(normal()), 16);
+}
+
+// #8 の再発防止: 行分割ポリシーは見た目にもシェーピングにも効かない層なので、
+// その境界で shape() も TextFragment も切れない（A27 の用途の表）。
+TEST(LayoutInline, BreakingPolicySpansDoNotSplitShapingOrFragments) {
+  FakeMeasurer measurer;
+  const auto root = build({block({
+      text("AV"),
+      inline_box({text("To")}, anywhere()),
+      inline_box({text("AV")}, loose()),
+  })});
+  Counters counters;
+  const auto tree = run_layout(root, make_options(400), measurer, counters);
+  ASSERT_TRUE(tree.has_value());
+
+  EXPECT_EQ(counters.shape_calls, 1U) << "行分割ポリシーの境界でシェーピングが切れている";
+  const std::vector<const LineBox*> lines = all_lines(*tree);
+  ASSERT_EQ(lines.size(), 1U);
+  // 見た目は全部同じなので断片も 1 つ（= paint の DrawGlyphs も 1 つ）
+  EXPECT_EQ(text_fragments(*lines[0]).size(), 1U);
+
+  // 色だけの span と組み合わせても、シェーピングは 1 回のまま
+  const auto mixed = build({block({
+      text("AV"),
+      inline_box({text("To")}, [](ComputedStyle& style) { style.color = kRed; }),
+      inline_box({text("AV")}, anywhere()),
+  })});
+  Counters mixed_counters;
+  const auto mixed_tree = run_layout(mixed, make_options(400), measurer, mixed_counters);
+  ASSERT_TRUE(mixed_tree.has_value());
+  EXPECT_EQ(mixed_counters.shape_calls, 1U);
+  // 断片が分かれるのは色の境界だけ（2 つ: 黒 "AV" → 赤 "To" → 黒 "AV" で 3 つ）
+  EXPECT_EQ(text_fragments(*all_lines(*mixed_tree)[0]).size(), 3U);
+}
+
 }  // namespace
 }  // namespace shashoku::layout::test

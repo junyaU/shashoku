@@ -2,6 +2,8 @@
 
 #include <cstdint>
 
+#include "linebreak/line_breaker.hpp"
+
 // 計算量の回帰を「時間」ではなく「回数」で捕まえるための計測カウンタ（issue #10-3）。
 //
 // 約束:
@@ -35,6 +37,10 @@ struct Counters {
   // 登録のたびに既存のスタイルを線形探索していると、色違いの span が S 個ある段落で
   // ここが S² に膨らむ（issue #10 の L1 からの申し送り）。二分探索なら S×log S。
   std::uint64_t style_probes = 0;
+  // 行分割器の中の作業量（A24）。linebreak は何にも依存しないので自前のカウンタを持っており、
+  // layout は break_lines() / min_content_width() / break_opportunities() にこれを渡して
+  // 足し込む。layout 側の線形性（A22）と合わせて「1 つの IFC の仕事は N に線形」を検査する。
+  linebreak::Counters line_breaker;
 };
 
 }  // namespace shashoku::layout

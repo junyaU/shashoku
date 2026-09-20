@@ -60,8 +60,8 @@ struct ItemSource {
   std::size_t glyph_end = 0;
   std::size_t char_begin = 0;  // 畳み込み後の文字の範囲
   std::size_t char_end = 0;
-  // このアイテムの装飾・行高（CharStyleTable の添字）。1 つのクラスタが装飾の境界を
-  // またぐときは**クラスタ先頭の文字**のものを使う（A27）。
+  // このアイテムの属性（CharStyleTable の添字）。装飾・行高と行分割ポリシーの両方をここから
+  // 引く。1 つのクラスタが境界をまたぐときは**クラスタ先頭の文字**のものを使う（A27 / A28）。
   std::size_t style = 0;
   std::size_t image = kNone;
   std::size_t ruby = kNone;
@@ -94,6 +94,10 @@ struct PreparedParagraph {
   }
   [[nodiscard]] const text::FontMetrics& metrics_of(std::size_t style) const {
     return metrics[styles.shaping_index(style)];
+  }
+  // 「見た目が同じか」の鍵（TextFragment を切る単位）。行分割ポリシーは含めない。
+  [[nodiscard]] std::size_t visual_key(std::size_t style) const {
+    return styles.decoration_index(style);
   }
   // [char_begin, char_end) の UTF-8（TextFragment のデバッグ用テキスト）。
   [[nodiscard]] std::string text_of(std::size_t char_begin, std::size_t char_end) const;

@@ -237,13 +237,17 @@ Result<BoxTree> layout(const style::StyledNode& root, const Options& options,
   if (const Result<void> result = check_writing_mode(root, mode); !result) {
     return std::unexpected(result.error());
   }
-  if (mode == WritingMode::VerticalRl) {
-    return fail(ErrorKind::UnsupportedLayout, "vertical-rl writing mode is not implemented yet",
-                root.location);
+  if (mode == WritingMode::VerticalRl && !options.viewport_height) {
+    // 縦書きでは字送りが縦なので、行の長さ（= 利用可能な inline サイズ）が viewport の
+    // 高さで決まる。高さが未指定だと行を割る幅が決まらない
+    return fail(ErrorKind::InvalidOption,
+                "vertical-rl writing mode needs an explicit viewport height (the inline axis "
+                "runs top to bottom, so the line length comes from the height)");
   }
 
-  // ルートの包含ブロックは viewport（A1: 横書きでは inline = viewport_width）
-  const float viewport_inline_size = options.viewport_width;
+  // ルートの包含ブロックは viewport（A1: 横書きは inline = 幅、縦書きは inline = 高さ）
+  const float viewport_inline_size =
+      mode == WritingMode::VerticalRl ? *options.viewport_height : options.viewport_width;
   LayoutEngine engine(options, measurer, images, mode);
   Result<BoxSizing> sizing = engine.resolve_box(root.style, viewport_inline_size, root.location);
   if (!sizing) {

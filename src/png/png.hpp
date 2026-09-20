@@ -17,9 +17,14 @@ namespace shashoku::png {
 inline constexpr std::array<std::uint8_t, 8> kSignature{0x89, 0x50, 0x4E, 0x47,
                                                         0x0D, 0x0A, 0x1A, 0x0A};
 
-// decode が受け付ける最大ピクセル数（幅 × 高さ）。
-// 「巨大な寸法を宣言しただけの入力」でメモリを食い潰さないための上限。
-inline constexpr std::uint64_t kMaxPixels = std::uint64_t{1} << 26U;
+// decode が受け付ける最大ピクセル数（幅 × 高さ）の既定。
+// 「巨大な寸法を宣言しただけの入力」でメモリを食い潰さないための上限で、IHDR を読んだ
+// 時点（= 画素を確保する前）に判定する。
+//
+// 利用者が調整する上限は `RenderLimits::image_pixels` に一本化してあり（A25）、api は
+// 必ずそちらの値を decode() に渡す。ここの定数は png を単体で使うときの既定で、値は
+// RenderLimits の既定と同じ（食い違わないことを src/api/render.cpp が static_assert する）。
+inline constexpr std::uint64_t kMaxPixels = std::uint64_t{1} << 24U;
 
 // Bitmap（RGBA8 ストレートアルファ）→ PNG バイト列。
 // 出力は color type 6 / bit depth 8 / 非インターレース固定。フィルタは行ごとに
@@ -36,6 +41,8 @@ Result<std::vector<std::uint8_t>> encode(const Bitmap& bitmap);
 // 対応: bit depth 8 / 16（16bit は上位 8bit に落とす）の gray / gray+alpha / RGB / RGBA、
 // および bit depth 8 のパレット。tRNS は全対応形式で反映する。非インターレースのみ。
 // 補助チャンク（gAMA / iCCP / tEXt など）は読み飛ばす。ガンマと ICC は無視する。
-Result<Bitmap> decode(std::span<const std::uint8_t> bytes);
+//
+// max_pixels（幅 × 高さ）を超える画像は、画素を確保する前に LimitExceeded で返す。
+Result<Bitmap> decode(std::span<const std::uint8_t> bytes, std::uint64_t max_pixels = kMaxPixels);
 
 }  // namespace shashoku::png

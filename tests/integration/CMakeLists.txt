@@ -5,6 +5,7 @@ shashoku_add_test(integration_test
   SOURCES
     golden_test.cpp
     error_test.cpp
+    limits_test.cpp
     pipeline_test.cpp
     fuzz_test.cpp
   LIBS shashoku::shashoku shashoku_test_support)

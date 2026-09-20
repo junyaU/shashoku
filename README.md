@@ -101,6 +101,41 @@ shashoku input.html --font A.otf --dump-stage box                 # 中間表現
 
 終了コードは 0 成功 / 1 レンダリングエラー・入出力エラー / 2 引数の誤り。
 
+## 信頼できない入力を受けるとき
+
+OG 画像の生成では、HTML の中身（タイトル・本文）が利用者由来であることがほとんどです。
+`RenderOptions::limits`（`RenderLimits`）が**処理全体の予算**で、超えたら `ErrorKind::LimitExceeded` を
+返します。上限は入力の一部なので、同じ HTML と同じ上限からは常に同じ結果が出ます。
+
+```cpp
+shashoku::RenderOptions options;
+options.limits.text_code_points = 2000;   // このサービスではタイトルは 2000 字まで
+options.limits.images = 4;
+const auto result = shashoku::render(html, fonts, images, options);
+// error[limit-exceeded] at 1:1: font-size 30000 px x scale 1 = 30000 device px,
+//   which exceeds the limit of 2048 (raise RenderLimits::font_size_device_px to allow it)
+```
+
+既定値は「1200×630 @2x・数千文字・画像数枚には十分広く、事故は止まる」ように選んであります。
+
+| フィールド | 既定 | 押さえるもの |
+|---|---|---|
+| `html_bytes` | 4 MiB | 入力そのものの大きさ |
+| `images` / `image_pixels` / `total_image_pixels` | 64 枚 / 2^24 px / 2^25 px | 画像の展開量。画素を確保する**前**に IHDR で判定します |
+| `nesting_depth` / `dom_nodes` / `text_code_points` | 256 / 20,000 / 50,000 | 木の大きさと組む文字数 |
+| `style_rules` | 2,000 | セレクタの照合は「規則数 × 要素数」 |
+| `font_size_device_px` | 2,048 | グリフのビットマップは font-size の 2 乗で増えます（`font-size: 30000px` の 1 文字だけで 1.2 GB でした） |
+| `scale` / `device_pixels` | 256 / 2^26 px | 出力画像そのもの |
+
+> **⚠️ `0` は「無制限」ではありません**（文字どおり 0 です）。事実上外したいときは型の最大値を入れてください。
+> 外すと、信頼できない入力に対するメモリの保証はなくなります。
+
+メモリが本当に足りなくなった場合は `ErrorKind::OutOfMemory` を返します（公開関数の境界で
+`std::bad_alloc` / `std::length_error` を受け止めます。例外がライブラリの外へ出ることはありません）。
+ただしこれは**最善努力**です: Linux の既定のオーバーコミットでは、確保自体は成功してから
+OOM killer にプロセスごと殺されることがあります。**メモリを使い切らないことの保証は
+`RenderLimits` の側で行ってください。**
+
 ## 対応している HTML / CSS
 
 対応表にないタグ・属性・プロパティ・値は、**黙って無視せずエラーになります**（fail loudly）。

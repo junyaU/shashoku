@@ -6,7 +6,6 @@
 #include <cstdint>
 #include <expected>
 #include <format>
-#include <limits>
 #include <optional>
 #include <span>
 #include <string>
@@ -174,7 +173,8 @@ struct StartTagTail {
 // ASCII の区切り文字だけを見て進む（多バイト列のバイトはすべて 0x80 以上なので衝突しない）。
 class Parser {
  public:
-  explicit Parser(std::string_view source) : src_(source) {}
+  Parser(std::string_view source, std::size_t max_nesting_depth)
+      : src_(source), max_nesting_depth_(max_nesting_depth) {}
 
   Result<Node> run();
 
@@ -225,6 +225,7 @@ class Parser {
   [[nodiscard]] bool matches_raw_text_end(std::size_t index) const;
 
   std::string_view src_;
+  std::size_t max_nesting_depth_ = kMaxNestingDepth;
   std::size_t pos_ = 0;
   std::uint32_t line_ = 1;
   std::uint32_t column_ = 1;
@@ -544,10 +545,10 @@ Result<void> Parser::parse_start_tag() {
 
 Result<void> Parser::open_element(Node element, const SourceLocation& start) {
   // open_ は合成ルートを含むので、push 後の入れ子の深さは open_.size() になる。
-  if (open_.size() > kMaxNestingDepth) {
-    return fail(ErrorKind::HtmlParse,
+  if (open_.size() > max_nesting_depth_) {
+    return fail(ErrorKind::LimitExceeded,
                 std::format("elements are nested too deeply (the maximum is {}): `<{}>`",
-                            kMaxNestingDepth, element.tag),
+                            max_nesting_depth_, element.tag),
                 start);
   }
   open_.push_back(std::move(element));
@@ -873,12 +874,16 @@ void begin_node(JsonWriter& writer, const Node& node) {
 
 }  // namespace
 
-Result<Node> parse(std::string_view source) {
+Result<Node> parse(std::string_view source, std::size_t max_nesting_depth) {
   // SourceLocation::offset は 32 bit。黙って切り詰めて誤った位置を報告しない。
-  if (source.size() > std::numeric_limits<std::uint32_t>::max()) {
-    return fail(ErrorKind::InvalidOption, "the HTML input is too large (the limit is 4 GiB)");
+  // これは実装の都合による絶対上限で、RenderLimits では緩められない。
+  if (source.size() > kMaxSourceBytes) {
+    return fail(ErrorKind::LimitExceeded,
+                std::format("the HTML input is {} bytes, which exceeds the absolute limit of "
+                            "{} bytes (4 GiB; source positions are 32-bit)",
+                            source.size(), kMaxSourceBytes));
   }
-  Parser parser{source};
+  Parser parser{source, max_nesting_depth};
   return parser.run();
 }
 

@@ -500,17 +500,44 @@ TEST(PngDecode, RejectsUnknownCriticalChunk) {
   expect_decode_error(build_png(spec), "unknown critical chunk", "critical ABCD");
 }
 
+// 画素数の上限は「壊れた PNG」ではなく「大きすぎる入力」なので LimitExceeded（A25）。
+// IHDR を読んだ時点で判定するので、この 65535x65535 は 1 バイトも確保されない。
 TEST(PngDecode, RejectsHugeDimensions) {
   ImageSpec spec;
   spec.width = 0xFFFF;
   spec.height = 0xFFFF;
   spec.raw = {0};
-  expect_decode_error(build_png(spec), "too large", "65535x65535");
+  const Result<Bitmap> huge = decode(build_png(spec));
+  ASSERT_FALSE(huge.has_value());
+  EXPECT_EQ(huge.error().kind, ErrorKind::LimitExceeded);
+  EXPECT_NE(huge.error().message.find("65535x65535"), std::string::npos) << huge.error().message;
+  EXPECT_NE(huge.error().message.find("too large"), std::string::npos) << huge.error().message;
 
   ImageSpec zero;
   zero.width = 0;
   zero.raw = {0};
   expect_decode_error(build_png(zero), "zero-sized", "width 0");
+}
+
+// 上限は呼び出し側が決める（api は RenderLimits::image_pixels を渡す）。
+// ちょうどは通り、1 画素でも超えたら LimitExceeded。
+TEST(PngDecode, MaxPixelsIsAParameter) {
+  ImageSpec spec;
+  spec.width = 4;
+  spec.height = 2;
+  spec.color_type = 6;
+  // 4x2 の RGBA = 1 行 16 バイト
+  spec.raw = with_none_filter(std::vector<std::uint8_t>(std::size_t{16} * 2, 0x40), 16, 2);
+  const std::vector<std::uint8_t> png = build_png(spec);
+
+  const Result<Bitmap> exact = decode(png, 8);
+  ASSERT_TRUE(exact.has_value()) << to_string(exact.error());
+  EXPECT_EQ(exact->width, 4U);
+
+  const Result<Bitmap> over = decode(png, 7);
+  ASSERT_FALSE(over.has_value());
+  EXPECT_EQ(over.error().kind, ErrorKind::LimitExceeded);
+  EXPECT_NE(over.error().message.find("the limit is 7"), std::string::npos) << over.error().message;
 }
 
 TEST(PngDecode, RejectsTruncatedIdatData) {

@@ -250,7 +250,13 @@ struct RenderOptions {
   std::optional<int> viewport_height; // 未指定ならコンテンツ高さに追従
   float scale = 1.0f;                // 2.0 で Retina 向け 2 倍解像度
   LineBreakConfig line_break;        // 禁則テーブル・OverflowPolicy
+  RenderLimits limits;               // 入力の上限（バイト数・ノード数・font-size・画素数…）
 };
+
+// 処理全体の予算。上限は「入力の一部」なので、同じ入力 + 同じ上限なら出力も同じ。
+// 既定値は OG 画像には十分広く、事故（巨大な font-size、画像の枚数、深い入れ子）は止まる。
+// 超過は ErrorKind::LimitExceeded。詳細は ARCHITECTURE.md A25。
+struct RenderLimits { /* html_bytes, dom_nodes, text_code_points, font_size_device_px, … */ };
 
 struct Warning { WarningKind kind; std::string detail; };
 
@@ -271,7 +277,8 @@ render(std::string_view html, const FontSet& fonts, const RenderOptions& opts);
 }  // namespace shashoku
 ```
 
-- エラー（`RenderError`）: パース失敗、未対応タグ / プロパティ / 値、フォント読込失敗。**どの入力のどこが原因かを必ず含める**
+- エラー（`RenderError`）: パース失敗、未対応タグ / プロパティ / 値、フォント読込失敗、上限超過（`LimitExceeded`）、メモリ不足（`OutOfMemory`）。**どの入力のどこが原因かを必ず含める**
+- 信頼できない HTML を受けるときは `RenderOptions::limits` で予算を決める。メモリ不足の扱い（`OutOfMemory` は最善努力で、保証は上限の側）は ARCHITECTURE.md A26
 - CLI も薄く用意する: `shashoku input.html --font NotoSansJP.ttf -o out.png --dump-stage=box`
 
 ## 9. 開発フェーズ（出口から通す）

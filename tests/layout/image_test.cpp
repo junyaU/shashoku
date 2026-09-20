@@ -4,6 +4,7 @@
 
 #include <gtest/gtest.h>
 
+#include "layout/engine.hpp"  // layout_without_memo（A29 のメモで出力が変わらないことの検査）
 #include "layout/test_support.hpp"
 
 // <img>（ARCHITECTURE.md §3.8 / A12）。
@@ -248,6 +249,36 @@ TEST(LayoutImage, FlexItemImageIsNotStretched) {
   EXPECT_FLOAT_EQ(items[0].rect.block_size, 40);
   ASSERT_EQ(all_images(*tree).size(), 1U);
   EXPECT_FLOAT_EQ(all_images(*tree)[0]->content_rect.block_size, 40);
+}
+
+// A29: 準備済み段落（PreparedParagraph）は固有寸法の計測と配置で共有するが、**<img> を
+// 含む段落だけは共有しない**。`%` の幅は content_inline_size を基準にするので、
+// 計測のときの幅（= 包含ブロックの幅）で作った段落を配置に使い回すと、画像の大きさが
+// 変わってしまう。shrink-to-fit（align-items: flex-start）だと 2 つの幅が食い違う。
+TEST(LayoutImage, PercentImageIsResolvedAgainstThePlacementWidth) {
+  FakeMeasurer measurer;
+  const auto root = build({flex({block({text("あ"), img("photo", std::nullopt, std::nullopt,
+                                                        [](ComputedStyle& style) {
+                                                          style.width = Dimension::percent(25);
+                                                        })})},
+                                [](ComputedStyle& style) {
+                                  style.flex_direction = style::FlexDirection::Column;
+                                  style.align_items = AlignItems::FlexStart;  // 幅は shrink-to-fit
+                                })});
+  const auto tree = run_layout(root, 400, measurer, photos());
+  ASSERT_TRUE(tree.has_value());
+  const std::vector<const ImageFragment*> images = all_images(*tree);
+  ASSERT_EQ(images.size(), 1U);
+  // アイテムの幅（shrink-to-fit）に対する 25%。包含ブロックの 400 に対する 25% = 100 ではない
+  const float item_width = tree->root.blocks()->front().blocks()->front().rect.inline_size;
+  EXPECT_FLOAT_EQ(images[0]->content_rect.inline_size, item_width / 4);
+  EXPECT_LT(images[0]->content_rect.inline_size, 100);
+
+  // メモの有無で結果が変わらない（段落を共有してしまうとここで落ちる）
+  FakeMeasurer plain;
+  const auto without_memo = layout_without_memo(root, make_options(400), plain, photos());
+  ASSERT_TRUE(without_memo.has_value());
+  EXPECT_EQ(dump_json(*tree), dump_json(*without_memo));
 }
 
 // 画像は自動最小サイズによって内容サイズより縮まない。

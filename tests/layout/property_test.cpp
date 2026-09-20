@@ -9,6 +9,7 @@
 #include <gtest/gtest.h>
 
 #include "core/geometry.hpp"
+#include "layout/engine.hpp"  // layout_without_memo（メモの有無で出力が変わらないことの検査）
 #include "layout/test_support.hpp"
 
 // 性質テスト（DESIGN.md §10-4）。種を固定した乱数でランダムなスタイル付きツリーを作り、
@@ -291,6 +292,16 @@ void check_seed(std::uint32_t seed, bool vertical) {
   const auto twice = run_layout(root, options, again, images);
   ASSERT_TRUE(twice.has_value());
   EXPECT_EQ(dump_json(*tree), dump_json(*twice)) << "seed " << seed;
+
+  // (6) 計測のメモ（A29）が効いても出力は 1 ビットも変わらない。
+  // ダンプの float は「元の値に戻せる最短表現」なので、この比較はビット比較と同じ。
+  // メモのキーに足りないものがあれば（= 条件が違うのに使い回せば）ここで落ちる
+  FakeMeasurer plain;
+  const auto without_memo = layout_without_memo(root, options, plain, images);
+  ASSERT_TRUE(without_memo.has_value()) << "seed " << seed;
+  EXPECT_EQ(dump_json(*tree), dump_json(*without_memo)) << "seed " << seed;
+  // メモは仕事を減らすだけ（増やすことはない）
+  EXPECT_LE(measurer.shape_calls, plain.shape_calls) << "seed " << seed;
 }
 
 TEST(LayoutProperty, RandomTreesKeepTheInvariants) {

@@ -225,9 +225,11 @@ Result<BlockBox> LayoutEngine::layout_block(const BlockInput& input, const BoxSi
   return box;
 }
 
-Result<BoxTree> layout(const style::StyledNode& root, const Options& options,
-                       text::TextMeasurer& measurer, const ImageLookup& images,
-                       Counters* counters) {
+namespace {
+
+Result<BoxTree> layout_root(const style::StyledNode& root, const Options& options,
+                            text::TextMeasurer& measurer, const ImageLookup& images,
+                            Counters* counters, bool memo) {
   if (!is_positive_finite(options.viewport_width)) {
     return fail(ErrorKind::InvalidOption, "viewport width must be a positive finite number");
   }
@@ -251,7 +253,8 @@ Result<BoxTree> layout(const style::StyledNode& root, const Options& options,
   const float viewport_inline_size =
       mode == WritingMode::VerticalRl ? *options.viewport_height : options.viewport_width;
   Counters discarded;  // 呼び出し側が数えないときの捨て場（null 判定を 1 か所で済ませる）
-  LayoutEngine engine(options, measurer, images, mode, counters != nullptr ? *counters : discarded);
+  LayoutEngine engine(options, measurer, images, mode, counters != nullptr ? *counters : discarded,
+                      memo);
   Result<BoxSizing> sizing = engine.resolve_box(root.style, viewport_inline_size, root.location);
   if (!sizing) {
     return std::unexpected(sizing.error());
@@ -274,6 +277,20 @@ Result<BoxTree> layout(const style::StyledNode& root, const Options& options,
   tree.viewport_height = options.viewport_height;
   tree.root = std::move(*box);
   return tree;
+}
+
+}  // namespace
+
+Result<BoxTree> layout(const style::StyledNode& root, const Options& options,
+                       text::TextMeasurer& measurer, const ImageLookup& images,
+                       Counters* counters) {
+  return layout_root(root, options, measurer, images, counters, true);
+}
+
+Result<BoxTree> layout_without_memo(const style::StyledNode& root, const Options& options,
+                                    text::TextMeasurer& measurer, const ImageLookup& images,
+                                    Counters* counters) {
+  return layout_root(root, options, measurer, images, counters, false);
 }
 
 }  // namespace shashoku::layout

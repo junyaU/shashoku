@@ -1,7 +1,9 @@
 #pragma once
 
 #include <cstddef>
+#include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "core/color.hpp"
@@ -103,7 +105,30 @@ struct PreparedParagraph {
   [[nodiscard]] std::string text_of(std::size_t char_begin, std::size_t char_end) const;
 };
 
+// (a)〜(c) を実際に行う。共有できるものは shared_paragraph() 経由で 1 回に減らす。
 [[nodiscard]] Result<PreparedParagraph> prepare_paragraph(const InlineInput& input,
                                                           LayoutEngine& engine);
+
+// 準備済み段落の持ち主。共有できたときは LayoutCache の中身への参照、できなかったとき
+// （<img> を含む段落 / メモ無効）は自分で持つ。どちらでも get() の読み方は同じ。
+class ParagraphHandle {
+ public:
+  explicit ParagraphHandle(const PreparedParagraph& shared) : shared_(&shared) {}
+  explicit ParagraphHandle(PreparedParagraph&& owned) : owned_(std::move(owned)) {}
+
+  [[nodiscard]] const PreparedParagraph& get() const {
+    return owned_.has_value() ? *owned_ : *shared_;
+  }
+
+ private:
+  // どちらか一方だけが値を持つ（コンストラクタが 2 つあり、どちらも片方だけを埋める）。
+  std::optional<PreparedParagraph> owned_;
+  const PreparedParagraph* shared_ = nullptr;
+};
+
+// 同じ段落（= 同じノードの並びを同じブロックのスタイルで組んだもの）なら 2 回目以降は
+// 組み直さない（A29）。固有寸法の計測と実際の配置が、シェーピングまで済んだ同じものを使う。
+[[nodiscard]] Result<ParagraphHandle> shared_paragraph(const InlineInput& input,
+                                                       LayoutEngine& engine);
 
 }  // namespace shashoku::layout

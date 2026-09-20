@@ -41,6 +41,7 @@
 //
 // (6) 縦書きでは幅の `%` が使えない（engine.cpp）ので、`%` は使わない。
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <format>
@@ -155,7 +156,9 @@ class Comparer {
 
   void equal(std::string_view path, float horizontal, float vertical) {
     const float difference = horizontal - vertical;
-    if (!(difference <= options_.tolerance && -difference <= options_.tolerance)) {
+    // NaN はどの比較も偽になるので、この書き方だと「差あり」に倒れる（それでよい）
+    const bool within = difference <= options_.tolerance && -difference <= options_.tolerance;
+    if (!within) {
       add(path, std::format("horizontal-tb {} / vertical-rl {}", horizontal, vertical));
     }
   }
@@ -190,7 +193,7 @@ class Comparer {
 
 void Comparer::compare_block(const BlockBox& h, const BlockBox& v, const std::string& path) {
   if (h.tag != v.tag) {
-    add(path + ".tag", std::format("horizontal-tb \"{}\" / vertical-rl \"{}\"", h.tag, v.tag));
+    add(path + ".tag", std::format(R"(horizontal-tb "{}" / vertical-rl "{}")", h.tag, v.tag));
     return;
   }
   compare_rect(path + ".rect", h.rect, v.rect, options_.block_axis);
@@ -269,7 +272,7 @@ void Comparer::compare_fragments(const LineBox& h, const LineBox& v, const std::
 
 void Comparer::compare_text(const TextFragment& h, const TextFragment& v, const std::string& path) {
   if (h.text != v.text) {
-    add(path + ".text", std::format("horizontal-tb \"{}\" / vertical-rl \"{}\"", h.text, v.text));
+    add(path + ".text", std::format(R"(horizontal-tb "{}" / vertical-rl "{}")", h.text, v.text));
   }
   equal(path + ".font", static_cast<float>(h.font), static_cast<float>(v.font));
   equal(path + ".font_size", h.font_size, v.font_size);
@@ -314,7 +317,7 @@ void Comparer::compare_glyph_run(const LineBox& h, const LineBox& v, const std::
   const auto [h_text, h_glyphs] = flatten(h);
   const auto [v_text, v_glyphs] = flatten(v);
   if (h_text != v_text) {
-    add(path + ".text", std::format("horizontal-tb \"{}\" / vertical-rl \"{}\"", h_text, v_text));
+    add(path + ".text", std::format(R"(horizontal-tb "{}" / vertical-rl "{}")", h_text, v_text));
   }
   if (h_glyphs.size() != v_glyphs.size()) {
     add(path + ".glyphs", std::format("グリフ数が違う: horizontal-tb {} / vertical-rl {}",
@@ -647,7 +650,7 @@ class TreeMaker {
   int pick(int lo, int hi) { return std::uniform_int_distribution<int>(lo, hi)(rng_); }
 
   std::string_view sentence() {
-    constexpr std::string_view kTexts[] = {
+    constexpr std::array<std::string_view, 6> kTexts = {
         "あいうえお",
         "吾輩は猫である。名前はまだ無い。",
         "組版、それは「文字を並べる」仕事である。",
@@ -655,12 +658,12 @@ class TreeMaker {
         "ん",
         "きゃりーぱみゅぱみゅ",
     };
-    return kTexts[static_cast<std::size_t>(pick(0, 5))];
+    return kTexts.at(static_cast<std::size_t>(pick(0, static_cast<int>(kTexts.size()) - 1)));
   }
 
   StyleFn text_style() {
     const float font_size = static_cast<float>(pick(3, 6)) * 4;
-    const float spacing = static_cast<float>(pick(0, 2));
+    const auto spacing = static_cast<float>(pick(0, 2));
     const auto align = static_cast<style::TextAlign>(pick(0, 5));
     return [font_size, spacing, align](ComputedStyle& s) {
       s.font_size = font_size;

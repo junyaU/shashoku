@@ -29,6 +29,7 @@
 #include <zlib.h>
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <format>
@@ -88,12 +89,11 @@ struct Case {
 };
 
 // 5 種のフィルタを満遍なく引くように選んだ 4 枚（下の UsesSeveralFilters が確かめる）。
-constexpr Case kCases[] = {
-    {"solid", [] { return make_solid(16, 16, Color{0x33, 0x66, 0xCC, 0xFF}); }, 0x47ACA152U},
-    {"gradient", [] { return make_gradient(33, 17); }, 0xDB8C3D69U},
-    {"noise", [] { return make_noise(24, 24, 0x5EED'1234U); }, 0x24AF3D95U},
-    {"transparent", [] { return make_solid(7, 5, Color{0, 0, 0, 0}); }, 0x2BCB3AE7U},
-};
+constexpr std::array<Case, 4> kCases = {
+    Case{"solid", [] { return make_solid(16, 16, Color{0x33, 0x66, 0xCC, 0xFF}); }, 0x47ACA152U},
+    Case{"gradient", [] { return make_gradient(33, 17); }, 0xDB8C3D69U},
+    Case{"noise", [] { return make_noise(24, 24, 0x5EED'1234U); }, 0x24AF3D95U},
+    Case{"transparent", [] { return make_solid(7, 5, Color{0, 0, 0, 0}); }, 0x2BCB3AE7U}};
 
 TEST(PngDeterminism, FilteredPayloadMatchesThePinnedChecksum) {
   for (const Case& test_case : kCases) {

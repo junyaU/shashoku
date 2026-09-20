@@ -70,7 +70,7 @@ RenderOptions rect_options(float scale) {
 }
 
 std::string dump_stage(std::string_view html, float scale, DumpStage stage) {
-  RenderOptions options = rect_options(scale);
+  const RenderOptions options = rect_options(scale);
   const auto dumped = dump(html, japanese_fonts(), ImageSet{}, options, stage);
   if (!dumped) {
     ADD_FAILURE() << "dump: " << to_string(dumped.error());

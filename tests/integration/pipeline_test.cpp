@@ -1,5 +1,7 @@
+#include <cstddef>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -95,6 +97,84 @@ TEST(Images, DuplicateNameIsRejected) {
   const auto result = render(kImageHtml, japanese_fonts(), images, options_for(200));
   ASSERT_FALSE(result.has_value());
   EXPECT_EQ(result.error().kind, ErrorKind::InvalidOption);
+}
+
+// ---------------------------------------------------------------------------
+// font-weight とフォント選択（ARCHITECTURE.md §3.5）
+//
+// 回帰テスト: かつて太さの照合が「font-family で名前が一致した family の中だけ」で
+// 働いていたため、**font-family を書かない HTML では <h1> が太字にならなかった**。
+// 絵を見るだけでは Regular と Bold を取り違えるので、ディスプレイリストの FontId を
+// 数値で確かめる（FontId は FontSet の追加順: 0 = Regular, 1 = Bold）。
+// ---------------------------------------------------------------------------
+
+// dump(DisplayList) の draw_glyphs から (font, size) を拾う。
+// キー順は paint の dump_json が固定している（op → font → size → color → …）。
+std::vector<std::pair<std::string, std::string>> glyph_runs(std::string_view json) {
+  constexpr std::string_view kMarker = R"("op": "draw_glyphs")";
+  const auto value_after = [json](std::string_view key, std::size_t from) {
+    const std::size_t at = json.find(key, from);
+    if (at == std::string_view::npos) {
+      return std::string{};
+    }
+    const std::size_t begin = at + key.size();
+    const std::size_t end = json.find_first_of(",\n", begin);
+    return std::string(json.substr(begin, end - begin));
+  };
+
+  std::vector<std::pair<std::string, std::string>> runs;
+  for (std::size_t at = json.find(kMarker); at != std::string_view::npos;
+       at = json.find(kMarker, at + 1)) {
+    runs.emplace_back(value_after(R"("font": )", at), value_after(R"("size": )", at));
+  }
+  return runs;
+}
+
+TEST(FontWeight, HeadingUsesBoldWithoutFontFamily) {
+  // font-family を書かない。h1 は UA スタイルシートで bold になる（§3.7）
+  constexpr std::string_view kHtml =
+      R"(<div><h1 style="font-size: 32px">見出し</h1><p style="font-size: 16px">本文</p></div>)";
+
+  const auto json =
+      dump(kHtml, japanese_fonts(), ImageSet{}, options_for(400), DumpStage::DisplayList);
+  ASSERT_TRUE(json.has_value()) << to_string(json.error());
+
+  const std::vector<std::pair<std::string, std::string>> runs = glyph_runs(*json);
+  ASSERT_EQ(runs.size(), 2U) << *json;
+  // 文書順に h1 → p
+  EXPECT_EQ(runs[0].second, "32") << *json;
+  EXPECT_EQ(runs[0].first, "1") << "h1 が Bold（FontId 1）で描かれていない\n" << *json;
+  EXPECT_EQ(runs[1].second, "16") << *json;
+  EXPECT_EQ(runs[1].first, "0") << "本文が Regular（FontId 0）で描かれていない\n" << *json;
+}
+
+// font-family は family の優先順を変えるだけで、太さの照合はいつも全 family に働く。
+TEST(FontWeight, ExplicitWeightPicksBold) {
+  constexpr std::string_view kHtml =
+      R"(<div style="font-size: 20px"><span style="font-weight: 700">太</span><span>細</span></div>)";
+
+  const auto json =
+      dump(kHtml, japanese_fonts(), ImageSet{}, options_for(400), DumpStage::DisplayList);
+  ASSERT_TRUE(json.has_value()) << to_string(json.error());
+
+  const std::vector<std::pair<std::string, std::string>> runs = glyph_runs(*json);
+  ASSERT_EQ(runs.size(), 2U) << *json;
+  EXPECT_EQ(runs[0].first, "1") << *json;  // font-weight: 700 → Bold
+  EXPECT_EQ(runs[1].first, "0") << *json;  // 既定の 400 → Regular
+}
+
+// Bold を渡していなければ Regular で描く（落ちない・黙って崩さない）。
+TEST(FontWeight, FallsBackWhenNoBoldIsAvailable) {
+  FontSet regular_only;
+  regular_only.add(text::assets::noto_sans_jp_regular());
+
+  const auto json = dump(R"(<h1 style="font-size: 32px">見出し</h1>)", regular_only, ImageSet{},
+                         options_for(400), DumpStage::DisplayList);
+  ASSERT_TRUE(json.has_value()) << to_string(json.error());
+
+  const std::vector<std::pair<std::string, std::string>> runs = glyph_runs(*json);
+  ASSERT_EQ(runs.size(), 1U) << *json;
+  EXPECT_EQ(runs[0].first, "0") << *json;
 }
 
 // ---------------------------------------------------------------------------

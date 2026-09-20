@@ -57,7 +57,7 @@ std::vector<std::string> glyph_tuples(std::string_view json) {
 }
 
 std::vector<std::string> glyphs_of(std::string_view html, const FontSet& fonts) {
-  RenderOptions options = options_for(3000);  // 折り返さない幅（行分割の違いを混ぜない）
+  const RenderOptions options = options_for(3000);  // 折り返さない幅（行分割の違いを混ぜない）
   const auto json = dump(html, fonts, ImageSet{}, options, DumpStage::DisplayList);
   EXPECT_TRUE(json.has_value()) << to_string(json.error());
   if (!json) {
@@ -70,7 +70,7 @@ std::vector<std::string> glyphs_of(std::string_view html, const FontSet& fonts) 
 
 // 色つきの draw_glyphs の数（色ごとの描き分けが残っていることの確認用）。
 std::size_t command_count(std::string_view html, const FontSet& fonts) {
-  RenderOptions options = options_for(3000);
+  const RenderOptions options = options_for(3000);
   const auto json = dump(html, fonts, ImageSet{}, options, DumpStage::DisplayList);
   EXPECT_TRUE(json.has_value()) << to_string(json.error());
   if (!json) {
@@ -141,7 +141,8 @@ std::vector<std::size_t> char_starts(std::string_view text) {
 }
 
 // [begin, end) の文字を色つき span で包んだ HTML を作る（本文は 1 文字も変えない）。
-std::string wrap_spans(std::string_view text, const std::vector<std::pair<std::size_t, std::size_t>>& ranges) {
+std::string wrap_spans(std::string_view text,
+                       const std::vector<std::pair<std::size_t, std::size_t>>& ranges) {
   std::string body;
   std::size_t at = 0;
   for (const auto& [begin, end] : ranges) {

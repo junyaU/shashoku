@@ -50,24 +50,35 @@ void ParagraphBuilder::build_ruby_item(std::size_t group_index) {
 
   std::size_t i = group.base_begin;
   while (i < group.base_end) {
-    const std::size_t style_id = out_->chars[i].style;
+    // 親文字も普通のテキストと同じで、シェーピングはシェーピング属性が同じ連続で 1 回（A24）
+    const std::size_t shaping = out_->styles.shaping_index(out_->chars[i].style);
     std::size_t end = i;
-    while (end < group.base_end && out_->chars[end].style == style_id) {
+    while (end < group.base_end && out_->styles.shaping_index(out_->chars[end].style) == shaping) {
       ++end;
     }
     const std::size_t run = shape_run(i, end);
-    float advance = 0;
-    for (const text::ShapedCluster& cluster : out_->runs[run].shaped.clusters) {
-      advance += cluster.advance + out_->letter_spacing(style_id);
+    // 1 回のシェーピング結果を、装飾が変わる位置（クラスタ境界）で区間に切る
+    const std::vector<text::ShapedCluster>& clusters = out_->runs[run].shaped.clusters;
+    std::size_t first = 0;
+    while (first < clusters.size()) {
+      const std::size_t style_id = out_->chars[i + clusters[first].text_begin].style;
+      float advance = 0;
+      std::size_t last = first;
+      while (last < clusters.size() &&
+             out_->chars[i + clusters[last].text_begin].style == style_id) {
+        advance += clusters[last].advance + out_->letter_spacing(style_id);
+        ++last;
+      }
+      piece.base.push_back(BaseSegment{.run = run,
+                                       .glyph_begin = clusters[first].glyph_begin,
+                                       .glyph_end = clusters[last - 1].glyph_end,
+                                       .style = style_id,
+                                       .char_begin = i + clusters[first].text_begin,
+                                       .char_end = i + clusters[last - 1].text_end,
+                                       .advance = advance});
+      piece.base_width += advance;
+      first = last;
     }
-    piece.base.push_back(BaseSegment{.run = run,
-                                     .glyph_begin = 0,
-                                     .glyph_end = out_->runs[run].shaped.glyphs.size(),
-                                     .style = style_id,
-                                     .char_begin = i,
-                                     .char_end = end,
-                                     .advance = advance});
-    piece.base_width += advance;
     i = end;
   }
 
@@ -135,17 +146,22 @@ void ParagraphBuilder::build() {
       ++i;
       continue;
     }
-    // (b) スタイルが同じ連続区間を 1 回でシェーピングする（A6: 行ごとに測り直さない）
-    const std::size_t style_id = flat.style;
+    // (b) **シェーピング属性**が同じ連続区間を 1 回でシェーピングする
+    //     （A6: 行ごとに測り直さない / A24: 色・letter-spacing・line-height の境界では
+    //      切らない。切るとその位置のカーニングと合字が消える。issue #8）
+    const std::size_t shaping = out_->styles.shaping_index(flat.style);
     std::size_t end = i;
     while (end < out_->chars.size() && out_->chars[end].kind == FlatChar::Kind::Text &&
-           out_->chars[end].style == style_id && (end == i || (*ruby_at_)[end] == kNone)) {
+           out_->styles.shaping_index(out_->chars[end].style) == shaping &&
+           (end == i || (*ruby_at_)[end] == kNone)) {
       ++end;
     }
     const std::size_t run = shape_run(i, end);
-    // (c) クラスタ → Item。letter-spacing は送りに足す
+    // (c) クラスタ → Item。装飾・行高は**クラスタ先頭の文字**のものを対応付ける（A24）。
+    //     letter-spacing は送りに足す
     for (const text::ShapedCluster& cluster : out_->runs[run].shaped.clusters) {
       const std::size_t at = i + cluster.text_begin;
+      const std::size_t style_id = at < end ? out_->chars[at].style : flat.style;
       out_->items.push_back(
           linebreak::Item{.kind = linebreak::ItemKind::Text,
                           .cp = at < end ? out_->chars[at].cp : 0,

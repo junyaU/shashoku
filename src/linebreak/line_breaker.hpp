@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <optional>
 #include <span>
 #include <string>
 #include <vector>
@@ -35,12 +36,16 @@ enum class OverflowPolicy : std::uint8_t {
   Burasage,  // ぶら下げ: 行末の句読点 1 文字を行の外にはみ出させる。対象外の文字なら追い出し
 };
 
+// 段落（インライン整形文脈）全体の既定値。strictness と break_anywhere は
+// アイテムごとに Item::strictness / Item::break_anywhere で上書きできる（<span> の指定）。
 struct Config {
   Strictness strictness = Strictness::Strict;
   OverflowPolicy overflow = OverflowPolicy::Oidashi;
 
   // overflow-wrap: anywhere / break-word。分割可能位置がなく行に収まらない語
   // （長い URL など）を、クラスタ境界で強制的に割る。
+  // min_content_width() には影響しない（CSS の break-word 相当。CSS Text 3 の
+  // overflow-wrap: anywhere は min-content に効くが、ここでは両者を区別していない）。
   // このときも分離禁則（—— …… 数値と単位）> 行頭禁則・行末禁則 の順にできる限り守る。
   // 分離禁則を破らざるをえない位置ばかりでも、その中で行頭禁則を守れる位置を優先する。
   // 守れる位置が 1 つもなければ破る。クラスタの内部では決して割らない。
@@ -76,6 +81,30 @@ struct Item {
   float em = 0;
   // このアイテムの直前での分割を禁止する（呼び出し側の都合。例: 複数クラスタからなるルビ内部）
   bool no_break_before = false;
+
+  // --- アイテムごとのポリシー上書き（CSS の line-break / overflow-wrap）---
+  // どちらも CSS ではテキスト（インラインボックス）に適用される継承プロパティなので、
+  // 段落の途中の <span> で値が変わりうる。nullopt なら Config の値を使う
+  // （既定のまま = Config だけを使っていたころと出力は完全に同じ）。
+  //
+  // 境界の規則（ARCHITECTURE.md A19。CSS Text Level 3 の "Line Breaking Details" は、
+  // 要素の境界にまたがる分割位置でどの要素の line-break / word-break / overflow-wrap が
+  // 効くかを "undefined in this level" としているので、ここで決める）:
+  //
+  //   * strictness は「分割クラスの解決」に使い、アイテム自身の値で解決する
+  //     （CJ を NS とみなすか ID とみなすか、loose の追加規則で ID に格下げするかは
+  //     その文字 1 個の問題なので、境界が曖昧にならない）。ペア表・文脈規則は
+  //     解決済みのクラスに対して従来どおり働く。例外は loose の
+  //     「直前が ID ならハイフン ‐ – の前で割ってよい」だけで、これは 2 アイテムに
+  //     またがるので、行頭に来る側（= 後ろのアイテム = ハイフン自身）の値で決める
+  //   * break_anywhere の緊急分割は、位置の両側のアイテムがともに true のときだけ許す
+  //     （anywhere を指定した要素の内部でだけ割れ、要素の境界では割れない）。
+  //     発動条件（分割可能位置が 1 つもない行でだけ）と位置選びの優先順は Config と同じ
+  //
+  // = std::nullopt は既定値の明示。designated initializer で Item を作っている呼び出し側が
+  // -Wmissing-field-initializers に掛からないように、既定値を必ず書く。
+  std::optional<Strictness> strictness = std::nullopt;
+  std::optional<bool> break_anywhere = std::nullopt;
 
   bool operator==(const Item&) const = default;
 };

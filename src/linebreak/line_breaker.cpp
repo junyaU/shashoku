@@ -64,9 +64,17 @@ class Analysis {
   };
 
   // --- 解析 ---
+  // アイテムごとのポリシー（ARCHITECTURE.md A19）。nullopt なら Config の値。
+  [[nodiscard]] Strictness strictness_of(const Item& item) const {
+    return item.strictness.value_or(config_.strictness);
+  }
+  [[nodiscard]] bool break_anywhere_of(std::size_t i) const {
+    return items_[i].break_anywhere.value_or(config_.break_anywhere);
+  }
   [[nodiscard]] BreakClass resolve_class(const Item& item) const;
   void resolve_classes();
   void build_spacing_tables();
+  void build_anywhere_table();
   void compute_opportunities();
 
   // --- 分割可能位置の規則（sig_ 上の位置 k = items_[sig_[k - 1]] と items_[sig_[k]] の間）---
@@ -78,6 +86,7 @@ class Analysis {
   [[nodiscard]] bool can_break_between(std::size_t k) const;
 
   [[nodiscard]] BreakClass sig_class(std::size_t k) const { return cls_[sig_[k]]; }
+  [[nodiscard]] const Item& sig_item(std::size_t k) const { return items_[sig_[k]]; }
   [[nodiscard]] char32_t sig_cp(std::size_t k) const { return items_[sig_[k]].cp; }
   [[nodiscard]] std::size_t sig_count() const { return sig_.size(); }
   // 直前の空白列を飛ばした位置（LB8 / LB14 / LB16 / LB17 の「SP* 越し」）。
@@ -103,6 +112,9 @@ class Analysis {
   [[nodiscard]] std::size_t mandatory_limit(std::size_t begin) const;
   void scan_candidates(std::size_t begin, std::size_t limit, float available, std::size_t& best,
                        std::size_t& first, std::size_t& next) const;
+  // 緊急分割（break_anywhere）の候補にできる位置か。
+  [[nodiscard]] bool anywhere_candidate(std::size_t p) const;
+  void rank_anywhere_position(std::size_t p, std::array<std::size_t, 5>& choice) const;
   [[nodiscard]] std::size_t break_anywhere_at(std::size_t begin, std::size_t limit,
                                               float available) const;
   [[nodiscard]] bool ends_forced(std::size_t end) const;
@@ -130,6 +142,10 @@ class Analysis {
 
   std::vector<std::uint8_t> opp_;        // items_[i-1] と items_[i] の間で割ってよい
   std::vector<std::uint8_t> mandatory_;  // その位置で必ず割る（LB4 / LB5）
+  // items_[i-1] と items_[i] の間で break_anywhere の緊急分割をしてよい
+  // （両側のアイテムがともに anywhere のときだけ。ARCHITECTURE.md A19）
+  std::vector<std::uint8_t> anywhere_;
+  bool has_anywhere_ = false;  // anywhere_ に 1 が 1 つでもあるか
 };
 
 Analysis::Analysis(Config config, std::span<const Item> items)
@@ -147,8 +163,10 @@ Analysis::Analysis(Config config, std::span<const Item> items)
   collapse_after_.assign(n, 0.0F);
   opp_.assign(n, 0);
   mandatory_.assign(n, 0);
+  anywhere_.assign(n, 0);
   resolve_classes();
   build_spacing_tables();
+  build_anywhere_table();
   compute_opportunities();
 }
 
@@ -170,10 +188,12 @@ BreakClass Analysis::resolve_class(const Item& item) const {
     return BreakClass::Ns;
   }
 
+  // クラスの解決はこのアイテム自身の strictness で行う（ARCHITECTURE.md A19）。
+  const Strictness strictness = strictness_of(item);
   BreakClass cls = break_class_of(cp);
   // CSS Text 3 §5.3。CJ の解決は line_breaker.hpp の Strictness の定義に従う
   // （strict = NS、normal / loose = ID）。
-  if (config_.strictness == Strictness::Strict) {
+  if (strictness == Strictness::Strict) {
     if (cls == BreakClass::Cj) {
       cls = BreakClass::Ns;
     }
@@ -182,12 +202,22 @@ BreakClass Analysis::resolve_class(const Item& item) const {
   if (cls == BreakClass::Cj || is_cjk_hyphen_like(cp)) {
     cls = BreakClass::Id;  // normal / loose: 小書き仮名・長音、〜 ゠ の前で割ってよい
   }
-  if (config_.strictness == Strictness::Loose &&
+  if (strictness == Strictness::Loose &&
       (cls == BreakClass::In || is_iteration_mark(cp) || is_loose_centered_punctuation(cp) ||
        is_wide_numeric_affix(cp))) {
     cls = BreakClass::Id;  // loose: ‥ … 々 ・ ！ ？ ％ ￥ などの前でも割ってよい
   }
   return cls;
+}
+
+void Analysis::build_anywhere_table() {
+  // 位置 i で緊急分割してよいのは、items_[i - 1] と items_[i] がともに anywhere のときだけ
+  // （= anywhere を指定した要素の内部でだけ割れ、要素の境界では割れない。A19）。
+  for (std::size_t i = 1; i < items_.size(); ++i) {
+    const bool allowed = break_anywhere_of(i - 1) && break_anywhere_of(i);
+    anywhere_[i] = static_cast<std::uint8_t>(allowed);
+    has_anywhere_ = has_anywhere_ || allowed;
+  }
 }
 
 void Analysis::resolve_classes() {
@@ -378,9 +408,12 @@ std::optional<bool> Analysis::rule_punctuation(std::size_t k) const {
       return false;
     }
   }
-  if (config_.strictness == Strictness::Loose && prev == BreakClass::Id &&
+  if (strictness_of(sig_item(k)) == Strictness::Loose && prev == BreakClass::Id &&
       is_loose_hyphen(sig_cp(k))) {
-    return true;  // CSS Text 3 §5.3: loose では ID の後ろの ‐ – の前で割ってよい
+    // CSS Text 3 §5.3: loose では ID の後ろの ‐ – の前で割ってよい。
+    // loose の追加規則のうち、これだけは「文字単体のクラス解決」で表せず 2 アイテムに
+    // またがる。A19 の取り決めにより、行頭に来る側（= 後ろのアイテム）の値で決める。
+    return true;
   }
   if (next == BreakClass::Ba || next == BreakClass::Hy || next == BreakClass::Ns) {
     return false;  // LB21 × BA × HY × NS（行頭禁則: 々 ゝ ・ ： ；、strict の小書き仮名）
@@ -679,6 +712,32 @@ void Analysis::scan_candidates(std::size_t begin, std::size_t limit, float avail
   }
 }
 
+bool Analysis::anywhere_candidate(std::size_t p) const {
+  // クラスタの内部では割らない。両側のアイテムがともに anywhere でなければ割らない（A19）。
+  return attached_[p] == 0 && raw_zwj_[p - 1] == 0 && anywhere_[p] != 0;
+}
+
+void Analysis::rank_anywhere_position(std::size_t p, std::array<std::size_t, 5>& choice) const {
+  // break_anywhere_at() の優先順位表を 1 位置ぶん更新する。段の意味は呼び出し側のコメント。
+  const bool inseparable = splits_inseparable(p);
+  const bool prohibited = start_prohibited_[p] != 0 || end_prohibited_[p - 1] != 0;
+  choice[4] = p;
+  if (!prohibited) {
+    choice[3] = p;
+  }
+  if (inseparable) {
+    return;
+  }
+  choice[2] = p;
+  if (prohibited) {
+    return;
+  }
+  choice[1] = p;
+  if (opp_[p] != 0) {
+    choice[0] = p;
+  }
+}
+
 std::size_t Analysis::break_anywhere_at(std::size_t begin, std::size_t limit,
                                         float available) const {
   // overflow-wrap: anywhere。クラスタ境界で強制的に割る（line_breaker.hpp の
@@ -691,29 +750,16 @@ std::size_t Analysis::break_anywhere_at(std::size_t begin, std::size_t limit,
   //      （「￥1,200」のように、どこで割っても分離禁則に掛かるとき）
   //   4: 収まる最後のクラスタ境界。ここで初めて何もかも破る
   // クラスタの内部（結合文字・異体字セレクタ・ZWJ 列の吸収）では、4 でも絶対に割らない。
+  // anywhere_[p] が 0 の位置（両側のどちらかが anywhere でない = 要素の境界）も候補にしない。
   std::array<std::size_t, 5> choice{kNone, kNone, kNone, kNone, kNone};
   for (std::size_t p = begin + 1; p < limit; ++p) {
-    if (attached_[p] != 0 || raw_zwj_[p - 1] != 0) {
+    if (!anywhere_candidate(p)) {
       continue;
     }
     if (fit(begin, p, available).width > available + kWidthEpsilon) {
-      break;
+      break;  // 幅は単調に増えるので、ここから先はどれも収まらない
     }
-    const bool inseparable = splits_inseparable(p);
-    const bool prohibited = start_prohibited_[p] != 0 || end_prohibited_[p - 1] != 0;
-    choice[4] = p;
-    if (!prohibited) {
-      choice[3] = p;
-    }
-    if (!inseparable) {
-      choice[2] = p;
-      if (!prohibited) {
-        choice[1] = p;
-        if (opp_[p] != 0) {
-          choice[0] = p;
-        }
-      }
-    }
+    rank_anywhere_position(p, choice);
   }
   for (const std::size_t p : choice) {
     if (p != kNone) {
@@ -721,8 +767,9 @@ std::size_t Analysis::break_anywhere_at(std::size_t begin, std::size_t limit,
     }
   }
   // 1 クラスタも収まらない幅。それでもクラスタ 1 個だけを置く（その行ははみ出す）。
+  // 割れる位置が 1 つもなければ kNone（= A4 禁則 > 幅 で、割らずにはみ出す）。
   for (std::size_t p = begin + 1; p < limit; ++p) {
-    if (attached_[p] == 0 && raw_zwj_[p - 1] == 0) {
+    if (anywhere_candidate(p)) {
       return p;
     }
   }
@@ -843,7 +890,7 @@ Breaks Analysis::break_lines(float available_width) const {
       // 収まる分割位置がない。break_anywhere が許されていればクラスタ境界で割り、
       // それも駄目なら A4「禁則 > 幅」で、割らずにはみ出す。
       std::size_t end = first != kNone ? first : limit;
-      if (config_.break_anywhere) {
+      if (has_anywhere_) {
         const std::size_t forced = break_anywhere_at(begin, end, available_width);
         if (forced != kNone) {
           end = forced;

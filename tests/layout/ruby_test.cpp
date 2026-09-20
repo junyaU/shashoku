@@ -3,6 +3,8 @@
 
 #include <gtest/gtest.h>
 
+#include "core/color.hpp"
+#include "layout/counters.hpp"
 #include "layout/test_support.hpp"
 
 // ルビ（DESIGN.md Phase 7 / §6-4、ARCHITECTURE.md §3.8）。
@@ -390,6 +392,33 @@ TEST(LayoutRuby, RtOutsideRubyIsRejected) {
   ASSERT_FALSE(tree.has_value());
   EXPECT_EQ(tree.error().kind, ErrorKind::UnsupportedLayout);
   EXPECT_NE(tree.error().message.find("only allowed inside <ruby>"), std::string::npos);
+}
+
+// 親文字の中の色だけの span も、普通のテキストと同じでシェーピングを切らない（#8 / A24）。
+// 断片は色の境界で分かれ、位置は 1 回のシェーピング結果のまま。
+TEST(LayoutRuby, ColorOnlySpanInTheBaseDoesNotSplitShaping) {
+  FakeMeasurer measurer;
+  const auto root = build({block({ruby({
+      text("東"),
+      inline_box({text("京")}, [](ComputedStyle& style) { style.color = Color{255, 0, 0, 255}; }),
+      rt("とうきょう"),
+  })})});
+  Counters counters;
+  const auto tree = run_layout(root, make_options(400), measurer, counters);
+  ASSERT_TRUE(tree.has_value());
+
+  // 親文字で 1 回、ルビ文字で 1 回
+  EXPECT_EQ(counters.shape_calls, 2U);
+  const std::vector<const LineBox*> lines = all_lines(*tree);
+  ASSERT_EQ(lines.size(), 1U);
+  const std::vector<const TextFragment*> base = base_fragments(*lines[0]);
+  ASSERT_EQ(base.size(), 2U);
+  EXPECT_EQ(base[0]->color, kBlack);
+  EXPECT_EQ(base[1]->color, (Color{255, 0, 0, 255}));
+  // ルビの方が長い（8px × 5 = 40）ので、親文字 32px は中央に寄る
+  constexpr float kOffset = ((kRuby * 5) - (kBase * 2)) / 2;
+  EXPECT_FLOAT_EQ(base[0]->inline_start, kOffset);
+  EXPECT_FLOAT_EQ(base[1]->inline_start, kOffset + kBase);
 }
 
 // ルビはインラインの仕組みなので、ブロック級の箱にはできない。

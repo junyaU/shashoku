@@ -30,6 +30,13 @@ struct FontStoreAccess {
 //
 // FontId は 0 から順に払い出され、その順がフォールバック順になる（ARCHITECTURE.md §3.5）。
 // ムーブ可・コピー不可（フォント実体を 2 箇所に持たせない）。
+//
+// **共有資源**（A34）: `load()` を呼び終わったあとは完全に読み取り専用で、何本の
+// `render()` から同時に参照してもよい。中身はバイト列・HarfBuzz の不変オブジェクト
+// （`hb_face_t` / cmap 引き用の `hb_font_t`）・解析済みの family / weight / upem だけで、
+// FreeType のハンドルは持たない（`FT_Face` は 1 スレッド専用なので、実行ごとに
+// `FreeTypeGlyphSource` が作る）。`load()` と破棄は、その `FontStore` を使っている
+// `render()` と同時に行わないこと（利用者の責務）。
 class FontStore {
  public:
   FontStore();

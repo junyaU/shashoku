@@ -4,6 +4,8 @@
 add_library(shashoku STATIC
   font_set.cpp
   image_set.cpp
+  loaded_fonts.cpp
+  loaded_images.cpp
   render.cpp
   version.cpp
   warning.cpp)

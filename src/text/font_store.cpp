@@ -28,6 +28,56 @@ using detail::FontEntry;
 using detail::FontStoreImpl;
 using detail::ft_error_text;
 
+// FreeType のハンドルを **load() の中だけ**で使うための後始末つきの入れ物。
+// 例外を投げない方針なので早期 return が多い。解放漏れを型で塞ぐ。
+class LibraryHandle {
+ public:
+  LibraryHandle() = default;
+  LibraryHandle(const LibraryHandle&) = delete;
+  LibraryHandle& operator=(const LibraryHandle&) = delete;
+  LibraryHandle(LibraryHandle&&) = delete;
+  LibraryHandle& operator=(LibraryHandle&&) = delete;
+  ~LibraryHandle() {
+    if (library_ != nullptr) {
+      FT_Done_FreeType(library_);
+    }
+  }
+
+  [[nodiscard]] FT_Library get() const noexcept { return library_; }
+  [[nodiscard]] FT_Library* out() noexcept { return &library_; }
+
+ private:
+  FT_Library library_ = nullptr;
+};
+
+class FaceHandle {
+ public:
+  FaceHandle() = default;
+  FaceHandle(const FaceHandle&) = delete;
+  FaceHandle& operator=(const FaceHandle&) = delete;
+  FaceHandle(FaceHandle&&) = delete;
+  FaceHandle& operator=(FaceHandle&&) = delete;
+  ~FaceHandle() {
+    if (face_ != nullptr) {
+      FT_Done_Face(face_);
+    }
+  }
+
+  [[nodiscard]] FT_Face get() const noexcept { return face_; }
+  [[nodiscard]] FT_Face* out() noexcept { return &face_; }
+
+ private:
+  FT_Face face_ = nullptr;
+};
+
+// HarfBuzz のプロセス全体の遅延初期化（既定の Unicode 関数群・言語タグの表）を、
+// 共有前に単一スレッドから 1 回済ませておく。HarfBuzz 自身のスレッドテストも同じ理由で
+// 先に 1 回呼んでいる（test/threads/hb-shape-threads.cc）。A34。
+void prime_harfbuzz_process_tables() {
+  static_cast<void>(hb_unicode_funcs_get_default());
+  static_cast<void>(hb_language_from_string("ja", -1));
+}
+
 std::string fold_ascii(std::string_view name) {
   std::string folded(name);
   for (char& c : folded) {
@@ -47,53 +97,73 @@ int read_weight(FT_Face face) {
   return (face->style_flags & FT_STYLE_FLAG_BOLD) != 0 ? 700 : 400;
 }
 
-// FT_Face を 1 つ作り、HarfBuzz の face / font を用意して FontEntry に詰める。
+// FT_Face を一時的に 1 つ作って family / weight / upem を読み、HarfBuzz の face / font を
+// 用意して FontEntry に詰める。**FT_Face はこの関数を出るときに閉じる**（A34）:
+// 解析結果と HarfBuzz の不変オブジェクトだけが共有資源として残る。
+// face 0 では TTC の face 数を num_faces に返す。
 Result<std::unique_ptr<FontEntry>> make_entry(
     FT_Library library, const std::shared_ptr<const std::vector<std::uint8_t>>& bytes,
-    FT_Long face_index) {
-  FT_Face face = nullptr;
-  const FT_Error error = FT_New_Memory_Face(library, bytes->data(),
-                                            static_cast<FT_Long>(bytes->size()), face_index, &face);
-  if (error != 0 || face == nullptr) {
+    FT_Long face_index, FT_Long& num_faces) {
+  FaceHandle face;
+  const FT_Error error = FT_New_Memory_Face(
+      library, bytes->data(), static_cast<FT_Long>(bytes->size()), face_index, face.out());
+  if (error != 0 || face.get() == nullptr) {
     return fail(ErrorKind::FontLoad, "フォントを解釈できません (face " +
                                          std::to_string(face_index) + "): " + ft_error_text(error));
   }
-
-  auto entry = std::make_unique<FontEntry>();
-  entry->bytes = bytes;
-  entry->ft_face = face;  // ここから先の失敗でも ~FontEntry が face を解放する
+  num_faces = face.get()->num_faces;
 
   // 埋め込みビットマップ専用のフォント（CBDT / CBLC・sbix のカラー絵文字など）は、
   // FreeType が FT_FACE_FLAG_SCALABLE を立てない。ラスタライザは輪郭しか扱えないので
   // （glyph_source.hpp）、字が全部消えた PNG を出す前にここで落とす（fail loudly）。
-  if (FT_IS_SCALABLE(face) == 0 || face->num_glyphs <= 0 || face->units_per_EM == 0) {
+  if (FT_IS_SCALABLE(face.get()) == 0 || face.get()->num_glyphs <= 0 ||
+      face.get()->units_per_EM == 0) {
     return fail(ErrorKind::FontLoad,
                 "輪郭を持たないフォントは扱えません (face " + std::to_string(face_index) +
                     "): 埋め込みビットマップ専用のフォント（CBDT / sbix のカラー絵文字など）は"
                     "対応していません");
   }
 
-  entry->upem = face->units_per_EM;
-  entry->family = face->family_name != nullptr ? face->family_name : "";
+  auto entry = std::make_unique<FontEntry>();
+  entry->bytes = bytes;
+  entry->face_index = face_index;
+  entry->upem = face.get()->units_per_EM;
+  // family / weight / italic は**今までどおり FreeType から読む**。HarfBuzz の name 表から
+  // 読み直すと値が変わり、フォールバック順（§3.5）が静かに変わりうるため。
+  entry->family = face.get()->family_name != nullptr ? face.get()->family_name : "";
   entry->family_folded = fold_ascii(entry->family);
-  entry->weight = read_weight(face);
-  entry->italic = (face->style_flags & FT_STYLE_FLAG_ITALIC) != 0;
+  entry->weight = read_weight(face.get());
+  entry->italic = (face.get()->style_flags & FT_STYLE_FLAG_ITALIC) != 0;
 
   // HarfBuzz は自前の OpenType 実装でフォントを読む（A7: hb-ft は使わない）。
   // バイト列の寿命は FontEntry が持つので、blob には解放関数を渡さない。
   hb_blob_t* blob = hb_blob_create(reinterpret_cast<const char*>(bytes->data()),
                                    static_cast<unsigned int>(bytes->size()),
                                    HB_MEMORY_MODE_READONLY, nullptr, nullptr);
-  entry->hb_face = hb_face_create(blob, static_cast<unsigned int>(face_index));
+  hb_face_t* hb_face = hb_face_create(blob, static_cast<unsigned int>(face_index));
   hb_blob_destroy(blob);
-  if (hb_face_get_glyph_count(entry->hb_face) == 0) {
+  if (hb_face_get_glyph_count(hb_face) == 0) {
+    hb_face_destroy(hb_face);
     return fail(ErrorKind::FontLoad,
                 "HarfBuzz がフォントを解釈できません (face " + std::to_string(face_index) + ")");
   }
+  // 不変にしてから共有する。HarfBuzz は immutable なオブジェクトを複数スレッドから
+  // 同時に使うことを想定していて、face が内部に持つ表とシェーププランの置き場は
+  // アトミックに保護されている（A34）。
+  hb_face_make_immutable(hb_face);
 
-  entry->hb_font = hb_font_create(entry->hb_face);
-  hb_ot_font_set_funcs(entry->hb_font);  // メトリクスは hb-ot から読む（A7）
+  hb_font_t* hb_font = hb_font_create(hb_face);
+  if (hb_font == hb_font_get_empty()) {
+    // hb_font_create は確保に失敗すると空のフォント（不変の共有オブジェクト）を返す。
+    // 黙って通すと「どの文字にもグリフが無い」= 全部豆腐になるので、ここで落とす。
+    hb_face_destroy(hb_face);
+    return fail(ErrorKind::OutOfMemory,
+                "HarfBuzz のフォントを作れませんでした (face " + std::to_string(face_index) + ")");
+  }
+  hb_ot_font_set_funcs(hb_font);  // メトリクスは hb-ot から読む（A7）
 
+  entry->hb_face = hb_face;
+  entry->font = detail::ImmutableFont(hb_font);  // ここで不変になる
   return entry;
 }
 
@@ -102,27 +172,10 @@ Result<std::unique_ptr<FontEntry>> make_entry(
 namespace detail {
 
 FontEntry::~FontEntry() {
-  if (hb_font != nullptr) {
-    hb_font_destroy(hb_font);
-  }
+  // ここで落とすのは face への参照 1 つぶん。hb_font はそのあとメンバ（ImmutableFont）の
+  // デストラクタが解放するが、font 自身も face の参照を持っているので順序は問わない。
   if (hb_face != nullptr) {
     hb_face_destroy(hb_face);
-  }
-  if (ft_face != nullptr) {
-    FT_Done_Face(ft_face);
-  }
-}
-
-FontStoreImpl::FontStoreImpl() {
-  if (FT_Init_FreeType(&library) != 0) {
-    library = nullptr;
-  }
-}
-
-FontStoreImpl::~FontStoreImpl() {
-  fonts.clear();  // face は library より先に解放する
-  if (library != nullptr) {
-    FT_Done_FreeType(library);
   }
 }
 
@@ -136,11 +189,15 @@ FontStore::FontStore(FontStore&&) noexcept = default;
 FontStore& FontStore::operator=(FontStore&&) noexcept = default;
 
 Result<FontId> FontStore::load(std::span<const std::uint8_t> bytes) {
-  if (impl_->library == nullptr) {
-    return fail(ErrorKind::Internal, "FreeType を初期化できませんでした");
-  }
   if (bytes.empty()) {
     return fail(ErrorKind::FontLoad, "フォントのバイト列が空です");
+  }
+  prime_harfbuzz_process_tables();
+
+  // FT_Library はここで作ってここで閉じる（共有資源には残さない。A34）。
+  LibraryHandle library;
+  if (FT_Init_FreeType(library.out()) != 0) {
+    return fail(ErrorKind::Internal, "FreeType を初期化できませんでした");
   }
 
   auto data = std::make_shared<const std::vector<std::uint8_t>>(bytes.begin(), bytes.end());
@@ -150,15 +207,13 @@ Result<FontId> FontStore::load(std::span<const std::uint8_t> bytes) {
   std::vector<std::unique_ptr<FontEntry>> loaded;
   FT_Long face_count = 1;
   for (FT_Long index = 0; index < face_count; ++index) {
-    auto entry = make_entry(impl_->library, data, index);
+    FT_Long num_faces = 1;
+    auto entry = make_entry(library.get(), data, index, num_faces);
     if (!entry) {
       return std::unexpected(entry.error());
     }
     if (index == 0) {
-      face_count = (*entry)->ft_face->num_faces;
-      if (face_count < 1) {
-        face_count = 1;
-      }
+      face_count = num_faces >= 1 ? num_faces : 1;
     }
     loaded.push_back(std::move(*entry));
   }
@@ -199,11 +254,7 @@ GlyphId FontStore::glyph_for(FontId font, char32_t cp) const noexcept {
   if (entry == nullptr) {
     return 0;
   }
-  hb_codepoint_t glyph = 0;
-  if (hb_font_get_nominal_glyph(entry->hb_font, cp, &glyph) == 0) {
-    return 0;
-  }
-  return static_cast<GlyphId>(glyph);
+  return static_cast<GlyphId>(entry->font.nominal_glyph(cp));
 }
 
 }  // namespace shashoku::text

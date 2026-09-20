@@ -6,14 +6,14 @@
 #include <cstdint>
 #include <expected>
 #include <format>
-#include <new>
 #include <optional>
-#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
 
+#include "api/loaded_resources.hpp"
+#include "api/out_of_memory.hpp"
 #include "core/bitmap.hpp"
 #include "core/color.hpp"
 #include "core/ids.hpp"
@@ -39,7 +39,9 @@
 //   → ⑤b raster::rasterize → ⑥ png::encode
 //
 // 純粋関数（DESIGN.md §3-5）: この翻訳単位に可変のグローバル変数・静的キャッシュはない。
-// FontStore も画像テーブルも render() の呼び出しごとに作って捨てる。
+// FontStore も画像テーブルも、`FontSet` / `ImageSet` を渡す経路では呼び出しごとに作って
+// 捨てる。`LoadedFonts` / `LoadedImages` を渡す経路（A34）では**利用者が**持つ読み取り専用の
+// 共有資源を参照するだけで、どちらの経路でも出力はバイト単位で同じになる。
 namespace shashoku {
 namespace {
 
@@ -143,8 +145,9 @@ Result<void> validate(const RenderOptions& options) {
 // どの判定もサイズと個数だけを見る（時間やメモリの実測は見ない）ので決定的。
 // ---------------------------------------------------------------------------
 
-// (a) 入力を受けた時点。パースもデコードもする前に弾く。
-Result<void> check_input_limits(std::string_view html, const ImageSet& images,
+// (a) 入力を受けた時点。パースもデコードもする前に弾く。画像は枚数だけを見るので、
+// バイト列（ImageSet）でもデコード済み（LoadedImages）でも同じ判定になる。
+Result<void> check_input_limits(std::string_view html, std::size_t image_count,
                                 const RenderLimits& limits) {
   if (html.size() > limits.html_bytes) {
     return fail(ErrorKind::LimitExceeded,
@@ -152,11 +155,11 @@ Result<void> check_input_limits(std::string_view html, const ImageSet& images,
                             "(raise RenderLimits::html_bytes to allow it)",
                             html.size(), limits.html_bytes));
   }
-  if (images.size() > limits.images) {
+  if (image_count > limits.images) {
     return fail(ErrorKind::LimitExceeded,
                 std::format("the ImageSet has {} images, which exceeds the limit of {} "
                             "(raise RenderLimits::images to allow it)",
-                            images.size(), limits.images));
+                            image_count, limits.images));
   }
   return {};
 }
@@ -267,70 +270,142 @@ Result<void> check_computed_limits(const style::StyledNode& root, float scale,
 // フォントと画像の読み込み
 // ---------------------------------------------------------------------------
 
-// フォント実体と画像ピクセルの持ち主（DESIGN.md §3-2）。Shaper / FreeTypeGlyphSource は
-// FontStore を参照するだけなので、これが一番長生きする必要がある。
-struct Resources {
-  text::FontStore fonts;
-  std::vector<Bitmap> images;      // 添字がそのまま ImageId
-  std::vector<std::string> names;  // images と同じ長さ・同じ順
+// パイプラインの (7) の位置で解決された資源への参照（DESIGN.md §3-2）。
+// Shaper / FreeTypeGlyphSource は FontStore を参照するだけなので、実体の方が長生きする。
+struct ResourceRefs {
+  const text::FontStore* fonts = nullptr;
+  const std::vector<Bitmap>* images = nullptr;      // 添字がそのまま ImageId
+  const std::vector<std::string>* names = nullptr;  // images と同じ長さ・同じ順
 };
 
-Result<Resources> load_resources(const FontSet& fonts, const ImageSet& images,
-                                 const RenderLimits& limits) {
-  if (fonts.empty()) {
-    return fail(ErrorKind::NoFonts, "no fonts were given: add at least one font to the FontSet");
-  }
-  Resources resources;
-  for (std::size_t i = 0; i < fonts.size(); ++i) {
-    const Result<FontId> id = resources.fonts.load(fonts.at(i));
-    if (!id) {
-      return fail(ErrorKind::FontLoad, std::format("font #{}: {}", i, id.error().message));
-    }
-  }
-  // 名前の重複はバイト列を見る前に弾く（ImageSet の形の問題で、中身の問題ではない）。
-  for (std::size_t i = 0; i < images.size(); ++i) {
-    for (std::size_t seen = 0; seen < i; ++seen) {
-      if (images.name(seen) == images.name(i)) {
-        return fail(ErrorKind::InvalidOption,
-                    std::format("image \"{}\" was added to the ImageSet twice", images.name(i)));
-      }
-    }
-  }
-  // (c) 大きな確保の直前。png::decode は IHDR を読んだ時点（画素を確保する前）に判定するので、
-  // 「巨大な寸法を名乗るだけの小さな PNG」でもメモリは 1 バイトも増えない。
-  // 1 枚あたりの上限と合計の上限のうち、いま効いている方をそのまま渡す。
-  std::uint64_t total_pixels = 0;
-  for (std::size_t i = 0; i < images.size(); ++i) {
-    const std::string_view name = images.name(i);
-    const std::uint64_t remaining =
-        limits.total_image_pixels > total_pixels ? limits.total_image_pixels - total_pixels : 0;
-    const bool per_image_binds = limits.image_pixels <= remaining;
-    const std::uint64_t cap = per_image_binds ? limits.image_pixels : remaining;
+// 「その場で用意する」経路で、用意したものを 1 回の render の間だけ生かしておく置き場。
+struct OwnedResources {
+  std::optional<LoadedFonts> fonts;
+  std::optional<LoadedImages> images;
+  std::vector<Bitmap> no_images;  // 画像を渡されなかった経路が指す空の表
+  std::vector<std::string> no_names;
+};
 
-    Result<Bitmap> bitmap = png::decode(images.bytes(i), cap);
-    if (!bitmap) {
-      if (bitmap.error().kind == ErrorKind::LimitExceeded) {
-        return fail(ErrorKind::LimitExceeded,
-                    std::format("image \"{}\": {} (raise RenderLimits::{} to allow it)", name,
-                                bitmap.error().message,
-                                per_image_binds ? "image_pixels" : "total_image_pixels"));
-      }
-      return fail(ErrorKind::ImageDecode,
-                  std::format("image \"{}\": {}", name, bitmap.error().message));
+// 用意済みの画像に (c) の上限を掛け直す（A34）。prepare() に渡した RenderLimits と
+// opts.limits が違っても「同じ HTML + 同じ limits なら同じ結果」が崩れないようにする。
+// 画素はもう確保済みなので、ここで見るのは「この上限で描いてよいか」だけ。
+Result<void> recheck_image_limits(const detail::ImageTable& table, const RenderLimits& limits) {
+  std::uint64_t total = 0;
+  for (std::size_t i = 0; i < table.images->size(); ++i) {
+    const Bitmap& bitmap = (*table.images)[i];
+    const std::uint64_t pixels = std::uint64_t{bitmap.width} * bitmap.height;
+    if (pixels > limits.image_pixels) {
+      return fail(
+          ErrorKind::LimitExceeded,
+          std::format("image \"{}\" is {}x{} = {} pixels, which exceeds the limit of {} "
+                      "(raise RenderLimits::image_pixels to allow it)",
+                      (*table.names)[i], bitmap.width, bitmap.height, pixels, limits.image_pixels));
     }
-    total_pixels += std::uint64_t{bitmap->width} * bitmap->height;
-    resources.images.push_back(std::move(*bitmap));
-    resources.names.emplace_back(name);
+    total += pixels;
+    if (total > limits.total_image_pixels) {
+      return fail(ErrorKind::LimitExceeded,
+                  std::format("the prepared images have {} pixels in total, which exceeds the "
+                              "limit of {} (raise RenderLimits::total_image_pixels to allow it)",
+                              total, limits.total_image_pixels));
+    }
   }
-  return resources;
+  return {};
 }
+
+// 資源の用意のしかた。経路が 2 つあるのはここだけで、パイプライン本体
+// （render_impl / dump_impl）は 1 本のまま:
+//   - `FontSet` / `ImageSet`: パイプラインの (7) の位置でその場で用意する（従来どおり）
+//   - `LoadedFonts` / `LoadedImages`: 用意済みの共有資源を参照し、上限を掛け直す（A34）
+// 検査の順序はどちらでも同じなので、同じ入力からは同じエラーが同じ順で出る。
+class ResourceSource {
+ public:
+  static ResourceSource from_sets(const FontSet& fonts, const ImageSet& images) {
+    ResourceSource source;
+    source.font_set_ = &fonts;
+    source.image_set_ = &images;
+    return source;
+  }
+  // images が nullptr なら「画像なし」。
+  static ResourceSource from_loaded(const LoadedFonts& fonts, const LoadedImages* images) {
+    ResourceSource source;
+    source.loaded_fonts_ = &fonts;
+    source.loaded_images_ = images;
+    return source;
+  }
+
+  [[nodiscard]] std::size_t image_count() const noexcept {
+    if (image_set_ != nullptr) {
+      return image_set_->size();
+    }
+    return loaded_images_ != nullptr ? loaded_images_->size() : 0;
+  }
+
+  [[nodiscard]] Result<ResourceRefs> acquire(OwnedResources& owned,
+                                             const RenderLimits& limits) const {
+    const Result<const text::FontStore*> fonts = acquire_fonts(owned);
+    if (!fonts) {
+      return std::unexpected(fonts.error());
+    }
+    const Result<detail::ImageTable> images = acquire_images(owned, limits);
+    if (!images) {
+      return std::unexpected(images.error());
+    }
+    return ResourceRefs{.fonts = *fonts, .images = images->images, .names = images->names};
+  }
+
+ private:
+  [[nodiscard]] Result<const text::FontStore*> acquire_fonts(OwnedResources& owned) const {
+    if (font_set_ != nullptr) {
+      std::expected<LoadedFonts, RenderError> loaded = LoadedFonts::prepare(*font_set_);
+      if (!loaded) {
+        return std::unexpected(loaded.error());
+      }
+      return detail::LoadedFontsAccess::fonts(owned.fonts.emplace(std::move(*loaded)));
+    }
+    const text::FontStore* fonts = detail::LoadedFontsAccess::fonts(*loaded_fonts_);
+    if (fonts == nullptr) {
+      return fail(ErrorKind::InvalidOption,
+                  "the LoadedFonts was moved from: call LoadedFonts::prepare() again");
+    }
+    return fonts;
+  }
+
+  [[nodiscard]] Result<detail::ImageTable> acquire_images(OwnedResources& owned,
+                                                          const RenderLimits& limits) const {
+    if (image_set_ != nullptr) {
+      std::expected<LoadedImages, RenderError> loaded = LoadedImages::prepare(*image_set_, limits);
+      if (!loaded) {
+        return std::unexpected(loaded.error());
+      }
+      return detail::LoadedImagesAccess::table(owned.images.emplace(std::move(*loaded)));
+    }
+    if (loaded_images_ == nullptr) {
+      return detail::ImageTable{.images = &owned.no_images, .names = &owned.no_names};
+    }
+    const detail::ImageTable table = detail::LoadedImagesAccess::table(*loaded_images_);
+    if (table.images == nullptr) {
+      return fail(ErrorKind::InvalidOption,
+                  "the LoadedImages was moved from: call LoadedImages::prepare() again");
+    }
+    // 用意済みの画像には opts.limits を掛け直す（prepare() と違う上限でも辻褄が合うように）。
+    if (const Result<void> ok = recheck_image_limits(table, limits); !ok) {
+      return std::unexpected(ok.error());
+    }
+    return table;
+  }
+
+  const FontSet* font_set_ = nullptr;
+  const ImageSet* image_set_ = nullptr;
+  const LoadedFonts* loaded_fonts_ = nullptr;
+  const LoadedImages* loaded_images_ = nullptr;
+};
 
 // ---------------------------------------------------------------------------
 // パイプライン
 // ---------------------------------------------------------------------------
 
 Result<layout::BoxTree> run_layout(const style::StyledNode& styled, const RenderOptions& options,
-                                   text::TextMeasurer& measurer, const Resources& resources) {
+                                   text::TextMeasurer& measurer, const ResourceRefs& resources) {
   layout::Options layout_options;
   layout_options.viewport_width = static_cast<float>(options.viewport_width);
   if (options.viewport_height) {
@@ -341,11 +416,11 @@ Result<layout::BoxTree> run_layout(const style::StyledNode& styled, const Render
   // 名前 → 画像（A12）。追加順の線形探索: 決定的で、数十枚までなら十分速い。
   const layout::ImageLookup lookup =
       [&resources](std::string_view src) -> std::optional<layout::ImageInfo> {
-    for (std::size_t i = 0; i < resources.names.size(); ++i) {
-      if (resources.names[i] == src) {
+    for (std::size_t i = 0; i < resources.names->size(); ++i) {
+      if ((*resources.names)[i] == src) {
         return layout::ImageInfo{static_cast<ImageId>(i),
-                                 static_cast<float>(resources.images[i].width),
-                                 static_cast<float>(resources.images[i].height)};
+                                 static_cast<float>((*resources.images)[i].width),
+                                 static_cast<float>((*resources.images)[i].height)};
       }
     }
     return std::nullopt;
@@ -388,12 +463,12 @@ std::vector<Warning> to_warnings(const std::vector<layout::MissingGlyph>& missin
   return warnings;
 }
 
-Result<RenderResult> render_impl(std::string_view html, const FontSet& fonts,
-                                 const ImageSet& images, const RenderOptions& options) {
+Result<RenderResult> render_impl(std::string_view html, const ResourceSource& source,
+                                 const RenderOptions& options) {
   if (const Result<void> ok = validate(options); !ok) {
     return std::unexpected(ok.error());
   }
-  if (const Result<void> ok = check_input_limits(html, images, options.limits); !ok) {
+  if (const Result<void> ok = check_input_limits(html, source.image_count(), options.limits); !ok) {
     return std::unexpected(ok.error());
   }
   const Result<html::Node> dom = html::parse(html, options.limits.nesting_depth);
@@ -410,12 +485,13 @@ Result<RenderResult> render_impl(std::string_view html, const FontSet& fonts,
   if (const Result<void> ok = check_computed_limits(*styled, options.scale, options.limits); !ok) {
     return std::unexpected(ok.error());
   }
-  Result<Resources> resources = load_resources(fonts, images, options.limits);
+  OwnedResources owned;
+  const Result<ResourceRefs> resources = source.acquire(owned, options.limits);
   if (!resources) {
     return std::unexpected(resources.error());
   }
 
-  text::Shaper shaper(resources->fonts);
+  text::Shaper shaper(*resources->fonts);
   const Result<layout::BoxTree> tree = run_layout(*styled, options, shaper, *resources);
   if (!tree) {
     return std::unexpected(tree.error());
@@ -431,8 +507,8 @@ Result<RenderResult> render_impl(std::string_view html, const FontSet& fonts,
                               .scale = options.scale,
                               .background = kTransparent,
                               .max_device_pixels = options.limits.device_pixels};
-  text::FreeTypeGlyphSource glyphs(resources->fonts);
-  const Result<Bitmap> bitmap = raster::rasterize(list, target, glyphs, resources->images);
+  text::FreeTypeGlyphSource glyphs(*resources->fonts);
+  const Result<Bitmap> bitmap = raster::rasterize(list, target, glyphs, *resources->images);
   if (!bitmap) {
     if (bitmap.error().kind == ErrorKind::LimitExceeded) {
       return fail(ErrorKind::LimitExceeded,
@@ -455,12 +531,12 @@ Result<RenderResult> render_impl(std::string_view html, const FontSet& fonts,
   return result;
 }
 
-Result<std::string> dump_impl(std::string_view html, const FontSet& fonts, const ImageSet& images,
+Result<std::string> dump_impl(std::string_view html, const ResourceSource& source,
                               const RenderOptions& options, DumpStage stage) {
   if (const Result<void> ok = validate(options); !ok) {
     return std::unexpected(ok.error());
   }
-  if (const Result<void> ok = check_input_limits(html, images, options.limits); !ok) {
+  if (const Result<void> ok = check_input_limits(html, source.image_count(), options.limits); !ok) {
     return std::unexpected(ok.error());
   }
   const Result<html::Node> dom = html::parse(html, options.limits.nesting_depth);
@@ -484,11 +560,12 @@ Result<std::string> dump_impl(std::string_view html, const FontSet& fonts, const
     return style::dump_json(*styled);
   }
 
-  Result<Resources> resources = load_resources(fonts, images, options.limits);
+  OwnedResources owned;
+  const Result<ResourceRefs> resources = source.acquire(owned, options.limits);
   if (!resources) {
     return std::unexpected(resources.error());
   }
-  text::Shaper shaper(resources->fonts);
+  text::Shaper shaper(*resources->fonts);
   const Result<layout::BoxTree> tree = run_layout(*styled, options, shaper, *resources);
   if (!tree) {
     return std::unexpected(tree.error());
@@ -508,51 +585,49 @@ Result<std::string> dump_impl(std::string_view html, const FontSet& fonts, const
   return paint::dump_svg(list, static_cast<float>(options.viewport_width), *height);
 }
 
-// ---------------------------------------------------------------------------
-// メモリ不足（ARCHITECTURE.md A26）
-// ---------------------------------------------------------------------------
-
-// 「例外を投げない・捕まえない」（ARCHITECTURE.md §2）の**唯一の例外規定**。
-// 公開関数の境界でだけ std::bad_alloc / std::length_error を捕まえ、OutOfMemory にして返す。
-// 内部では従来どおり例外を使わず、失敗は Result<T> で返す。
-//
-// これは最善努力である: Linux の既定のオーバーコミットでは、確保そのものは成功して
-// あとから OOM killer に殺されるので bad_alloc が来ないことがある。メモリの保証は
-// RenderLimits の側で行う（limits.hpp）。
-template <class T, class Body>
-std::expected<T, RenderError> catch_out_of_memory(Body&& body) {
-  try {
-    return std::forward<Body>(body)();
-  } catch (const std::bad_alloc&) {
-    return std::unexpected(RenderError{.kind = ErrorKind::OutOfMemory,
-                                       .message = "out of memory (std::bad_alloc)",
-                                       .location = std::nullopt});
-  } catch (const std::length_error&) {
-    return std::unexpected(
-        RenderError{.kind = ErrorKind::OutOfMemory,
-                    .message = "out of memory (a container exceeded its maximum size)",
-                    .location = std::nullopt});
-  }
-}
-
 }  // namespace
+
+// メモリ不足（A26）を捕まえるのは、この 5 本 + prepare() の公開関数の境界だけ
+// （api/out_of_memory.hpp）。
 
 std::expected<RenderResult, RenderError> render(std::string_view html, const FontSet& fonts,
                                                 const RenderOptions& opts) {
-  return catch_out_of_memory<RenderResult>(
-      [&] { return render_impl(html, fonts, ImageSet{}, opts); });
+  const ImageSet images;
+  return detail::catch_out_of_memory<RenderResult>(
+      [&] { return render_impl(html, ResourceSource::from_sets(fonts, images), opts); });
 }
 
 std::expected<RenderResult, RenderError> render(std::string_view html, const FontSet& fonts,
                                                 const ImageSet& images, const RenderOptions& opts) {
-  return catch_out_of_memory<RenderResult>([&] { return render_impl(html, fonts, images, opts); });
+  return detail::catch_out_of_memory<RenderResult>(
+      [&] { return render_impl(html, ResourceSource::from_sets(fonts, images), opts); });
+}
+
+std::expected<RenderResult, RenderError> render(std::string_view html, const LoadedFonts& fonts,
+                                                const RenderOptions& opts) {
+  return detail::catch_out_of_memory<RenderResult>(
+      [&] { return render_impl(html, ResourceSource::from_loaded(fonts, nullptr), opts); });
+}
+
+std::expected<RenderResult, RenderError> render(std::string_view html, const LoadedFonts& fonts,
+                                                const LoadedImages& images,
+                                                const RenderOptions& opts) {
+  return detail::catch_out_of_memory<RenderResult>(
+      [&] { return render_impl(html, ResourceSource::from_loaded(fonts, &images), opts); });
 }
 
 std::expected<std::string, RenderError> dump(std::string_view html, const FontSet& fonts,
                                              const ImageSet& images, const RenderOptions& opts,
                                              DumpStage stage) {
-  return catch_out_of_memory<std::string>(
-      [&] { return dump_impl(html, fonts, images, opts, stage); });
+  return detail::catch_out_of_memory<std::string>(
+      [&] { return dump_impl(html, ResourceSource::from_sets(fonts, images), opts, stage); });
+}
+
+std::expected<std::string, RenderError> dump(std::string_view html, const LoadedFonts& fonts,
+                                             const LoadedImages& images, const RenderOptions& opts,
+                                             DumpStage stage) {
+  return detail::catch_out_of_memory<std::string>(
+      [&] { return dump_impl(html, ResourceSource::from_loaded(fonts, &images), opts, stage); });
 }
 
 std::string_view to_string(DumpStage stage) noexcept {

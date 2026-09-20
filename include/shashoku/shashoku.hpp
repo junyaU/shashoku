@@ -11,6 +11,11 @@
 //   if (!result) { std::cerr << shashoku::to_string(result.error()) << '\n'; return 1; }
 //   write_file("out.png", result->png);
 //
+// 連続生成では、バイト列の解釈と画像のデコードを 1 回だけ済ませて使い回せる（A34）:
+//
+//   const auto loaded = shashoku::LoadedFonts::prepare(fonts);   // 起動時に 1 回
+//   const auto result = shashoku::render(html, *loaded);         // 何度でも、何スレッドからでも
+//
 // このディレクトリのヘッダは `include/` 配下と標準ライブラリしか include しない。
 // FreeType / HarfBuzz / `src/` の内部型は公開 API に一切現れない（ARCHITECTURE.md §3.10）。
 
@@ -18,6 +23,8 @@
 #include "shashoku/font_set.hpp"
 #include "shashoku/image_set.hpp"
 #include "shashoku/limits.hpp"
+#include "shashoku/loaded_fonts.hpp"
+#include "shashoku/loaded_images.hpp"
 #include "shashoku/options.hpp"
 #include "shashoku/render.hpp"
 #include "shashoku/version.hpp"

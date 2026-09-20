@@ -159,8 +159,8 @@ struct ShaperImpl {
     return FontStoreAccess::impl(*fonts).at(font);
   }
 
-  // スケールを設定したシェーピング用フォント。FontStore が持つ hb_font は
-  // font unit スケールのまま使いたいので、Shaper 側で別に作る。
+  // スケールを設定したシェーピング用フォント。FontStore が持つ hb_font は共有資源で
+  // 不変（setter が黙って失敗する。A34）なので、スケールを変える側は必ず自分で作る。
   // 失敗は 2 つ: 不正な FontId（呼び出し側のバグ = Internal）と HarfBuzz の確保失敗
   // （hb_font_create は失敗すると空のフォントを返す = OutOfMemory。A26 / A30）。
   Result<hb_font_t*> shaping_font(FontId font, int scale) {
@@ -193,7 +193,8 @@ struct ShaperImpl {
   [[nodiscard]] std::vector<FamilyGroup> build_family_groups(int font_weight) const;
   [[nodiscard]] std::vector<FontId> resolve_stack(const TextStyle& style) const;
   [[nodiscard]] Result<FontMetrics> font_metrics(FontId font, float font_size);
-  [[nodiscard]] Result<std::vector<hb_codepoint_t>> probe_glyphs(hb_font_t* font, char32_t cp,
+  [[nodiscard]] Result<std::vector<hb_codepoint_t>> probe_glyphs(const FontEntry& entry,
+                                                                 char32_t cp,
                                                                  hb_direction_t direction) const;
   [[nodiscard]] Result<bool> has_vertical_form(FontId font, char32_t cp);
   [[nodiscard]] Result<CharPlan> resolve_char(const std::vector<FontId>& stack, char32_t cp,
@@ -298,7 +299,7 @@ Result<FontMetrics> ShaperImpl::font_metrics(FontId font, float font_size) {
   return result;
 }
 
-Result<std::vector<hb_codepoint_t>> ShaperImpl::probe_glyphs(hb_font_t* font, char32_t cp,
+Result<std::vector<hb_codepoint_t>> ShaperImpl::probe_glyphs(const FontEntry& entry, char32_t cp,
                                                              hb_direction_t direction) const {
   const auto value = static_cast<std::uint32_t>(cp);
   hb_buffer_clear_contents(probe_buffer);
@@ -306,7 +307,10 @@ Result<std::vector<hb_codepoint_t>> ShaperImpl::probe_glyphs(hb_font_t* font, ch
   hb_buffer_set_direction(probe_buffer, direction);
   hb_buffer_set_script(probe_buffer, hb_unicode_script(hb_unicode_funcs_get_default(), cp));
   hb_buffer_set_language(probe_buffer, language);
-  hb_shape(font, probe_buffer, nullptr, 0);
+  // 見たいのはグリフ ID だけ（位置は見ない）ので、共有資源の不変フォントで shape する。
+  // 不変なオブジェクトを複数スレッドから同時に shape してよいのは HarfBuzz の約束
+  // （バッファの方は 1 スレッド専用なので、Shaper が自分で持っている）。A34。
+  entry.font.shape_for_probe(probe_buffer);
   if (hb_buffer_allocation_successful(probe_buffer) == 0) {
     return fail(ErrorKind::OutOfMemory,
                 std::format("縦組み用グリフを調べられません (U+{:04X}): HarfBuzz が作業領域を"
@@ -345,12 +349,12 @@ Result<bool> ShaperImpl::has_vertical_form(FontId font, char32_t cp) {
                             font));
   }
   const Result<std::vector<hb_codepoint_t>> horizontal =
-      probe_glyphs(font_entry->hb_font, cp, HB_DIRECTION_LTR);
+      probe_glyphs(*font_entry, cp, HB_DIRECTION_LTR);
   if (!horizontal) {
     return std::unexpected(horizontal.error());
   }
   const Result<std::vector<hb_codepoint_t>> vertical =
-      probe_glyphs(font_entry->hb_font, cp, HB_DIRECTION_TTB);
+      probe_glyphs(*font_entry, cp, HB_DIRECTION_TTB);
   if (!vertical) {
     return std::unexpected(vertical.error());
   }

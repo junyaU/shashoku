@@ -22,11 +22,11 @@ bool is_positive_finite(float value) {
   return value > 0 && value < std::numeric_limits<float>::infinity();
 }
 
-// 第 3 段までは未実装のもの。fail loudly（DESIGN.md §3-6）。
+// ルビはインラインの仕組み（行の中の Atomic）なので、ブロック級の箱にはできない。
 Result<void> check_supported(const StyledNode& node) {
   if (node.tag == "ruby" || node.tag == "rt") {
-    return fail(ErrorKind::UnsupportedLayout, "<" + node.tag + "> layout is not implemented yet",
-                node.location);
+    return fail(ErrorKind::UnsupportedLayout,
+                "<" + node.tag + "> is not supported as a block-level box", node.location);
   }
   return {};
 }

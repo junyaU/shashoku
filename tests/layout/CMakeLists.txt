@@ -6,6 +6,8 @@ shashoku_add_test(layout_test
     inline_test.cpp
     flex_test.cpp
     image_test.cpp
+    vertical_test.cpp
+    ruby_test.cpp
     line_break_test.cpp
     dump_json_test.cpp
     error_test.cpp

@@ -22,28 +22,15 @@
 namespace shashoku::layout {
 namespace {
 
-// CSS Text 3 §5.3。`line-break: auto` は「エンジンの既定に従う」= Options の値を使う。
-linebreak::Strictness strictness_of(style::LineBreak value, linebreak::Strictness fallback) {
-  switch (value) {
-    case style::LineBreak::Normal:
-      return linebreak::Strictness::Normal;
-    case style::LineBreak::Loose:
-      return linebreak::Strictness::Loose;
-    case style::LineBreak::Strict:
-      return linebreak::Strictness::Strict;
-    case style::LineBreak::Auto:
-      break;
-  }
-  return fallback;
-}
-
-// (d) 行分割器の設定。Options を土台に、このブロックの CSS で上書きする。
+// (d) 行分割器の設定 = **段落の既定値**。Options を土台に、このブロックの CSS で上書きする。
+// アイテムごとのポリシー（A23 / A28）を持たない Item にだけ効く。いまは (c) がすべての
+// Item に値を入れているので実際には使われないが、契約としての既定値なので残す
+// （約物のアキ・あふれ処理など、strictness / break_anywhere 以外の設定はここだけにある）。
 linebreak::Config line_break_config(const InlineInput& input, const LayoutEngine& engine) {
   linebreak::Config config = engine.options().line_break;
-  config.strictness = strictness_of(input.block_style->line_break, config.strictness);
-  if (input.block_style->overflow_wrap != style::OverflowWrap::Normal) {
-    config.break_anywhere = true;
-  }
+  config.strictness = resolve_strictness(input.block_style->line_break, config.strictness);
+  config.break_anywhere =
+      config.break_anywhere || resolve_break_anywhere(input.block_style->overflow_wrap);
   return config;
 }
 
@@ -56,8 +43,11 @@ struct Placement {
 // 断片を分ける単位。フォールバックでフォントが変わる箇所・sideways が変わる箇所・
 // 装飾（色）が変わる箇所で分かれる。**グリフの位置は 1 回のシェーピング結果で決まっていて、
 // ここで断片を切っても動かない**（issue #8）。
+// 見るのは「見た目に効く層」（シェーピング + 装飾）だけ: 行分割ポリシーのように見た目に
+// 効かない層で断片を切ると、DrawGlyphs が無意味に細切れになる（A27 の用途の表）。
 struct FragmentKey {
-  std::size_t style = kNone;
+  std::size_t shaping = kNone;
+  std::size_t decoration = kNone;
   FontId font = 0;
   bool sideways = false;
 
@@ -90,7 +80,10 @@ class FragmentWriter {
            float baseline, const std::string& text, float& pen) {
     for (std::size_t g = begin; g < end; ++g) {
       const text::ShapedGlyph& glyph = shaped.glyphs[g];
-      const FragmentKey key{.style = style_id, .font = glyph.font, .sideways = glyph.sideways};
+      const FragmentKey key{.shaping = paragraph_->styles.shaping_index(style_id),
+                            .decoration = paragraph_->visual_key(style_id),
+                            .font = glyph.font,
+                            .sideways = glyph.sideways};
       if (open_ == kNone || key != key_) {
         key_ = key;
         content_->emplace_back(TextFragment{.font = glyph.font,
@@ -467,9 +460,11 @@ std::vector<LineBox> InlineFormatter::run() {
   }
 
   const linebreak::LineBreaker breaker(line_break_config(*input_, *engine_));
-  const linebreak::Breaks breaks = breaker.break_lines(items, input_->content_inline_size);
+  linebreak::Counters& counters = engine_->counters().line_breaker;
+  const linebreak::Breaks breaks =
+      breaker.break_lines(items, input_->content_inline_size, &counters);
   if (input_->block_style->text_align == style::TextAlign::Justify) {
-    opportunities_ = breaker.break_opportunities(items);
+    opportunities_ = breaker.break_opportunities(items, &counters);
   } else {
     opportunities_.assign(items.size(), false);
   }
@@ -509,11 +504,13 @@ Result<Intrinsic> inline_intrinsic(const InlineInput& input, LayoutEngine& engin
     return out;
   }
   const linebreak::LineBreaker breaker(line_break_config(input, engine));
-  const linebreak::Breaks breaks = breaker.break_lines(paragraph->items, linebreak::kUnbounded);
+  linebreak::Counters& counters = engine.counters().line_breaker;
+  const linebreak::Breaks breaks =
+      breaker.break_lines(paragraph->items, linebreak::kUnbounded, &counters);
   for (const linebreak::Line& line : breaks.lines) {
     out.max_content = std::max(out.max_content, line.width);
   }
-  out.min_content = breaker.min_content_width(paragraph->items);
+  out.min_content = breaker.min_content_width(paragraph->items, &counters);
   return out;
 }
 

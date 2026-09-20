@@ -90,7 +90,10 @@ FontSet にない名前を飛ばすのは「黙って崩す」に当たらない
 
 **A17. `line-break: auto` は「エンジンの既定に従う」。** CSS では auto の中身は実装依存なので、
 `RenderOptions::line_break.strictness`（既定は Strict）を使う。CSS で strict / normal / loose が
-明示されたらそちらが優先。インライン要素で明示された値は、その範囲のアイテムにだけ効く（A23）。
+明示されたらそちらが優先。インライン要素で明示された値は、その範囲のアイテムにだけ効く（A23 / A28）。
+**auto の解決先は「段落のブロックの値」ではなく「エンジンの既定」。** 段落が `strict` でも、
+その中の `<span style="line-break: auto">` はエンジンの既定に戻る（CSS の auto の意味どおり）。
+`line-break` は継承プロパティなので、ふつうは段落の値がそのまま降りてきて差は出ない。
 
 **A18. `<img>` は交差軸の stretch で歪めない。** flex アイテムの `<img>` は `align-items: stretch` でも
 縦横比を保つ（CSS では歪むが、OG 画像でアイコンが潰れるのは誰も望まない）。主軸方向の grow / shrink は
@@ -134,7 +137,8 @@ UCD から生成する。生成物（`src/*/[a-z_]*_table.inc`）はコミット
 （`Counters*`、既定は nullptr）で受け取る。数えるのは layout_block / content_intrinsic /
 インライン整形文脈の準備 / `shape()` の回数と文字数 / `metrics()` / 行ボックス数 /
 行の構築の作業バッファ要素数 / 背景スコープの走査回数 / 文字ごとの属性の表（A27）を引くのに
-行ったスタイルの比較の回数。約束は 3 つ:
+行ったスタイルの比較の回数。行分割器の中の作業量は `linebreak::Counters`（A24）を
+`layout::Counters` が 1 つ抱えて、`break_lines()` などに渡して足し込む。約束は 3 つ:
 **出力に影響させない**（カウンタの値を読んで分岐しない）、**グローバル状態にしない**
 （DESIGN.md §3-5。LayoutEngine が参照を持つ）、**公開 API に出さない**。
 数え漏れが起きないよう、`TextMeasurer` の呼び出しは `LayoutEngine::shape()` / `metrics()` に通す。
@@ -175,6 +179,10 @@ control the determination of soft wrap opportunities at such boundaries is undef
   `break-word` 相当）。CSS Text 3 §5.4 は `anywhere` を min-content に効かせると定めているが、
   現行の `Config::break_anywhere` は `anywhere` と `break-word` を 1 つのフラグにまとめているので
   区別しない。区別が要るようになったら `Config` の意味論の問題として別に決める
+
+layout 側がこの口に何を入れるかは A28。`Config` は**段落の既定値**として残っていて、値を持たない
+`Item` にだけ効く（約物のアキ・あふれ処理など、`strictness` / `break_anywhere` 以外の設定は
+`Config` にしかない）。
 
 **A24. 行分割の仕事は N に線形。「行ごとに段落の残りを舐める」を作らない。** 狭い版面では
 行数 L がアイテム数 N に比例するので、1 行あたり N の走査をすると O(N×L) になる（issue #4。
@@ -276,6 +284,14 @@ issue #6）。上限は**入力の一部**なので純粋関数の性質は壊�
 |---|---|---|
 | シェーピング属性 | `text::TextStyle`（font-family / font-weight / font-size / direction） | **この層が等しい連続ごとに `shape()` を 1 回**。メトリクスもこの層で引く |
 | 装飾・行高属性 | color / letter-spacing / line-height | シェーピングの結果を変えない。クラスタ境界で対応付ける |
+| 行分割ポリシー | line-break / overflow-wrap | `linebreak::Item` に写す（A28）。見た目には一切効かない |
+
+**どの層を見るかは用途ごとに違う。** 層を足しても関係のない処理が細切れにならないよう、
+用途ごとに見る層を決めてある（`shape()` の区間 = シェーピングだけ、`TextFragment` = シェーピング +
+装飾、行の高さ = シェーピング + 装飾、`linebreak::Item` のポリシー = 行分割ポリシーだけ）。
+たとえば `TextFragment` を層の組（3 つ全部）で切ると、`overflow-wrap` を変えただけの `<span>` で
+`DrawGlyphs` が無意味に割れる。表は
+[src/layout/inline_style.hpp](../src/layout/inline_style.hpp) の冒頭にある。
 
 - **グリフの位置は 1 回のシェーピング結果で決まり、装飾の有無で動かない。** `TextFragment` は
   従来どおり「同じ FontId・サイズ・色・sideways の連続」で切る（= 1 回の shape 結果を、装飾の
@@ -285,7 +301,7 @@ issue #6）。上限は**入力の一部**なので純粋関数の性質は壊�
   先頭側を採るのは「その位置から始まる文字の指定が効く」と説明しやすいため
 - **行分割ポリシー（`line-break` / `overflow-wrap`）をシェーピング属性に入れてはいけない。**
   入れるとその境界で `shape()` が切れ、#8 と同じ不具合を作る。A23 のとおりアイテムごとに
-  持たせる値なので、`CharStyleTable` に層を 1 本足して `linebreak::Item` に写す（#2）
+  持たせる値なので、独立した層にして `linebreak::Item` に写す（A28）
 - 層の索引は内容で引く（同じ内容には同じ添字）。登録のたびに既存のスタイルを線形探索していると、
   色違いの `<span>` が S 個ある段落で O(S²) になる（issue #10）ので、順序つきの索引で O(log S) に
   する。**索引の順序と反復順は出力に使わない**（DESIGN.md §3-5）
@@ -293,6 +309,31 @@ issue #6）。上限は**入力の一部**なので純粋関数の性質は壊�
 インライン整形文脈の実装は、この層分けに合わせて段の境界で 4 つのファイルに分かれている
 （`inline_style` / `inline_collect` = (a) / `inline_paragraph` = (b)(c) / `inline_layout` = (d)(e)）。
 (b)(c) までの結果は行の幅に依らないので `PreparedParagraph`（準備済み段落）として取り出してある。
+
+**A28. 行分割ポリシーは「アイテムの代表の文字」の計算値で決める。** A23 で `linebreak::Item` に
+開いた口に、layout は必ず値を入れる（nullopt は残さない）。どの要素の値を使うかは
+アイテムの種類ごとに:
+
+| アイテム | 使う値 |
+|---|---|
+| テキスト（1 クラスタ） | **クラスタ先頭の文字**が属する要素の計算値（A27 の装飾と同じ規則） |
+| `<img>`（Atomic） | その `<img>` 自身の計算値 |
+| ルビ組（Atomic） | 親文字の**先頭の文字**が属する要素の計算値 |
+| `<br>`（ForcedBreak） | その `<br>` 自身の計算値（必ず改行するので結果には効かない） |
+
+- `line-break: auto` はエンジンの既定に解決する（A17）。`overflow-wrap` は `anywhere` /
+  `break-word` のどちらも `break_anywhere = true`（A23 の最後）
+- **ルビ組の内部（親文字の途中・`<rt>`）の指定は効かない。** 組は Atomic 1 個で、その内部には
+  分割可能位置が存在しないため（§3.8 のルビ）。「指定を読み落としている」のではなく
+  「効かせる場所がない」。1 文字だけの要素に `line-break` を書いても何も起きないのと同じ
+- **`linebreak::Config` は段落の既定値として残す。** いまは (c) がすべての `Item` に値を入れるので
+  `strictness` / `break_anywhere` については使われないが、約物のアキ・あふれ処理（`overflow` /
+  `trim_line_end` / `collapse_punctuation_spacing`）は `Config` にしかない
+- 継承プロパティのうち、layout が「インライン要素の値」ではなく「段落のブロックの値」だけを
+  読んでよいのは `text-align`（CSS ではブロックコンテナに適用。インライン要素に書いても
+  効かないのが仕様どおり）と `writing-mode`（A1。文書で 1 つ。食い違いは ② がエラーにする）の
+  2 つだけ。ほかの継承プロパティ（color / font-* / line-height / letter-spacing /
+  line-break / overflow-wrap）はすべて文字ごとの属性の表（A27）を通す
 
 ---
 
@@ -594,15 +635,18 @@ std::string dump_json(const BoxTree&);
   inline の連続を無名ブロックで包む
 - **inline**: インライン整形文脈ごとに、(a) 空白の畳み込み（A14）→ (b) **シェーピング属性**が
   同じ区間ごとに `TextMeasurer::shape()`（色・letter-spacing・line-height の境界では切らない。A27）
-  → (c) クラスタを `linebreak::Item` に変換（装飾・行高はクラスタ先頭の文字のものを対応付け、
-  letter-spacing を advance に加算、`<br>` は ForcedBreak、`<img>` とルビのまとまりは Atomic）
-  → (d) `LineBreaker::break_lines()` →
+  → (c) クラスタを `linebreak::Item` に変換（装飾・行高と**行分割ポリシー**はクラスタ先頭の
+  文字のものを対応付け（A27 / A28）、letter-spacing を advance に加算、`<br>` は ForcedBreak、
+  `<img>` とルビのまとまりは Atomic）
+  → (d) `LineBreaker::break_lines()`（`Config` は段落の既定値。`line-break` / `overflow-wrap` は
+  アイテムごとの値が勝つ。A23 / A28）→
   (e) 行ボックスを積み、`Spacing` と `text-align`（justify を含む。A13）を反映してグリフを配置。
   `TextFragment` は「同じ FontId・サイズ・色・sideways の連続」で切る（1 回の shape 結果を、
   装飾の境界とフォールバックの境界で複数の断片に切る。位置は動かない）。
   行の高さは行内の各断片の `line-height` の最大、ベースラインは半行間（half-leading）で決める。
   ファイルは段の境界で分けてある（A27 の末尾）。(a)〜(c) の結果 `PreparedParagraph` は
   行の幅に依らないので、固有寸法の計測と実際の配置で同じものを使える
+  （`inline_intrinsic()` の min-content / max-content にもアイテムごとのポリシーが効く）
 - **flex**（Phase 6）: 単一行のみ（`flex-wrap` は対応外）。CSS Flexbox §9 のアルゴリズムのうち、
   flex-basis の解決 → grow / shrink の配分（min-content を下限に）→ 交差軸の整列 → justify-content → gap。
   アイテムの max-content / min-content は `kUnbounded` と `min_content_width()` で測る

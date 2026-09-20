@@ -11,6 +11,7 @@
 #include "layout/engine.hpp"
 #include "layout/flex_layout.hpp"
 #include "layout/inline_layout.hpp"
+#include "layout/layout_cache.hpp"
 
 namespace shashoku::layout {
 namespace {
@@ -225,9 +226,33 @@ Result<BlockBox> LayoutEngine::layout_block(const BlockInput& input, const BoxSi
   return box;
 }
 
-Result<BoxTree> layout(const style::StyledNode& root, const Options& options,
-                       text::TextMeasurer& measurer, const ImageLookup& images,
-                       Counters* counters) {
+// A29: 「測って捨てる」ぶんだけをメモする。返すのは border-box の block サイズという
+// 数値 1 つで、箱は返さない。配置のための layout_block() は従来どおり毎回実行するので、
+// 座標は 1 ビットも変わらない（原点で組んだ箱を後から平行移動する、ということはしない）。
+Result<float> LayoutEngine::measure_block_size(const BlockInput& input, const BoxSizing& sizing,
+                                               float content_inline_start) {
+  const MeasureKey key = MeasureKey::of(input, sizing, content_inline_start);
+  if (memo_) {
+    if (const float* found = cache().measured(key)) {
+      return *found;
+    }
+  }
+  Result<BlockBox> box = layout_block(input, sizing, content_inline_start, 0);
+  if (!box) {
+    return std::unexpected(box.error());
+  }
+  const float block_size = box->rect.block_size;
+  if (memo_) {
+    cache().remember(key, block_size);
+  }
+  return block_size;
+}
+
+namespace {
+
+Result<BoxTree> layout_root(const style::StyledNode& root, const Options& options,
+                            text::TextMeasurer& measurer, const ImageLookup& images,
+                            Counters* counters, bool memo) {
   if (!is_positive_finite(options.viewport_width)) {
     return fail(ErrorKind::InvalidOption, "viewport width must be a positive finite number");
   }
@@ -251,7 +276,8 @@ Result<BoxTree> layout(const style::StyledNode& root, const Options& options,
   const float viewport_inline_size =
       mode == WritingMode::VerticalRl ? *options.viewport_height : options.viewport_width;
   Counters discarded;  // 呼び出し側が数えないときの捨て場（null 判定を 1 か所で済ませる）
-  LayoutEngine engine(options, measurer, images, mode, counters != nullptr ? *counters : discarded);
+  LayoutEngine engine(options, measurer, images, mode, counters != nullptr ? *counters : discarded,
+                      memo);
   Result<BoxSizing> sizing = engine.resolve_box(root.style, viewport_inline_size, root.location);
   if (!sizing) {
     return std::unexpected(sizing.error());
@@ -274,6 +300,20 @@ Result<BoxTree> layout(const style::StyledNode& root, const Options& options,
   tree.viewport_height = options.viewport_height;
   tree.root = std::move(*box);
   return tree;
+}
+
+}  // namespace
+
+Result<BoxTree> layout(const style::StyledNode& root, const Options& options,
+                       text::TextMeasurer& measurer, const ImageLookup& images,
+                       Counters* counters) {
+  return layout_root(root, options, measurer, images, counters, true);
+}
+
+Result<BoxTree> layout_without_memo(const style::StyledNode& root, const Options& options,
+                                    text::TextMeasurer& measurer, const ImageLookup& images,
+                                    Counters* counters) {
+  return layout_root(root, options, measurer, images, counters, false);
 }
 
 }  // namespace shashoku::layout

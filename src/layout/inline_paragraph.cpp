@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "core/utf8.hpp"
+#include "layout/layout_cache.hpp"
 
 namespace shashoku::layout {
 namespace {
@@ -237,6 +238,27 @@ Result<PreparedParagraph> prepare_paragraph(const InlineInput& input, LayoutEngi
   ParagraphBuilder(out, collected->ruby_at, collected->rubies, engine).build();
   engine.counters().style_probes += out.styles.probes();
   return out;
+}
+
+Result<ParagraphHandle> shared_paragraph(const InlineInput& input, LayoutEngine& engine) {
+  const ParagraphKey key{.children = input.children.data(),
+                         .block_style = input.block_style,
+                         .child_count = input.children.size()};
+  if (engine.memo_enabled()) {
+    if (const PreparedParagraph* found = engine.cache().paragraph(key)) {
+      return ParagraphHandle(*found);
+    }
+  }
+  Result<PreparedParagraph> prepared = prepare_paragraph(input, engine);
+  if (!prepared) {
+    return std::unexpected(prepared.error());
+  }
+  // <img> を含む段落だけは行の幅に依る: resolve_image() と `%` のマージンが
+  // content_inline_size を基準にするので、幅が違えば中身も違う。共有しない
+  if (!engine.memo_enabled() || !prepared->images.empty()) {
+    return ParagraphHandle(std::move(*prepared));
+  }
+  return ParagraphHandle(engine.cache().remember(key, std::move(*prepared)));
 }
 
 }  // namespace shashoku::layout

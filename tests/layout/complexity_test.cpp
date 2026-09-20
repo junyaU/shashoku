@@ -1,6 +1,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -124,6 +125,130 @@ TEST(LayoutComplexity, ManyColorOnlySpansShapeOnceAndInternInLogTime) {
 
   // 二分探索なら S×log S 程度。線形探索だと S²/2 = 2,000,000 を超える
   EXPECT_LE(counters.style_probes, 64 * kSpans);
+}
+
+// ---- #5: flex の入れ子 ---------------------------------------------------------
+//
+// flex は「測ってから置く」ので、同じ部分木・同じ段落に何度も触る。素直に書くと
+//   * column の flex アイテムは、高さを知るために部分木を一度まるごと組んで捨て、配置の段で
+//     もう一度組む → 各階層が子を 2 回組むので深さ d の鎖で 2^d（issue #5）
+//   * row でも、固有寸法の計測と実配置が同じ段落を別々に準備する → シェーピングが d に比例
+// になる。どちらも A29 のメモで消す。測るのは時間ではなく回数。
+
+using style::FlexDirection;
+
+// 深さ d の flex の鎖。いちばん内側に段落が 1 つだけある。
+constexpr std::string_view kSample = "日本語の文章を正しく組む。";
+constexpr std::uint64_t kSampleChars = 13;
+
+FlexDirection flipped(FlexDirection direction) {
+  return direction == FlexDirection::Row ? FlexDirection::Column : FlexDirection::Row;
+}
+
+Tree nest_flex(std::size_t depth, FlexDirection outermost, bool alternate) {
+  Tree inner = block({text(std::string(kSample))});
+  for (std::size_t i = 0; i < depth; ++i) {
+    // 外側から数えて i 段目の向き（alternate なら row と column が交互）
+    const std::size_t from_outside = depth - 1 - i;
+    const bool flip = alternate && (from_outside % 2 == 1);
+    const FlexDirection direction = flip ? flipped(outermost) : outermost;
+    std::vector<Tree> children;
+    children.push_back(std::move(inner));
+    inner = flex(std::move(children),
+                 [direction](ComputedStyle& style) { style.flex_direction = direction; });
+  }
+  return inner;
+}
+
+// 1 つの段落は、固有寸法の計測にも配置にも使われるが、準備（収集 → 空白の畳み込み →
+// シェーピング → アイテム化）は 1 回だけ（A6 / A29）。入れ子の深さで増えてはいけない。
+void expect_paragraph_prepared_once(FlexDirection outermost, bool alternate) {
+  for (const std::size_t depth : {std::size_t{4}, std::size_t{8}, std::size_t{12}}) {
+    FakeMeasurer measurer;
+    const auto root = build({nest_flex(depth, outermost, alternate)});
+    Counters counters;
+    const auto tree = run_layout(root, make_options(600), measurer, counters);
+    ASSERT_TRUE(tree.has_value()) << "depth=" << depth;
+
+    EXPECT_EQ(counters.shape_calls, 1U) << "depth=" << depth;
+    EXPECT_EQ(counters.shaped_chars, kSampleChars) << "depth=" << depth;
+    EXPECT_EQ(counters.inline_prepare, 1U) << "depth=" << depth;
+  }
+}
+
+TEST(LayoutComplexity, RowFlexNestingPreparesTheParagraphOnce) {
+  expect_paragraph_prepared_once(FlexDirection::Row, false);
+}
+
+TEST(LayoutComplexity, ColumnFlexNestingPreparesTheParagraphOnce) {
+  expect_paragraph_prepared_once(FlexDirection::Column, false);
+}
+
+TEST(LayoutComplexity, MixedFlexNestingPreparesTheParagraphOnce) {
+  expect_paragraph_prepared_once(FlexDirection::Column, true);
+}
+
+// d 段の入れ子を組んだときの作業量が d² の定数倍に収まる。
+// 閾値は 2d² + 32 なので 2^d は必ず落ちる（d = 8 で 2^9 = 512 > 160。直す前の実測は
+// column の depth 16 で layout_block = 131,072 = 2^17、shape_calls = 65,536）。
+void expect_polynomial_nesting(FlexDirection outermost, bool alternate) {
+  for (const std::size_t depth :
+       {std::size_t{4}, std::size_t{8}, std::size_t{12}, std::size_t{16}}) {
+    FakeMeasurer measurer;
+    const auto root = build({nest_flex(depth, outermost, alternate)});
+    Counters counters;
+    const auto tree = run_layout(root, make_options(600), measurer, counters);
+    ASSERT_TRUE(tree.has_value()) << "depth=" << depth;
+
+    const auto d = static_cast<std::uint64_t>(depth);
+    const std::uint64_t budget = (2 * d * d) + 32;
+    EXPECT_LE(counters.layout_block, budget) << "depth=" << depth;
+    EXPECT_LE(counters.content_intrinsic, budget) << "depth=" << depth;
+    EXPECT_LE(counters.line_boxes, budget) << "depth=" << depth;
+  }
+}
+
+TEST(LayoutComplexity, ColumnFlexNestingStaysPolynomial) {
+  expect_polynomial_nesting(FlexDirection::Column, false);
+}
+
+TEST(LayoutComplexity, RowFlexNestingStaysPolynomial) {
+  expect_polynomial_nesting(FlexDirection::Row, false);
+}
+
+TEST(LayoutComplexity, MixedFlexNestingStaysPolynomial) {
+  expect_polynomial_nesting(FlexDirection::Column, true);
+}
+
+// 幅の広い木: 1 段に複数のアイテムがある入れ子。シェーピングはテキストノードの数だけ。
+TEST(LayoutComplexity, WideFlexTreeShapesOncePerTextNode) {
+  constexpr std::size_t kDepth = 6;
+  constexpr std::size_t kSiblings = 3;  // 1 段あたり「段落 2 つ + 次の段」
+
+  Tree inner = block({text(std::string(kSample))});
+  std::uint64_t text_nodes = 1;
+  for (std::size_t i = 0; i < kDepth; ++i) {
+    std::vector<Tree> children;
+    children.push_back(block({text(std::string(kSample))}));
+    children.push_back(std::move(inner));
+    children.push_back(block({text(std::string(kSample))}));
+    text_nodes += kSiblings - 1;
+    inner = flex(std::move(children),
+                 [](ComputedStyle& style) { style.flex_direction = FlexDirection::Column; });
+  }
+
+  FakeMeasurer measurer;
+  const auto root = build({std::move(inner)});
+  Counters counters;
+  const auto tree = run_layout(root, make_options(600), measurer, counters);
+  ASSERT_TRUE(tree.has_value());
+
+  EXPECT_EQ(counters.shape_calls, text_nodes);
+  EXPECT_EQ(counters.shaped_chars, text_nodes * kSampleChars);
+  EXPECT_EQ(counters.inline_prepare, text_nodes);
+  // ノード数 n = depth×siblings に対して n² の定数倍まで
+  const std::uint64_t nodes = kDepth * kSiblings;
+  EXPECT_LE(counters.layout_block, (2 * nodes * nodes) + 32);
 }
 
 }  // namespace

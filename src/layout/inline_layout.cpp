@@ -487,30 +487,31 @@ std::vector<LineBox> InlineFormatter::run() {
 }  // namespace
 
 Result<std::vector<LineBox>> layout_inline(const InlineInput& input, LayoutEngine& engine) {
-  const Result<PreparedParagraph> paragraph = prepare_paragraph(input, engine);
+  const Result<ParagraphHandle> paragraph = shared_paragraph(input, engine);
   if (!paragraph) {
     return std::unexpected(paragraph.error());
   }
-  return InlineFormatter(input, engine, *paragraph).run();
+  return InlineFormatter(input, engine, paragraph->get()).run();
 }
 
 Result<Intrinsic> inline_intrinsic(const InlineInput& input, LayoutEngine& engine) {
-  const Result<PreparedParagraph> paragraph = prepare_paragraph(input, engine);
-  if (!paragraph) {
-    return std::unexpected(paragraph.error());
+  const Result<ParagraphHandle> handle = shared_paragraph(input, engine);
+  if (!handle) {
+    return std::unexpected(handle.error());
   }
+  const PreparedParagraph& paragraph = handle->get();
   Intrinsic out;
-  if (paragraph->items.empty()) {
+  if (paragraph.items.empty()) {
     return out;
   }
   const linebreak::LineBreaker breaker(line_break_config(input, engine));
   linebreak::Counters& counters = engine.counters().line_breaker;
   const linebreak::Breaks breaks =
-      breaker.break_lines(paragraph->items, linebreak::kUnbounded, &counters);
+      breaker.break_lines(paragraph.items, linebreak::kUnbounded, &counters);
   for (const linebreak::Line& line : breaks.lines) {
     out.max_content = std::max(out.max_content, line.width);
   }
-  out.min_content = breaker.min_content_width(paragraph->items, &counters);
+  out.min_content = breaker.min_content_width(paragraph.items, &counters);
   return out;
 }
 

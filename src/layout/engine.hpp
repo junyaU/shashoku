@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <span>
 #include <string>
@@ -69,16 +70,21 @@ enum class ChildKind : std::uint8_t { Skip, Inline, Block };
 // ができる。flex が使う。
 void translate(BlockBox& box, float delta_inline, float delta_block);
 
+// レイアウト 1 回のあいだだけ生きるメモ（A29）。定義は layout_cache.hpp。
+// engine.hpp は中身を知らない（layout_cache.hpp が engine.hpp を include するため）。
+class LayoutCache;
+
 class LayoutEngine {
  public:
+  // memo: 計測結果のメモ（A29）を使うか。false にすると毎回組み直す（テスト用の口。
+  // 出力は同じでなければならない。layout_without_memo() を参照）。
   LayoutEngine(const Options& options, text::TextMeasurer& measurer, const ImageLookup& images,
-               WritingMode mode, Counters& counters)
-      : options_(&options),
-        measurer_(&measurer),
-        images_(&images),
-        map_(mode),
-        mode_(mode),
-        counters_(&counters) {}
+               WritingMode mode, Counters& counters, bool memo = true);
+  ~LayoutEngine();  // LayoutCache が不完全型なので out-of-line
+  LayoutEngine(const LayoutEngine&) = delete;
+  LayoutEngine& operator=(const LayoutEngine&) = delete;
+  LayoutEngine(LayoutEngine&&) = delete;
+  LayoutEngine& operator=(LayoutEngine&&) = delete;
 
   [[nodiscard]] const Options& options() const { return *options_; }
   [[nodiscard]] const ImageLookup& images() const { return *images_; }
@@ -88,6 +94,10 @@ class LayoutEngine {
   // 計測カウンタ（issue #10-3）。出力には影響しない = 値を読んで分岐してはいけない。
   // 計測は const のレイアウト処理の途中でも起きるので、const から書ける形にしてある。
   [[nodiscard]] Counters& counters() const { return *counters_; }
+
+  // 計測のメモ（A29）。**検索にしか使わない**（キーのポインタ値も map の順序も出力に出さない）。
+  [[nodiscard]] LayoutCache& cache() const { return *cache_; }
+  [[nodiscard]] bool memo_enabled() const { return memo_; }
 
   // 計測器の呼び出しは必ずここを通す（回数と文字数を数えるため。TextMeasurer 自体は公開しない）。
   [[nodiscard]] text::ShapedText shape(std::u32string_view text,
@@ -118,7 +128,13 @@ class LayoutEngine {
   Result<BlockBox> layout_block(const BlockInput& input, const BoxSizing& sizing,
                                 float content_inline_start, float block_start);
 
-  // content-box の固有 inline サイズ。
+  // 部分木を「この条件で組んだときの border-box の block サイズ」だけ測る（A29）。
+  // 同じ条件の 2 回目以降は組み直さずにメモを返すので、flex の「測って捨てる」が
+  // 入れ子の深さに対して指数にならない。**配置には使わない**（箱は返さない）。
+  Result<float> measure_block_size(const BlockInput& input, const BoxSizing& sizing,
+                                   float content_inline_start);
+
+  // content-box の固有 inline サイズ。同じ部分木・同じ `%` の基準ならメモを返す（A29）。
   Result<Intrinsic> content_intrinsic(const BlockInput& input, float percent_basis);
   // 子 1 つぶんの margin-box の固有 inline サイズ。
   Result<Intrinsic> outer_intrinsic(const style::StyledNode& node, float percent_basis);
@@ -131,6 +147,8 @@ class LayoutEngine {
   [[nodiscard]] Result<BlockBox> layout_image_box(const BlockInput& input, const BoxSizing& sizing,
                                                   float content_inline_start,
                                                   float block_start) const;
+  // メモを見ないで固有寸法を出す本体（content_intrinsic がメモの外側）。
+  Result<Intrinsic> compute_intrinsic(const BlockInput& input, float percent_basis);
 
   const Options* options_;
   text::TextMeasurer* measurer_;
@@ -138,6 +156,14 @@ class LayoutEngine {
   LogicalMap map_;
   WritingMode mode_;
   Counters* counters_;
+  std::unique_ptr<LayoutCache> cache_;
+  bool memo_ = true;
 };
+
+// テスト用の口: メモを使わずに組む（A29）。メモが効いた場合と効かない場合で出力が
+// 1 ビットも変わらないことを固定するために使う。製品の呼び出し側は layout() を使う。
+Result<BoxTree> layout_without_memo(const style::StyledNode& root, const Options& options,
+                                    text::TextMeasurer& measurer, const ImageLookup& images,
+                                    Counters* counters = nullptr);
 
 }  // namespace shashoku::layout

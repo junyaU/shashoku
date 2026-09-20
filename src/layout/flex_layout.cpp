@@ -285,17 +285,18 @@ Result<void> prepare_base_column(LayoutEngine& engine, std::vector<Item>& items,
       }
       content_height = image->block_size;
     } else {
-      // 交差軸（幅）を決めた上で一度組んで、内容の高さを測る
+      // 交差軸（幅）を決めた上で内容の高さを測る。ここで組んだ箱は捨てるので、
+      // 同じ条件の 2 回目以降は組み直さない（A29。組み直していたのが #5 の 2^depth）
       BoxSizing measure;
       measure.padding = item.padding;
       measure.border = item.border;
       measure.content_inline_size = item.cross;
-      Result<BlockBox> box =
-          engine.layout_block(item.input, measure, item.border + item.padding.inline_start, 0);
-      if (!box) {
-        return std::unexpected(box.error());
+      const Result<float> block_size =
+          engine.measure_block_size(item.input, measure, item.border + item.padding.inline_start);
+      if (!block_size) {
+        return std::unexpected(block_size.error());
       }
-      content_height = std::max(box->rect.block_size - main_extra(item, false), 0.0F);
+      content_height = std::max(*block_size - main_extra(item, false), 0.0F);
     }
     const Dimension main = main_dimension(item, engine.map(), false);
     if (main.is_auto()) {

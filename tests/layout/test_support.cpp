@@ -16,7 +16,6 @@ bool is_combining(char32_t cp) {
          (cp >= 0xFE00 && cp <= 0xFE0F) || (cp >= 0xE0100 && cp <= 0xE01EF);
 }
 
-// NOLINTNEXTLINE(misc-no-recursion): テスト用の木の走査
 void collect_lines(const BlockBox& box, std::vector<const LineBox*>& out) {
   if (const std::vector<LineBox>* lines = box.lines()) {
     for (const LineBox& line : *lines) {
@@ -29,7 +28,6 @@ void collect_lines(const BlockBox& box, std::vector<const LineBox*>& out) {
   }
 }
 
-// NOLINTNEXTLINE(misc-no-recursion): テスト用の木の走査
 void collect_blocks(const BlockBox& box, std::vector<BlockRect>& out) {
   out.push_back(BlockRect{.tag = box.tag, .rect = box.rect});
   if (const std::vector<BlockBox>* blocks = box.blocks()) {
@@ -39,7 +37,6 @@ void collect_blocks(const BlockBox& box, std::vector<BlockRect>& out) {
   }
 }
 
-// NOLINTNEXTLINE(misc-no-recursion): テスト用の木の走査
 const BlockBox* find_block_in(const BlockBox& box, std::string_view tag, std::size_t& remaining) {
   if (box.tag == tag) {
     if (remaining == 0) {
@@ -73,12 +70,14 @@ style::ComputedStyle inherit(const style::ComputedStyle& parent) {
   return out;
 }
 
-// NOLINTNEXTLINE(misc-no-recursion): テスト用の木の走査
 style::StyledNode build_node(const Tree& tree, const style::ComputedStyle& parent) {
   style::StyledNode node;
   node.type = tree.type;
   node.tag = tree.tag;
   node.text = tree.text;
+  node.image_src = tree.image_src;
+  node.attr_width = tree.attr_width;
+  node.attr_height = tree.attr_height;
   node.style = inherit(parent);
   if (tree.style) {
     tree.style(node.style);
@@ -136,76 +135,97 @@ text::FontMetrics FakeMeasurer::metrics(const text::TextStyle& style) {
 }
 
 Tree text(std::string_view content) {
-  return Tree{.type = style::StyledNode::Type::Text,
-              .tag = {},
-              .text = std::string(content),
-              .style = nullptr,
-              .children = {}};
+  Tree out;
+  out.type = style::StyledNode::Type::Text;
+  out.text = std::string(content);
+  return out;
 }
 
 Tree block(std::vector<Tree> children, StyleFn style) {
-  return Tree{.type = style::StyledNode::Type::Element,
-              .tag = "div",
-              .text = {},
-              .style =
-                  [style = std::move(style)](style::ComputedStyle& computed) {
-                    computed.display = style::Display::Block;
-                    if (style) {
-                      style(computed);
-                    }
-                  },
-              .children = std::move(children)};
+  Tree out;
+  out.tag = "div";
+  out.style = [style = std::move(style)](style::ComputedStyle& computed) {
+    computed.display = style::Display::Block;
+    if (style) {
+      style(computed);
+    }
+  };
+  out.children = std::move(children);
+  return out;
 }
 
 Tree inline_box(std::vector<Tree> children, StyleFn style) {
-  return Tree{.type = style::StyledNode::Type::Element,
-              .tag = "span",
-              .text = {},
-              .style =
-                  [style = std::move(style)](style::ComputedStyle& computed) {
-                    computed.display = style::Display::Inline;
-                    if (style) {
-                      style(computed);
-                    }
-                  },
-              .children = std::move(children)};
+  Tree out;
+  out.tag = "span";
+  out.style = [style = std::move(style)](style::ComputedStyle& computed) {
+    computed.display = style::Display::Inline;
+    if (style) {
+      style(computed);
+    }
+  };
+  out.children = std::move(children);
+  return out;
 }
 
 Tree br() {
-  return Tree{.type = style::StyledNode::Type::Element,
-              .tag = "br",
-              .text = {},
-              .style = nullptr,
-              .children = {}};
+  Tree out;
+  out.tag = "br";
+  return out;
+}
+
+Tree flex(std::vector<Tree> children, StyleFn style) {
+  Tree out;
+  out.tag = "div";
+  out.style = [style = std::move(style)](style::ComputedStyle& computed) {
+    computed.display = style::Display::Flex;
+    if (style) {
+      style(computed);
+    }
+  };
+  out.children = std::move(children);
+  return out;
+}
+
+Tree img(std::string_view src, std::optional<float> attr_width, std::optional<float> attr_height,
+         StyleFn style) {
+  Tree out;
+  out.tag = "img";
+  out.style = [style = std::move(style)](style::ComputedStyle& computed) {
+    computed.display = style::Display::Inline;
+    if (style) {
+      style(computed);
+    }
+  };
+  out.image_src = std::string(src);
+  out.attr_width = attr_width;
+  out.attr_height = attr_height;
+  return out;
 }
 
 Tree element(std::string_view tag, style::Display display, std::vector<Tree> children,
              StyleFn style) {
-  return Tree{.type = style::StyledNode::Type::Element,
-              .tag = std::string(tag),
-              .text = {},
-              .style =
-                  [display, style = std::move(style)](style::ComputedStyle& computed) {
-                    computed.display = display;
-                    if (style) {
-                      style(computed);
-                    }
-                  },
-              .children = std::move(children)};
+  Tree out;
+  out.tag = std::string(tag);
+  out.style = [display, style = std::move(style)](style::ComputedStyle& computed) {
+    computed.display = display;
+    if (style) {
+      style(computed);
+    }
+  };
+  out.children = std::move(children);
+  return out;
 }
 
 style::StyledNode build(std::vector<Tree> children, StyleFn style) {
-  const Tree root{.type = style::StyledNode::Type::Element,
-                  .tag = "#root",
-                  .text = {},
-                  .style =
-                      [style = std::move(style)](style::ComputedStyle& computed) {
-                        computed.display = style::Display::Block;
-                        if (style) {
-                          style(computed);
-                        }
-                      },
-                  .children = std::move(children)};
+  Tree root;
+  root.tag = "#root";
+  root.style = [style = std::move(style)](style::ComputedStyle& computed) {
+    computed.display = style::Display::Block;
+    if (style) {
+      style(computed);
+    }
+  };
+  root.children = std::move(children);
   return build_node(root, style::ComputedStyle{});
 }
 
@@ -215,15 +235,36 @@ Options make_options(float viewport_width) {
   return out;
 }
 
+ImageLookup image_table(std::vector<ImageEntry> entries) {
+  return [entries = std::move(entries)](std::string_view src) -> std::optional<ImageInfo> {
+    for (const ImageEntry& entry : entries) {
+      if (entry.src == src) {
+        return ImageInfo{.id = entry.id, .width = entry.width, .height = entry.height};
+      }
+    }
+    return std::nullopt;
+  };
+}
+
 Result<BoxTree> run_layout(const style::StyledNode& root, const Options& options,
                            text::TextMeasurer& measurer) {
   const ImageLookup images = [](std::string_view) { return std::optional<ImageInfo>{}; };
   return layout(root, options, measurer, images);
 }
 
+Result<BoxTree> run_layout(const style::StyledNode& root, const Options& options,
+                           text::TextMeasurer& measurer, const ImageLookup& images) {
+  return layout(root, options, measurer, images);
+}
+
 Result<BoxTree> run_layout(const style::StyledNode& root, float viewport_width,
                            text::TextMeasurer& measurer) {
   return run_layout(root, make_options(viewport_width), measurer);
+}
+
+Result<BoxTree> run_layout(const style::StyledNode& root, float viewport_width,
+                           text::TextMeasurer& measurer, const ImageLookup& images) {
+  return layout(root, make_options(viewport_width), measurer, images);
 }
 
 std::vector<const LineBox*> all_lines(const BoxTree& tree) {
@@ -285,6 +326,26 @@ std::vector<const InlineBackground*> backgrounds(const LineBox& line) {
   for (const InlineFragment& fragment : line.fragments) {
     if (const auto* background = std::get_if<InlineBackground>(&fragment)) {
       out.push_back(background);
+    }
+  }
+  return out;
+}
+
+std::vector<const ImageFragment*> image_fragments(const LineBox& line) {
+  std::vector<const ImageFragment*> out;
+  for (const InlineFragment& fragment : line.fragments) {
+    if (const auto* image = std::get_if<ImageFragment>(&fragment)) {
+      out.push_back(image);
+    }
+  }
+  return out;
+}
+
+std::vector<const ImageFragment*> all_images(const BoxTree& tree) {
+  std::vector<const ImageFragment*> out;
+  for (const LineBox* line : all_lines(tree)) {
+    for (const ImageFragment* image : image_fragments(*line)) {
+      out.push_back(image);
     }
   }
   return out;

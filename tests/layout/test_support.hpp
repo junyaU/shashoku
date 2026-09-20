@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -49,19 +50,26 @@ class FakeMeasurer final : public text::TextMeasurer {
 
 using StyleFn = std::function<void(style::ComputedStyle&)>;
 
-// NOLINTNEXTLINE(misc-no-recursion): 入れ子のツリー。暗黙の特殊メンバが木の深さだけ再帰する
 struct Tree {
   style::StyledNode::Type type = style::StyledNode::Type::Element;
   std::string tag;
   std::string text;
   StyleFn style;
   std::vector<Tree> children;
+  std::string image_src;  // <img> のみ
+  std::optional<float> attr_width;
+  std::optional<float> attr_height;
 };
 
 [[nodiscard]] Tree text(std::string_view content);
 [[nodiscard]] Tree block(std::vector<Tree> children, StyleFn style = nullptr);
 [[nodiscard]] Tree inline_box(std::vector<Tree> children, StyleFn style = nullptr);
 [[nodiscard]] Tree br();
+// display: flex のブロック。
+[[nodiscard]] Tree flex(std::vector<Tree> children, StyleFn style = nullptr);
+// <img>（display: inline）。属性の width / height は attr_* で渡す。
+[[nodiscard]] Tree img(std::string_view src, std::optional<float> attr_width = std::nullopt,
+                       std::optional<float> attr_height = std::nullopt, StyleFn style = nullptr);
 // 任意のタグ・display のノード（img / ruby / flex などのエラー系テスト用）。
 [[nodiscard]] Tree element(std::string_view tag, style::Display display,
                            std::vector<Tree> children = {}, StyleFn style = nullptr);
@@ -71,12 +79,26 @@ struct Tree {
 
 // ---- レイアウトの呼び出し --------------------------------------------------------
 [[nodiscard]] Options make_options(float viewport_width);
-// ImageLookup は第 1 段では使わないので空のものを渡す。
+
+// テスト用の画像テーブル（src → ImageId と固有寸法）。
+struct ImageEntry {
+  std::string src;
+  ImageId id = 0;
+  float width = 0;
+  float height = 0;
+};
+[[nodiscard]] ImageLookup image_table(std::vector<ImageEntry> entries);
+
+// 画像なし（ImageLookup は常に nullopt）。
 [[nodiscard]] Result<BoxTree> run_layout(const style::StyledNode& root, const Options& options,
                                          text::TextMeasurer& measurer);
+[[nodiscard]] Result<BoxTree> run_layout(const style::StyledNode& root, const Options& options,
+                                         text::TextMeasurer& measurer, const ImageLookup& images);
 // 幅だけ指定する短縮形。
 [[nodiscard]] Result<BoxTree> run_layout(const style::StyledNode& root, float viewport_width,
                                          text::TextMeasurer& measurer);
+[[nodiscard]] Result<BoxTree> run_layout(const style::StyledNode& root, float viewport_width,
+                                         text::TextMeasurer& measurer, const ImageLookup& images);
 
 // ---- ボックスツリーからの取り出し --------------------------------------------------
 // 文書順のすべての行ボックス。
@@ -100,5 +122,9 @@ struct BlockRect {
 // 行内の TextFragment だけを描画順に。
 [[nodiscard]] std::vector<const TextFragment*> text_fragments(const LineBox& line);
 [[nodiscard]] std::vector<const InlineBackground*> backgrounds(const LineBox& line);
+// 行内の画像断片を描画順に。
+[[nodiscard]] std::vector<const ImageFragment*> image_fragments(const LineBox& line);
+// 文書順のすべての画像断片。
+[[nodiscard]] std::vector<const ImageFragment*> all_images(const BoxTree& tree);
 
 }  // namespace shashoku::layout::test

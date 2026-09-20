@@ -44,7 +44,8 @@ enum class JustifyContent : std::uint8_t {
 };
 enum class AlignItems : std::uint8_t { Stretch, FlexStart, FlexEnd, Center };
 enum class TextAlign : std::uint8_t { Start, End, Left, Right, Center, Justify };
-enum class LineBreak : std::uint8_t { Auto, Loose, Normal, Strict };  // Auto は Strict として扱う
+// Auto は「エンジンの既定に従う」（③ の layout::Options::line_break.strictness を使う）
+enum class LineBreak : std::uint8_t { Auto, Loose, Normal, Strict };
 enum class OverflowWrap : std::uint8_t { Normal, Anywhere, BreakWord };
 enum class WritingMode : std::uint8_t { HorizontalTb, VerticalRl };
 

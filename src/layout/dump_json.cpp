@@ -59,6 +59,32 @@ void write_text_fragment(JsonWriter& writer, const TextFragment& fragment) {
   writer.end_object();
 }
 
+// 塗り（既定値は省く）。ブロックと画像断片で共通。
+void write_decoration(JsonWriter& writer, const BoxDecoration& decoration) {
+  if (!decoration.background_color.transparent()) {
+    writer.key("background_color").value(color_hex(decoration.background_color));
+  }
+  if (decoration.border_width > 0) {
+    writer.key("border_width").value(decoration.border_width);
+    writer.key("border_color").value(color_hex(decoration.border_color));
+  }
+  if (decoration.border_radius > 0) {
+    writer.key("border_radius").value(decoration.border_radius);
+  }
+}
+
+void write_image_fragment(JsonWriter& writer, const ImageFragment& image) {
+  writer.begin_object();
+  writer.key("type").value("image");
+  writer.key("image").value(static_cast<std::uint64_t>(image.image));
+  writer.key("rect");
+  write_rect(writer, image.rect);
+  writer.key("content_rect");
+  write_rect(writer, image.content_rect);
+  write_decoration(writer, image.decoration);
+  writer.end_object();
+}
+
 void write_line(JsonWriter& writer, const LineBox& line) {
   writer.begin_object();
   writer.key("rect");
@@ -68,6 +94,10 @@ void write_line(JsonWriter& writer, const LineBox& line) {
   for (const InlineFragment& fragment : line.fragments) {
     if (const auto* text = std::get_if<TextFragment>(&fragment)) {
       write_text_fragment(writer, *text);
+      continue;
+    }
+    if (const auto* image = std::get_if<ImageFragment>(&fragment)) {
+      write_image_fragment(writer, *image);
       continue;
     }
     const auto& background = std::get<InlineBackground>(fragment);
@@ -82,22 +112,12 @@ void write_line(JsonWriter& writer, const LineBox& line) {
   writer.end_object();
 }
 
-// NOLINTNEXTLINE(misc-no-recursion): 木の走査。深さは html パーサが 256 に制限する
 void write_block(JsonWriter& writer, const BlockBox& box) {
   writer.begin_object();
   writer.key("tag").value(box.tag);
   writer.key("rect");
   write_rect(writer, box.rect);
-  if (!box.decoration.background_color.transparent()) {
-    writer.key("background_color").value(color_hex(box.decoration.background_color));
-  }
-  if (box.decoration.border_width > 0) {
-    writer.key("border_width").value(box.decoration.border_width);
-    writer.key("border_color").value(color_hex(box.decoration.border_color));
-  }
-  if (box.decoration.border_radius > 0) {
-    writer.key("border_radius").value(box.decoration.border_radius);
-  }
+  write_decoration(writer, box.decoration);
   const LogicalEdges<float>& padding = box.padding;
   if (padding != LogicalEdges<float>{}) {
     writer.key("padding")

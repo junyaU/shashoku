@@ -4,6 +4,7 @@
 #include <gtest/gtest.h>
 
 #include "layout/test_support.hpp"
+#include "linebreak/line_breaker.hpp"
 
 // インライン整形文脈（ARCHITECTURE.md §3.8 の (a)〜(e)）。
 namespace shashoku::layout::test {
@@ -376,6 +377,25 @@ TEST(LayoutInline, LineBreakStrictnessComesFromTheBlockStyle) {
   EXPECT_EQ(flow(measurer, {text("あ・い")}, 16,
                  [](ComputedStyle& style) { style.line_break = style::LineBreak::Loose; }),
             (std::vector<std::string>{"あ", "・", "い"}));
+}
+
+// `line-break: auto` は「エンジンの既定に従う」= Options::line_break.strictness を使う。
+TEST(LayoutInline, LineBreakAutoFollowsTheEngineDefault) {
+  FakeMeasurer measurer;
+  Options options = make_options(16);
+  options.line_break.strictness = linebreak::Strictness::Normal;
+  const auto automatic = build({block({text("あっい")})});
+  const auto tree = run_layout(automatic, options, measurer);
+  ASSERT_TRUE(tree.has_value());
+  EXPECT_EQ(line_texts(*tree), (std::vector<std::string>{"あ", "っ", "い"}));
+
+  // CSS が明示していればそちらが勝つ
+  const auto strict = build({block({text("あっい")}, [](ComputedStyle& style) {
+    style.line_break = style::LineBreak::Strict;
+  })});
+  const auto strict_tree = run_layout(strict, options, measurer);
+  ASSERT_TRUE(strict_tree.has_value());
+  EXPECT_EQ(line_texts(*strict_tree), (std::vector<std::string>{"あっ", "い"}));
 }
 
 }  // namespace

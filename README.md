@@ -73,6 +73,25 @@ FreeType / HarfBuzz や内部の型は一切漏れません。ネットワーク
 
 同じ入力からは常にバイト単位で同じ PNG が出ます（純粋関数）。
 
+### 連続生成（フォントと画像を使い回す）
+
+OG 画像をリクエストごとに作るような使い方では、フォントのバイト列の解釈と画像の PNG デコードを
+1 回だけ済ませて使い回せます。`prepare()` が返したあとは読み取り専用なので、**複数のスレッドから
+同時に渡して構いません**（破棄だけは利用側で他の `render()` と重ならないようにします）。
+
+```cpp
+const auto fonts  = shashoku::LoadedFonts::prepare(font_set);    // 起動時に 1 回
+const auto images = shashoku::LoadedImages::prepare(image_set);
+if (!fonts || !images) { /* エラー処理 */ }
+
+// 以降はリクエストごとに、何スレッドからでも
+const auto result = shashoku::render(html, *fonts, *images, options);
+```
+
+出力は変わりません。毎回 `FontSet` / `ImageSet` から作り直したときとバイト単位で同じ PNG が出ます。
+効くのは時間よりもメモリで、8 並行で 96 枚組んだときの RSS が 194 MiB → 110 MiB になります
+（全面背景の画像を使うテンプレートでは、デコードのぶん 1 枚あたり 16 ms も浮きます）。
+
 ### CLI
 
 ```bash
@@ -208,3 +227,6 @@ ctest --preset dev
 ```
 
 GCC を使う場合は 13 以上: `CXX=g++-14 cmake --preset gcc`
+
+プリセットは `dev`（Debug）/ `asan`（ASan + UBSan）/ `tsan`（ThreadSanitizer。共有資源を複数の
+スレッドから使うテスト用）/ `release` / `gcc`。`asan` と `tsan` は併用できません。

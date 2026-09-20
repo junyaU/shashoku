@@ -236,7 +236,7 @@ issue #6）。上限は**入力の一部**なので純粋関数の性質は壊�
 | `dom_nodes` | 20,000 | OG カードは 100 未満。`style_rules` との積（4x10^7 回の照合）が 0.1 秒に収まる量 |
 | `text_code_points` | 50,000 | 「数千文字」の 10 倍以上。行分割と配置が入力に比例して効く |
 | `style_rules` | 2,000 | セレクタの照合は 規則数 x 要素数。`dom_nodes` との積で決めた |
-| `font_size_device_px` | 2,048 | グリフのビットマップは pixel_size の 2 乗。2048^2 = 4 MB で頭打ちになる。見出しは @2x でも 300 px 程度 |
+| `font_size_device_px` | 2,048 | グリフのビットマップは pixel_size の 2 乗。2048^2 = 4 MB で頭打ちになる。見出しは @2x でも 300 px 程度。実行ごとのグリフキャッシュ（A33）1 項目の上界もこれで決まる |
 | `scale` | 256 | 既存値の据え置き。「1.0 のつもりが 1000」を弾く |
 | `image_pixels` | 2^24 | 4096x4096（RGBA で 64 MB）。OG に貼る素材には十分 |
 | `total_image_pixels` | 2^25 | 128 MB。「1 枚 2^26 px x 枚数無制限」だったのを塞ぐ |
@@ -450,6 +450,72 @@ DESIGN.md §6-6 は豆腐の警告を「コードポイント **＋位置**」�
 （`inline_collect.cpp` の `Collapsed::source`）ので、html が上の対応を持てば layout 側は
 `FlatChar` に「ノード内オフセット」を 1 本足すだけで桁まで出せる。
 
+**A33. 資源は「読み取り専用で共有できるもの」と「1 スレッド専用の可変状態」に分ける。
+共有する側だけを公開型（`LoadedFonts` / `LoadedImages`）にする。** それまでは `render()` が
+呼ばれるたびに全フォントを解釈し直し、全画像をデコードし直していた（issue #7）。`FontStore` を
+そのまま共有ハンドルとして公開するのは安全でない: `FT_Face` はグリフを読むたびに書き換わる。
+
+**動機は計測で置き換えた。** issue #7 本文の「約 10MB の解釈が毎回」は起きていない
+（FreeType も HarfBuzz も遅延解析で、フォント読み込みは 3 本 9.18 MiB で 0.78 ms =
+`render()` の 1.2%）。実測で効くのは次の 3 つ:
+
+| | 修正前 | 修正後 | 出典 |
+|---|---:|---:|---|
+| 8 並行で 96 本組んだときの RSS 増分 | 194 MiB | **110 MiB** | 共有資源 1 組 + 実行ごとの FreeType |
+| 全面背景画像（1200x630）のデコード | 16.0 ms/回 | 0（用意は 1 回） | `render()` 1 回の 26% |
+| 和文長文のラスタライズ（1632 グリフ / 異なり 44） | 6.72 ms | **0.33 ms** | 実行ごとのグリフキャッシュ |
+
+時間そのものは 1 回あたり 66.2 → 62.3 ms（-6%）にしかならない。**`render()` の約 90% は
+PNG エンコードで、そこは #7 の対象外**。
+
+決めたこと:
+
+- **共有してよいものの線引きは、各ライブラリの文書に従う。**
+  - 共有（`text::FontStore`）: フォントのバイト列 / `hb_face_t` / cmap 引き用の `hb_font_t` /
+    解析済みの family・family_folded・weight・italic・upem・face_index。HarfBuzz の face と font は
+    `hb_face_make_immutable` / `hb_font_make_immutable` を掛けてから共有する（「immutable な
+    オブジェクトは多スレッドでの利用を容易にする」。face のシェーププランの置き場はアトミック）
+  - 実行ごと: `FT_Library` / `FT_Face` / グリフスロット（`FreeTypeGlyphSource`）、
+    スケール付きの `hb_font_t` と `hb_buffer_t`（`Shaper`）。FreeType は「`FT_Face` は同時に
+    1 スレッドからしか使えない。同じ `FT_Library` に対する face の生成・破棄も同時に行えない」と
+    定めている。**`FT_Library` ごと実行ごとにする**（`FT_Init_FreeType` は 0.002 ms、
+    face の作り直しは 3 本で 0.16 ms = render の 0.26%）。共有して mutex で直列化すると、
+    並行度が上がるほどグリフのラスタライズが待ち行列になって損をする
+- **`FontStore` は FreeType のハンドルを持たない。** ただし family / weight / italic / upem と
+  「輪郭を持つか」（`FT_IS_SCALABLE`）は**今までどおり FreeType から読む**。HarfBuzz の name 表から
+  読み直すと値が変わってフォールバック順（§3.5）が静かに変わりうるため、`load()` の中だけで
+  一時的に `FT_Library` + `FT_Face` を作って読み、すぐ閉じる
+- **不変にした `hb_font_t` の生ポインタは外に出さない**（`detail::ImmutableFont`）。HarfBuzz の
+  setter は immutable なオブジェクトに対して**黙って失敗する**ので、`hb_font_set_scale()` を
+  呼びたいコード（`Shaper`）がこのフォントを掴むと「スケールが変わらないまま組まれる」という
+  見つけにくい壊れ方をする。読み取り専用の 2 つの用途（cmap 引き・縦組み用グリフの調査）だけを
+  関数で出し、スケールを変えたい側は `hb_face_t` から自分の font を作る
+- **グリフキャッシュは実行ごと**（`FreeTypeGlyphSource`）。実測で、実行をまたいで共有しても
+  実行内キャッシュの効果の 6% しか増えない。実行ごとなら容量制限・追い出し方針・ロック・
+  「前の実行の内容が残っても同じ結果」の証明をすべて避けられる。鍵は
+  `(FontId, GlyphId, pixel_size のビット列, sideways)` の `std::map`。**容量は内部定数**（16 MiB）で、
+  超えたら**新規登録をやめるだけで追い出さない**。容量を `RenderLimits` に足さないのは、A25 の
+  上限がすべて「入力の一部」（同じ入力 + 同じ上限 → 同じ出力）なのに対し、キャッシュ容量は
+  出力に一切影響しないから。混ぜると「上限」の意味が 2 種類になる
+- **`LoadedImages::prepare()` は `RenderLimits` を引数で取り、`render()` 側で画素数を再検査する。**
+  デコード前に弾かないと A25 の (c)「大きな確保の直前に判定する」が崩れる。両方で見るので、
+  `prepare()` と `render()` に違う上限を渡しても「同じ HTML + 同じ `RenderLimits` → 同じ結果」は
+  崩れない（厳しい方が効く）
+- **ムーブ済みの共有資源を渡したら `InvalidOption` で落とす。** 「フォント 0 本」として黙って
+  組むと、全部豆腐の PNG が「成功」で返る（DESIGN.md §3-6）
+- **プロセス全体のグローバルキャッシュは作らない**（バイト列のハッシュ → 解釈済みフォント、など）。
+  DESIGN.md §3-5 に正面から反する。出力自体が変わらなくても、いつ解放されるか・同時実行で誰が
+  ロックを持つかが利用者から見えなくなり、`render()` が純粋関数だという説明が成り立たなくなる。
+  共有資源は**利用者が持つ**
+- **HarfBuzz のプロセス全体の遅延初期化**（既定の Unicode 関数群・言語タグの表）は
+  `FontStore::load()` の先頭で 1 回触っておく。共有する前に単一スレッドで温めておかないと、
+  最初の同時実行で競合しうる（HarfBuzz 自身のスレッドテストも同じ理由で先に呼んでいる）
+- **検証**: `tests/integration/reuse_test.cpp`（N 回の一致 / 警告の一致 / A→B→A の混線なし /
+  `dump()` の一致 / ムーブ済み / prepare と render で違う上限）と
+  `tests/integration/concurrency_test.cpp`（8 スレッド x 4 回が単スレッドの結果とバイト一致）。
+  後者は `tsan` プリセット（`SHASHOKU_SANITIZE_THREAD`）でも回す。**普段の完了条件には入れない**:
+  依存ライブラリまで再ビルドになるので `dev` / `asan` と並べると重い
+
 ---
 
 ## 2. モジュールと依存
@@ -613,15 +679,23 @@ BK CR LF NL SP ZW WJ GL CM ZWJ OP CL CP QU EX IS SY NS CJ IN B2 BA BB HY PR PO N
 
 ```cpp
 namespace shashoku::text {
-class FontStore {                       // フォント実体の唯一の所有者（DESIGN.md §3-2）
+class FontStore {                       // フォント実体の唯一の所有者（DESIGN.md §3-2）。**共有資源**（A33）
  public:
   Result<FontId> load(std::span<const std::uint8_t> bytes);  // バイト列をコピーして保持。追加順 = フォールバック順
   // family 名・weight の照会、(cp → どのフォントのどのグリフか) の解決 など
 };
-class Shaper final : public TextMeasurer { /* FontStore を参照。HarfBuzz。副作用を持たない */ };
-class FreeTypeGlyphSource final : public raster::GlyphSource { /* FontStore を参照 */ };
+class Shaper final : public TextMeasurer { /* FontStore を参照。HarfBuzz。実行ごと・副作用を持たない */ };
+class FreeTypeGlyphSource final : public raster::GlyphSource { /* FontStore を参照。実行ごと */ };
 }
 ```
+
+- **共有資源と実行コンテキストを分ける**（A33）。`FontStore` は `load()` を終えたあと完全に
+  読み取り専用で、何本の `render()` から何スレッドで同時に読んでもよい。持つのはバイト列・
+  `hb_face_t`（immutable）・cmap 引き用の `hb_font_t`（immutable。生ポインタは
+  `detail::ImmutableFont` の外に出さない）・解析済みの family / weight / italic / upem / face_index だけ。
+  **FreeType のハンドルは持たない**: `FT_Library` と `FT_Face` は `FreeTypeGlyphSource` が
+  実行ごとに作る（`FT_Face` は 1 スレッド専用で、同じ `FT_Library` に対する生成・破棄も
+  直列化が要るため）。スケール付きの `hb_font_t` と `hb_buffer_t` は `Shaper` が実行ごとに持つ
 
 - 依存: FreeType と HarfBuzz を FetchContent で版・ハッシュ固定（A7）。システムのライブラリ
   （zlib, png, bzip2, brotli）を拾わせない。HarfBuzz は公式 CMake でも `harfbuzz.cc`（アマルガム）
@@ -658,7 +732,11 @@ class FreeTypeGlyphSource final : public raster::GlyphSource { /* FontStore を�
   ロケールを読むので使わない。決定性のため）
 - ラスタライズ: `FT_LOAD_NO_HINTING | FT_LOAD_NO_BITMAP`、`FT_RENDER_MODE_NORMAL`。
   sideways は輪郭を 90° 回してから描く（ビットマップを回すのではなく）。
-  失敗は必ず `Result` のエラーで返す（A19 の表）。空のビットマップを返すのは空白グリフだけ
+  失敗は必ず `Result` のエラーで返す（A19 の表）。空のビットマップを返すのは空白グリフだけ。
+  `(FontId, glyph_id, pixel_size, sideways)` → ビットマップは**この実行の中だけ**メモする（A33）。
+  純粋な写像のメモ化なので、キャッシュの有無で出力は 1 ビットも変わらない（和文の長文で
+  ラスタライズ段が 6.72 → 0.33 ms）。容量は内部定数の 16 MiB で、超えたら新規登録をやめる
+  （追い出さない）。失敗はキャッシュしない
 - シェーピングと計測の失敗も必ず `Result` のエラーで返す（A30 の表）。成功して空の
   `ShapedText` を返してよいのは入力が空文字列のときだけで、「測れなかった」を空で表さない
 - `FontStore::load()`: 輪郭を持たないフォント（`FT_IS_SCALABLE` が偽。埋め込みビットマップ専用の
@@ -803,6 +881,19 @@ std::string dump_json(const BoxTree&);
 `dump(html, fonts, images, opts, Stage)` を加える。公開ヘッダに内部の型（FreeType、`src/` の型）を
 漏らさない。`FontSet` / `ImageSet` はバイト列を保持するだけで、解釈は `render()` の中で行う。
 
+**共有資源の経路**（A33）: `LoadedFonts::prepare(FontSet)` / `LoadedImages::prepare(ImageSet, limits)`
+で解釈・デコードを 1 回だけ済ませ、`render(html, LoadedFonts[, LoadedImages], opts)` と
+`dump(html, LoadedFonts, LoadedImages, opts, stage)` に渡す。どちらも pimpl で、FreeType /
+HarfBuzz / `src/` の型は名前も出さない（`tests/api/public_header_check.cpp` が
+「include パスを `include/` だけに絞ったターゲット」で機械的に検査する）。
+
+資源の用意のしかたの違いは `src/api/render.cpp` の `ResourceSource` に閉じ込め、パイプライン本体は
+1 本のまま。**検査の順序はどちらの経路でも同じ**なので、同じ入力からは同じエラーが同じ順で出る。
+従来の `render(html, FontSet, ImageSet, opts)` は、パイプラインの同じ位置で `prepare()` を呼ぶ
+薄い包みになった（`ImageSet` の名前重複の検査も `LoadedImages::prepare()` に移った）。
+用意済みの画像には `opts.limits` を掛け直す（枚数は (a) の位置、画素数は (c) の位置）。
+ムーブ済みの `LoadedFonts` / `LoadedImages` を渡したら `InvalidOption`。
+
 出力サイズ: 幅 = `viewport_width`、高さ = `viewport_height`、未指定ならルートの内容の高さの切り上げ
 （0 なら `InvalidOption`）。どちらも `scale` を掛けて切り上げる。豆腐は `Warning` として返す:
 `BoxTree::missing_glyphs`（③ が入力位置の昇順 → コードポイントの昇順に並べたもの。A31）を
@@ -816,7 +907,8 @@ stderr に出す。
 `check_dom_limits` は DOM を、`check_computed_limits` はスタイル付きツリーを、それぞれ明示スタックで
 1 回だけ前順に辿る（layout には手を入れない）。`png` / `raster` / `html` / `style` へは引数で渡す。
 各モジュールの既定値と `RenderLimits` の既定値が一致することは `static_assert` で検査する。
-公開関数の境界には `std::bad_alloc` / `std::length_error` の `catch` を置く（A26。ここだけ）。
+公開関数の境界には `std::bad_alloc` / `std::length_error` の `catch` を置く（A26。`catch` があってよいのは
+`src/api/out_of_memory.hpp` だけで、`render()` / `dump()` / `prepare()` の全オーバーロードが使う）。
 CLI に上限を変えるフラグは足していない（既定値のまま使う）。
 
 CLI は `tools/shashoku/`: `shashoku input.html --font A.otf [--font B.ttf …] [--image name=path …]

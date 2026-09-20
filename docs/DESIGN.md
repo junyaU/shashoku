@@ -278,11 +278,23 @@ class FontSet {
 std::expected<RenderResult, RenderError>
 render(std::string_view html, const FontSet& fonts, const RenderOptions& opts);
 
+// 連続生成のための共有資源（ARCHITECTURE.md A33）。バイト列の解釈と PNG のデコードを
+// 1 回だけ済ませて使い回す。prepare() のあとは読み取り専用で、複数の render() から、
+// 複数のスレッドから同時に使ってよい（破棄とムーブ代入だけは利用者が直列化する）。
+// **出力は変わらない**: 毎回 FontSet / ImageSet から作り直したのとバイト単位で同じ PNG が出る。
+class LoadedFonts  { public: static std::expected<LoadedFonts, RenderError>  prepare(const FontSet&); };
+class LoadedImages { public: static std::expected<LoadedImages, RenderError> prepare(const ImageSet&, const RenderLimits& = {}); };
+
+std::expected<RenderResult, RenderError>
+render(std::string_view html, const LoadedFonts& fonts, const LoadedImages& images,
+       const RenderOptions& opts);
+
 }  // namespace shashoku
 ```
 
 - エラー（`RenderError`）: パース失敗、未対応タグ / プロパティ / 値、フォント読込失敗、上限超過（`LimitExceeded`）、メモリ不足（`OutOfMemory`）。**どの入力のどこが原因かを必ず含める**
 - 信頼できない HTML を受けるときは `RenderOptions::limits` で予算を決める。メモリ不足の扱い（`OutOfMemory` は最善努力で、保証は上限の側）は ARCHITECTURE.md A26
+- **連続生成**（OG 画像をリクエストごとに作る、という本来の用途）では `LoadedFonts` / `LoadedImages` を使う。効くのは時間より**メモリと並行度**で、8 並行で 96 本組んだときの RSS が 194 → 110 MiB。画像を使い回す効果はもっと大きい（全面背景のデコードは 1 回あたり 16 ms = `render()` の 26%）。詳細と計測は ARCHITECTURE.md A33
 - CLI も薄く用意する: `shashoku input.html --font NotoSansJP.ttf -o out.png --dump-stage=box`
 
 ## 9. 開発フェーズ（出口から通す）

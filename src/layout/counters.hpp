@@ -12,13 +12,15 @@
 //   * 公開 API（include/shashoku/）には出さない。layout モジュールの内部の道具
 namespace shashoku::layout {
 
+// 数えるのは「実際に行った仕事」で、呼び出し回数ではない（A29 のメモが効いた分は増えない）。
+// メモが効いているかどうかは、この 3 つが入れ子の深さでどう増えるかで見る。
 struct Counters {
-  // LayoutEngine::layout_block() の呼び出し回数（flex / <img> へ委譲したものも含む）。
+  // LayoutEngine::layout_block() が実際に箱を組んだ回数（flex / <img> へ委譲したものも含む）。
   std::uint64_t layout_block = 0;
-  // LayoutEngine::content_intrinsic() の呼び出し回数（固有寸法の計測）。
-  // 本番のレイアウトとは別勘定で shape() を呼ぶので、flex の入れ子（#5）ではここが増える。
+  // 固有寸法（content_intrinsic）を実際に計算した回数。
   std::uint64_t content_intrinsic = 0;
   // インライン整形文脈の準備（収集 → 空白の畳み込み → シェーピング → アイテム化）の回数。
+  // 同じ段落は計測と配置で共有するので、ふつうは「段落の数」に一致する（A6 / A29）。
   std::uint64_t inline_prepare = 0;
   // TextMeasurer::shape() の呼び出し回数と、渡した文字数（コードポイント）の合計。
   std::uint64_t shape_calls = 0;

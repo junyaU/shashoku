@@ -11,6 +11,7 @@
 #include "layout/engine.hpp"
 #include "layout/flex_layout.hpp"
 #include "layout/inline_layout.hpp"
+#include "layout/layout_cache.hpp"
 
 namespace shashoku::layout {
 namespace {
@@ -223,6 +224,28 @@ Result<BlockBox> LayoutEngine::layout_block(const BlockInput& input, const BoxSi
       .block_size = content_block_size + 2 * sizing.border + sizing.padding.block_start +
                     sizing.padding.block_end};
   return box;
+}
+
+// A29: 「測って捨てる」ぶんだけをメモする。返すのは border-box の block サイズという
+// 数値 1 つで、箱は返さない。配置のための layout_block() は従来どおり毎回実行するので、
+// 座標は 1 ビットも変わらない（原点で組んだ箱を後から平行移動する、ということはしない）。
+Result<float> LayoutEngine::measure_block_size(const BlockInput& input, const BoxSizing& sizing,
+                                               float content_inline_start) {
+  const MeasureKey key = MeasureKey::of(input, sizing, content_inline_start);
+  if (memo_) {
+    if (const float* found = cache().measured(key)) {
+      return *found;
+    }
+  }
+  Result<BlockBox> box = layout_block(input, sizing, content_inline_start, 0);
+  if (!box) {
+    return std::unexpected(box.error());
+  }
+  const float block_size = box->rect.block_size;
+  if (memo_) {
+    cache().remember(key, block_size);
+  }
+  return block_size;
 }
 
 namespace {

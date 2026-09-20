@@ -4,8 +4,10 @@
 //
 // 公開 API だけを使う（`src/` のヘッダは include しない）。ライブラリの利用例も兼ねる。
 // 終了コード: 0 成功 / 1 レンダリングエラー・入出力エラー / 2 引数の誤り。
+#include <charconv>
+#include <cstddef>
 #include <cstdint>
-#include <cstdio>
+#include <expected>
 #include <fstream>
 #include <ios>
 #include <iostream>
@@ -68,15 +70,33 @@ std::optional<int> parse_int(std::string_view text) {
   return value;
 }
 
+// 浮動小数点の from_chars は libc++ 18 にまだ無く、strtof はロケールを読む。
+// --scale に要るのは "2" や "1.5" のような単純な 10 進数だけなので自前で読む。
 std::optional<float> parse_float(std::string_view text) {
-  float value = 0;
-  const char* const begin = text.data();
-  const char* const end = begin + text.size();
-  const std::from_chars_result result = std::from_chars(begin, end, value);
-  if (result.ec != std::errc{} || result.ptr != end) {
+  std::size_t index = 0;
+  bool negative = false;
+  if (index < text.size() && (text[index] == '+' || text[index] == '-')) {
+    negative = text[index] == '-';
+    ++index;
+  }
+  const auto is_digit = [](char c) { return c >= '0' && c <= '9'; };
+  double value = 0;
+  std::size_t digits = 0;
+  for (; index < text.size() && is_digit(text[index]); ++index, ++digits) {
+    value = (value * 10) + static_cast<double>(text[index] - '0');
+  }
+  if (index < text.size() && text[index] == '.') {
+    ++index;
+    double place = 0.1;
+    for (; index < text.size() && is_digit(text[index]); ++index, ++digits) {
+      value += static_cast<double>(text[index] - '0') * place;
+      place /= 10;
+    }
+  }
+  if (digits == 0 || index != text.size()) {
     return std::nullopt;
   }
-  return value;
+  return static_cast<float>(negative ? -value : value);
 }
 
 std::optional<shashoku::OverflowPolicy> parse_overflow(std::string_view text) {

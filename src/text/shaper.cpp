@@ -114,6 +114,12 @@ struct CharPlan {
   }
 };
 
+// 同じ family 名を持つ face のまとまり。fonts は font_weight の近い順。
+struct FamilyGroup {
+  std::string folded_name;
+  std::vector<FontId> fonts;
+};
+
 struct ShaperImpl {
   const FontStore* fonts = nullptr;
   hb_buffer_t* buffer = nullptr;
@@ -167,6 +173,7 @@ struct ShaperImpl {
     return shaping_fonts[font];
   }
 
+  [[nodiscard]] std::vector<FamilyGroup> build_family_groups(int font_weight) const;
   [[nodiscard]] std::vector<FontId> resolve_stack(const TextStyle& style) const;
   [[nodiscard]] FontMetrics font_metrics(FontId font, float font_size);
   [[nodiscard]] std::vector<hb_codepoint_t> probe_glyphs(hb_font_t* font, char32_t cp,
@@ -190,13 +197,46 @@ struct ShaperImpl {
   ShapedText shape(std::u32string_view text, const TextStyle& style);
 };
 
-std::vector<FontId> ShaperImpl::resolve_stack(const TextStyle& style) const {
-  std::vector<FontId> stack;
+// FontStore の全フォントを family 名でグループ化し、各グループの中を font_weight の
+// 近い順（CSS Fonts 4 §5.2）に並べる。グループの順序は、その family の最初のフォントが
+// 追加された順。太さの照合は font-family の指定と無関係に、常に全 family に効く。
+std::vector<FamilyGroup> ShaperImpl::build_family_groups(int font_weight) const {
   const auto count = static_cast<FontId>(fonts->size());
+  std::vector<FamilyGroup> groups;
 
-  auto push_unique = [&stack](FontId font) {
-    if (std::find(stack.begin(), stack.end(), font) == stack.end()) {
-      stack.push_back(font);
+  for (FontId font = 0; font < count; ++font) {
+    std::string name = fold_family_name(fonts->family(font));
+    const auto it = std::find_if(groups.begin(), groups.end(), [&name](const FamilyGroup& group) {
+      return group.folded_name == name;
+    });
+    if (it != groups.end()) {
+      it->fonts.push_back(font);
+    } else {
+      groups.push_back(FamilyGroup{std::move(name), {font}});
+    }
+  }
+
+  for (FamilyGroup& group : groups) {
+    // 安定ソートなので、同じ順位の face は追加順のまま残る。
+    std::stable_sort(group.fonts.begin(), group.fonts.end(),
+                     [this, font_weight](FontId a, FontId b) {
+                       return weight_rank(fonts->weight(a), font_weight)
+                           .better_than(weight_rank(fonts->weight(b), font_weight));
+                     });
+  }
+  return groups;
+}
+
+std::vector<FontId> ShaperImpl::resolve_stack(const TextStyle& style) const {
+  const std::vector<FamilyGroup> groups = build_family_groups(style.font_weight);
+
+  // font-family は family（グループ）の優先順を変えるだけ。FontStore にない名前や
+  // 総称ファミリは読み飛ばす（A15）。
+  std::vector<std::size_t> order;
+  order.reserve(groups.size());
+  auto push_group = [&order](std::size_t index) {
+    if (std::find(order.begin(), order.end(), index) == order.end()) {
+      order.push_back(index);
     }
   };
 
@@ -205,28 +245,23 @@ std::vector<FontId> ShaperImpl::resolve_stack(const TextStyle& style) const {
     if (wanted.empty()) {
       continue;
     }
-    // 同じ family に複数の weight があれば CSS の規則で 1 つ選ぶ。
-    bool found = false;
-    FontId best = 0;
-    WeightRank best_rank;
-    for (FontId font = 0; font < count; ++font) {
-      if (fold_family_name(fonts->family(font)) != wanted) {
-        continue;
+    for (std::size_t i = 0; i < groups.size(); ++i) {
+      if (groups[i].folded_name == wanted) {
+        push_group(i);
+        break;
       }
-      const WeightRank rank = weight_rank(fonts->weight(font), style.font_weight);
-      if (!found || rank.better_than(best_rank)) {
-        found = true;
-        best = font;
-        best_rank = rank;
-      }
-    }
-    if (found) {
-      push_unique(best);  // 見つからない名前は読み飛ばす（A15）
     }
   }
+  for (std::size_t i = 0; i < groups.size(); ++i) {
+    push_group(i);  // 指定を使い切ったら残りのグループを追加順で足す
+  }
 
-  for (FontId font = 0; font < count; ++font) {
-    push_unique(font);  // 指定を使い切ったら FontStore の追加順で探す
+  std::vector<FontId> stack;
+  stack.reserve(fonts->size());
+  for (const std::size_t index : order) {
+    for (const FontId font : groups[index].fonts) {
+      stack.push_back(font);
+    }
   }
   return stack;
 }

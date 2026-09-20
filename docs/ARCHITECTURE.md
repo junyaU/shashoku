@@ -246,9 +246,19 @@ struct MissingGlyph { char32_t cp; };   // 豆腐の記録。Shaper が溜め、
 - 依存: FreeType と HarfBuzz を FetchContent で版・ハッシュ固定（A7）。システムのライブラリ
   （zlib, png, bzip2, brotli）を拾わせない。HarfBuzz は公式 CMake でも `harfbuzz.cc`（アマルガム）
   でもよいが、`shashoku_mark_system()` でヘッダを SYSTEM 扱いにすること
-- フォント選択（A15）: `font_family` を順に FontStore 内の family 名と照合（大文字小文字を無視）。
-  同じ family に複数 weight があれば `font_weight` に最も近いもの（CSS Fonts の規則）。
-  見つかったもの → 残りの全フォント（追加順）の順でフォールバック列を作る
+- フォント選択（A15）: **`font-family` の指定は family の優先順を変えるだけで、太さの照合は
+  常に全 family に対して働く**（`font-family` を書かない普通の HTML でも `font-weight: 700` の
+  見出しが Bold で描かれる）。フォールバック列は次の順で作る:
+  1. FontStore の全フォントを family 名（大文字小文字を無視）でグループ化する。グループの順序は
+     「その family の最初のフォントが追加された順」
+  2. `font_family` を順に見て、一致するグループがあれば列に入れる（総称ファミリや FontStore に
+     ない名前は読み飛ばす）
+  3. 残りのグループを、グループの順序どおりに列に足す
+  4. 各グループの中では、`font_weight` に最も近い face（CSS Fonts の規則）を先頭に、残りの face を
+     その後ろに置く（同じ family の face はふつう同じ文字を持つので後ろが使われることは稀だが、
+     片方の face にしか無い文字の保険として残す）
+
+  `metrics()` が返すのもこの列の先頭のフォント。豆腐の `□` を探す順もこの列
 - run 分割: コードポイントごとにフォールバック列を cmap 引きし、最初にグリフを持つフォントを採用。
   同じフォントが続く区間をまとめて HarfBuzz に渡す。結合文字・異体字セレクタ・ZWJ は直前の
   文字と同じ run に入れる（別フォントに割らない）

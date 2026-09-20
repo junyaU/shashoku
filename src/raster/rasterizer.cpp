@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <optional>
 #include <span>
 #include <string>
@@ -735,6 +736,14 @@ Result<std::pair<std::uint32_t, std::uint32_t>> device_size(const Target& target
                 "raster: device size " + std::to_string(w) + " x " + std::to_string(h) + " = " +
                     std::to_string(pixels) + " px exceeds the limit of " +
                     std::to_string(target.max_device_pixels) + " pixels");
+  }
+  // 絶対上限: Bitmap::rgba は 1 画素 4 バイトなので、画素数 x 4 が std::size_t に収まること。
+  // max_device_pixels を極端に緩めたときに、掛け算が黙って一周するのを防ぐ。
+  if (pixels > std::numeric_limits<std::size_t>::max() / 4) {
+    return fail(ErrorKind::LimitExceeded,
+                "raster: device size " + std::to_string(w) + " x " + std::to_string(h) + " = " +
+                    std::to_string(pixels) +
+                    " px exceeds the absolute limit of size_t/4 pixels (4 bytes per pixel)");
   }
   return std::pair{static_cast<std::uint32_t>(w), static_cast<std::uint32_t>(h)};
 }

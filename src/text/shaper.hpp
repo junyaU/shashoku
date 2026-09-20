@@ -36,8 +36,8 @@ class Shaper final : public TextMeasurer {
   Shaper(Shaper&&) = delete;
   Shaper& operator=(Shaper&&) = delete;
 
-  ShapedText shape(std::u32string_view text, const TextStyle& style) override;
-  FontMetrics metrics(const TextStyle& style) override;
+  Result<ShapedText> shape(std::u32string_view text, const TextStyle& style) override;
+  Result<FontMetrics> metrics(const TextStyle& style) override;
 
   // 溜まった豆腐を取り出して空にする。同じコードポイントは 1 回しか入らない。
   [[nodiscard]] std::vector<MissingGlyph> take_missing_glyphs();

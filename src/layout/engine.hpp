@@ -100,13 +100,15 @@ class LayoutEngine {
   [[nodiscard]] bool memo_enabled() const { return memo_; }
 
   // 計測器の呼び出しは必ずここを通す（回数と文字数を数えるため。TextMeasurer 自体は公開しない）。
-  [[nodiscard]] text::ShapedText shape(std::u32string_view text,
-                                       const text::TextStyle& style) const {
+  // 失敗はそのまま伝播する（A30 / issue #3）。数えるのは「実際に行った仕事」なので、
+  // 失敗した呼び出しも数える。
+  [[nodiscard]] Result<text::ShapedText> shape(std::u32string_view text,
+                                               const text::TextStyle& style) const {
     ++counters_->shape_calls;
     counters_->shaped_chars += text.size();
     return measurer_->shape(text, style);
   }
-  [[nodiscard]] text::FontMetrics metrics(const text::TextStyle& style) const {
+  [[nodiscard]] Result<text::FontMetrics> metrics(const text::TextStyle& style) const {
     ++counters_->metrics_calls;
     return measurer_->metrics(style);
   }

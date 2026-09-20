@@ -179,16 +179,19 @@ Result<void> collect_element(const StyledNode& node, LayoutEngine& engine, float
   // background-color があれば、行ごとの背景を出すために文字の範囲を覚える
   std::size_t scope = kNone;
   if (!node.style.background_color.transparent()) {
-    const text::FontMetrics metrics =
+    const Result<text::FontMetrics> metrics =
         engine.metrics(shaping_style_of(node.style, engine.map().direction()));
+    if (!metrics) {
+      return std::unexpected(metrics.error());
+    }
     const bool vertical = engine.map().vertical();
     const float font_size = node.style.font_size;
     out.scopes.push_back(
         BackgroundScope{.color = node.style.background_color,
                         .begin = out.chars.size(),
                         .end = 0,
-                        .start_extent = vertical ? font_size / 2 : metrics.ascent,
-                        .size = vertical ? font_size : metrics.ascent + metrics.descent});
+                        .start_extent = vertical ? font_size / 2 : metrics->ascent,
+                        .size = vertical ? font_size : metrics->ascent + metrics->descent});
     scope = out.scopes.size() - 1;
   }
   if (const Result<void> result = collect(node.children, engine, percent_basis, out); !result) {

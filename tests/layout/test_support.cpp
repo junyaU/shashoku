@@ -95,8 +95,12 @@ float fake_ascent(float font_size) { return font_size * kAscentRatio; }
 float fake_descent(float font_size) { return font_size * kDescentRatio; }
 float fake_line_height(float font_size) { return fake_ascent(font_size) + fake_descent(font_size); }
 
-text::ShapedText FakeMeasurer::shape(std::u32string_view text, const text::TextStyle& style) {
+Result<text::ShapedText> FakeMeasurer::shape(std::u32string_view text,
+                                             const text::TextStyle& style) {
   ++shape_calls;
+  if (fail_on.find_first_of(text) != std::u32string_view::npos) {
+    return fail(ErrorKind::FontLoad, "FakeMeasurer: shape() を失敗させました");
+  }
   text::ShapedText out;
   for (std::size_t i = 0; i < text.size(); ++i) {
     const char32_t cp = text[i];
@@ -120,17 +124,21 @@ text::ShapedText FakeMeasurer::shape(std::u32string_view text, const text::TextS
       out.clusters.back().glyph_end = glyph_end;
       continue;
     }
-    out.clusters.push_back(text::ShapedCluster{.text_begin = static_cast<std::uint32_t>(i),
-                                               .text_end = static_cast<std::uint32_t>(i + 1),
-                                               .glyph_begin = glyph_end - 1,
-                                               .glyph_end = glyph_end,
-                                               .advance = advance,
-                                               .missing = false});
+    out.clusters.push_back(
+        text::ShapedCluster{.text_begin = static_cast<std::uint32_t>(i),
+                            .text_end = static_cast<std::uint32_t>(i + 1),
+                            .glyph_begin = glyph_end - 1,
+                            .glyph_end = glyph_end,
+                            .advance = advance,
+                            .missing = missing_chars.find(cp) != std::u32string::npos});
   }
   return out;
 }
 
-text::FontMetrics FakeMeasurer::metrics(const text::TextStyle& style) {
+Result<text::FontMetrics> FakeMeasurer::metrics(const text::TextStyle& style) {
+  if (fail_metrics) {
+    return fail(ErrorKind::FontLoad, "FakeMeasurer: metrics() を失敗させました");
+  }
   return text::FontMetrics{.ascent = style.font_size * ascent_ratio,
                            .descent = style.font_size * descent_ratio,
                            .line_gap = 0};

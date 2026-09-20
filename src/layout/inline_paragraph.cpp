@@ -23,12 +23,14 @@ class ParagraphBuilder {
         engine_(&engine),
         default_strictness_(engine.options().line_break.strictness) {}
 
-  void build();
+  [[nodiscard]] Result<void> build();
 
  private:
-  void build_ruby_item(std::size_t group_index);
+  [[nodiscard]] Result<void> build_ruby_item(std::size_t group_index);
+  void build_atomic_item(std::size_t at);
+  [[nodiscard]] Result<std::size_t> build_text_items(std::size_t begin);
   // [begin, end) を 1 回でシェーピングする。返すのは runs の添字。
-  std::size_t shape_run(std::size_t begin, std::size_t end);
+  [[nodiscard]] Result<std::size_t> shape_run(std::size_t begin, std::size_t end);
   // (c) このアイテムに効く行分割ポリシー（issue #2 / A28）。`style` はアイテムの代表の文字
   // （クラスタ先頭 / <img> / <br> / ルビ組の親文字の先頭）が属する要素の計算値の添字。
   [[nodiscard]] linebreak::Item policy_of(linebreak::Item item, std::size_t style) const {
@@ -47,19 +49,22 @@ class ParagraphBuilder {
   linebreak::Strictness default_strictness_;
 };
 
-std::size_t ParagraphBuilder::shape_run(std::size_t begin, std::size_t end) {
+Result<std::size_t> ParagraphBuilder::shape_run(std::size_t begin, std::size_t end) {
   std::u32string text;
   text.reserve(end - begin);
   for (std::size_t i = begin; i < end; ++i) {
     text.push_back(out_->chars[i].cp);
   }
   const std::size_t shaping = out_->styles.shaping_index(out_->chars[begin].style);
-  out_->runs.push_back(ShapedRun{.shaping = shaping,
-                                 .shaped = engine_->shape(text, out_->styles.shaping_at(shaping))});
+  Result<text::ShapedText> shaped = engine_->shape(text, out_->styles.shaping_at(shaping));
+  if (!shaped) {
+    return std::unexpected(shaped.error());
+  }
+  out_->runs.push_back(ShapedRun{.shaping = shaping, .shaped = std::move(*shaped)});
   return out_->runs.size() - 1;
 }
 
-void ParagraphBuilder::build_ruby_item(std::size_t group_index) {
+Result<void> ParagraphBuilder::build_ruby_item(std::size_t group_index) {
   const RubyGroup& group = (*groups_)[group_index];
   RubyPiece piece;
   piece.base_style = out_->chars[group.base_begin].style;
@@ -72,7 +77,11 @@ void ParagraphBuilder::build_ruby_item(std::size_t group_index) {
     while (end < group.base_end && out_->styles.shaping_index(out_->chars[end].style) == shaping) {
       ++end;
     }
-    const std::size_t run = shape_run(i, end);
+    const Result<std::size_t> shaped = shape_run(i, end);
+    if (!shaped) {
+      return std::unexpected(shaped.error());
+    }
+    const std::size_t run = *shaped;
     // 1 回のシェーピング結果を、装飾が変わる位置（クラスタ境界）で区間に切る
     const std::vector<text::ShapedCluster>& clusters = out_->runs[run].shaped.clusters;
     std::size_t first = 0;
@@ -101,9 +110,13 @@ void ParagraphBuilder::build_ruby_item(std::size_t group_index) {
 
   // ルビ文字。letter-spacing はルビには掛けない
   const std::size_t rt_style = group.rt_style;
+  Result<text::ShapedText> rt_shaped =
+      engine_->shape(group.rt_text, out_->styles.shaping(rt_style));
+  if (!rt_shaped) {
+    return std::unexpected(rt_shaped.error());
+  }
   out_->runs.push_back(
-      ShapedRun{.shaping = out_->styles.shaping_index(rt_style),
-                .shaped = engine_->shape(group.rt_text, out_->styles.shaping(rt_style))});
+      ShapedRun{.shaping = out_->styles.shaping_index(rt_style), .shaped = std::move(*rt_shaped)});
   piece.rt_run = out_->runs.size() - 1;
   piece.rt_style = rt_style;
   for (const text::ShapedCluster& cluster : out_->runs.back().shaped.clusters) {
@@ -135,74 +148,93 @@ void ParagraphBuilder::build_ruby_item(std::size_t group_index) {
                                      .image = kNone,
                                      .ruby = out_->rubies.size()});
   out_->rubies.push_back(std::move(piece));
+  return {};
 }
 
-void ParagraphBuilder::build() {
+// <img> と <br> は 1 文字で 1 アイテム。ポリシーはその要素自身の計算値（A28）。
+void ParagraphBuilder::build_atomic_item(std::size_t at) {
+  const FlatChar& flat = out_->chars[at];
+  const bool image = flat.kind == FlatChar::Kind::Image;
+  out_->items.push_back(
+      policy_of(linebreak::Item{.kind = image ? linebreak::ItemKind::Atomic
+                                              : linebreak::ItemKind::ForcedBreak,
+                                .cp = flat.cp,
+                                .advance = image ? out_->images[flat.image].margin_inline() : 0,
+                                .em = out_->font_size(flat.style),
+                                .no_break_before = false},
+                flat.style));
+  out_->sources.push_back(ItemSource{.run = kNone,
+                                     .glyph_begin = 0,
+                                     .glyph_end = 0,
+                                     .char_begin = at,
+                                     .char_end = at + 1,
+                                     .style = flat.style,
+                                     .image = flat.image,
+                                     .ruby = kNone});
+}
+
+// (b) **シェーピング属性**が同じ連続区間を 1 回でシェーピングし、(c) クラスタごとに
+// Item を作る（A6: 行ごとに測り直さない / A27: 色・letter-spacing・line-height の境界では
+// 切らない。切るとその位置のカーニングと合字が消える。issue #8）。返すのは区間の終わり。
+Result<std::size_t> ParagraphBuilder::build_text_items(std::size_t begin) {
+  const std::size_t shaping = out_->styles.shaping_index(out_->chars[begin].style);
+  std::size_t end = begin;
+  while (end < out_->chars.size() && out_->chars[end].kind == FlatChar::Kind::Text &&
+         out_->styles.shaping_index(out_->chars[end].style) == shaping &&
+         (end == begin || (*ruby_at_)[end] == kNone)) {
+    ++end;
+  }
+  const Result<std::size_t> shaped = shape_run(begin, end);
+  if (!shaped) {
+    return std::unexpected(shaped.error());
+  }
+  // 装飾・行高と行分割ポリシーは**クラスタ先頭の文字**のものを対応付ける（A27 / A28）。
+  // letter-spacing は送りに足す
+  for (const text::ShapedCluster& cluster : out_->runs[*shaped].shaped.clusters) {
+    const std::size_t at = begin + cluster.text_begin;
+    const std::size_t style_id = at < end ? out_->chars[at].style : out_->chars[begin].style;
+    out_->items.push_back(
+        policy_of(linebreak::Item{.kind = linebreak::ItemKind::Text,
+                                  .cp = at < end ? out_->chars[at].cp : 0,
+                                  .advance = cluster.advance + out_->letter_spacing(style_id),
+                                  .em = out_->font_size(style_id),
+                                  .no_break_before = false},
+                  style_id));
+    out_->sources.push_back(ItemSource{.run = *shaped,
+                                       .glyph_begin = cluster.glyph_begin,
+                                       .glyph_end = cluster.glyph_end,
+                                       .char_begin = at,
+                                       .char_end = begin + cluster.text_end,
+                                       .style = style_id,
+                                       .image = kNone,
+                                       .ruby = kNone});
+  }
+  return end;
+}
+
+Result<void> ParagraphBuilder::build() {
   std::size_t i = 0;
   while (i < out_->chars.size()) {
     if ((*ruby_at_)[i] != kNone) {
       const std::size_t group = (*ruby_at_)[i];
-      build_ruby_item(group);
+      if (const Result<void> built = build_ruby_item(group); !built) {
+        return built;
+      }
       i = (*groups_)[group].base_end;
       continue;
     }
-    const FlatChar& flat = out_->chars[i];
-    if (flat.kind != FlatChar::Kind::Text) {
-      // <img> と <br> はその要素自身の計算値を使う（A28）
-      const bool image = flat.kind == FlatChar::Kind::Image;
-      out_->items.push_back(
-          policy_of(linebreak::Item{.kind = image ? linebreak::ItemKind::Atomic
-                                                  : linebreak::ItemKind::ForcedBreak,
-                                    .cp = flat.cp,
-                                    .advance = image ? out_->images[flat.image].margin_inline() : 0,
-                                    .em = out_->font_size(flat.style),
-                                    .no_break_before = false},
-                    flat.style));
-      out_->sources.push_back(ItemSource{.run = kNone,
-                                         .glyph_begin = 0,
-                                         .glyph_end = 0,
-                                         .char_begin = i,
-                                         .char_end = i + 1,
-                                         .style = flat.style,
-                                         .image = flat.image,
-                                         .ruby = kNone});
+    if (out_->chars[i].kind != FlatChar::Kind::Text) {
+      build_atomic_item(i);
       ++i;
       continue;
     }
-    // (b) **シェーピング属性**が同じ連続区間を 1 回でシェーピングする
-    //     （A6: 行ごとに測り直さない / A27: 色・letter-spacing・line-height の境界では
-    //      切らない。切るとその位置のカーニングと合字が消える。issue #8）
-    const std::size_t shaping = out_->styles.shaping_index(flat.style);
-    std::size_t end = i;
-    while (end < out_->chars.size() && out_->chars[end].kind == FlatChar::Kind::Text &&
-           out_->styles.shaping_index(out_->chars[end].style) == shaping &&
-           (end == i || (*ruby_at_)[end] == kNone)) {
-      ++end;
+    const Result<std::size_t> end = build_text_items(i);
+    if (!end) {
+      return std::unexpected(end.error());
     }
-    const std::size_t run = shape_run(i, end);
-    // (c) クラスタ → Item。装飾・行高と行分割ポリシーは**クラスタ先頭の文字**のものを
-    //     対応付ける（A27 / A28）。letter-spacing は送りに足す
-    for (const text::ShapedCluster& cluster : out_->runs[run].shaped.clusters) {
-      const std::size_t at = i + cluster.text_begin;
-      const std::size_t style_id = at < end ? out_->chars[at].style : flat.style;
-      out_->items.push_back(
-          policy_of(linebreak::Item{.kind = linebreak::ItemKind::Text,
-                                    .cp = at < end ? out_->chars[at].cp : 0,
-                                    .advance = cluster.advance + out_->letter_spacing(style_id),
-                                    .em = out_->font_size(style_id),
-                                    .no_break_before = false},
-                    style_id));
-      out_->sources.push_back(ItemSource{.run = run,
-                                         .glyph_begin = cluster.glyph_begin,
-                                         .glyph_end = cluster.glyph_end,
-                                         .char_begin = at,
-                                         .char_end = i + cluster.text_end,
-                                         .style = style_id,
-                                         .image = kNone,
-                                         .ruby = kNone});
-    }
-    i = end;
+    i = *end;
   }
+  return {};
 }
 
 }  // namespace
@@ -232,10 +264,18 @@ Result<PreparedParagraph> prepare_paragraph(const InlineInput& input, LayoutEngi
   out.strut_style = out.styles.intern(*input.block_style, engine.map().direction());
   out.metrics.reserve(out.styles.shaping_count());
   for (std::size_t i = 0; i < out.styles.shaping_count(); ++i) {
-    out.metrics.push_back(engine.metrics(out.styles.shaping_at(i)));
+    Result<text::FontMetrics> metrics = engine.metrics(out.styles.shaping_at(i));
+    if (!metrics) {
+      return std::unexpected(metrics.error());
+    }
+    out.metrics.push_back(*metrics);
   }
 
-  ParagraphBuilder(out, collected->ruby_at, collected->rubies, engine).build();
+  if (const Result<void> built =
+          ParagraphBuilder(out, collected->ruby_at, collected->rubies, engine).build();
+      !built) {
+    return std::unexpected(built.error());
+  }
   engine.counters().style_probes += out.styles.probes();
   return out;
 }

@@ -384,6 +384,35 @@ row でも、固有寸法の計測（`content_intrinsic()`）と実配置が同�
   131,072 → 154。`shape_calls` は深さによらず**テキストノードの数**になる
 - メモの大きさは実際に行った計測の回数（最悪 d²）と段落の数に比例する。入力の上限は A25 が押さえる
 
+**A30. `TextMeasurer::shape()` / `metrics()` も `Result` を返す。「正常に 0 グリフ」と失敗を区別する。**
+A19 で `GlyphSource::rasterize()` を `Result` にしたが、計測側は値返しのままだったので、
+**測れなかったことを「空の結果」としてしか表せなかった**（issue #3 の後半。DESIGN.md §3-6 違反）。
+`shape()` が空を返すと行が 1 本も立たず、`metrics()` が `{}` を返すと行の高さが 0 になる。
+どちらも「成功したがテキストが消えた PNG」になる。分類（`Shaper` の実装。契約は
+[text_measurer.hpp](../src/text/text_measurer.hpp)）:
+
+| 事象 | 返すもの |
+|---|---|
+| 空文字列（グリフが 0 個）、既定無視文字だけの run、`font_size` が 0 | 成功（空の `ShapedText` / 送り 0） |
+| 豆腐（どのフォントにもグリフがない） | 成功 + `ShapedCluster::missing = true`（DESIGN.md §3-6 の唯一の例外） |
+| `FontStore` にフォントが 1 つもない、不正な `FontId`、非有限の `font_size` | `Internal`（呼び出し側のバグ） |
+| `hb_font_get_h_extents()` が偽（hhea / OS/2 が読めない） | `FontLoad` |
+| `hb_font_create()` が空のフォントを返す、`hb_buffer_allocation_successful()` が偽 | `OutOfMemory`（A26 の種類） |
+| グリフ数が 0 でないのに HarfBuzz がグリフ情報を返さない | `Internal` |
+
+- **`hb_buffer_allocation_successful()` は `hb_buffer_create()` 自体の失敗も捕まえる**
+  （確保に失敗すると `successful = false` の空のバッファが返るため）。だから
+  コンストラクタが `Result` を返せなくても、確保失敗を黙って握りつぶさずに済む
+- **フォントが 1 つもない `FontStore` はエラーにした。** それまでは「存在しない FontId 0 の
+  `.notdef` を全文字ぶん返す」で通っていて、失敗するのはラスタライズの段（A19 の `Internal`）だった。
+  api は空の `FontSet` を `NoFonts` で弾いているので、ここに来るのは呼び出し側のバグ
+- `font_size` が 0 や負のときは従来どおり送り 0 で成功する（CSS の `font-size: 0` は正当な指定で、
+  A19 の `pixel_size` と違ってラスタライザには渡らない）。非有限だけを `Internal` にする
+- layout 側の呼び出しは `LayoutEngine::shape()` / `metrics()`（A21 の計測カウンタ）に集約済みなので、
+  波及は機械的。**失敗した結果はメモに残さない**（A29 の準備済み段落は `Result` が成功した後でのみ
+  `remember()` する）。偽の `TextMeasurer`（`tests/layout/test_support.hpp`）には失敗を注入する口
+  （`fail_on` / `fail_metrics`）を足し、layout が伝播することをテストで固定した
+
 ---
 
 ## 2. モジュールと依存
@@ -593,6 +622,8 @@ struct MissingGlyph { char32_t cp; };   // 豆腐の記録。Shaper が溜め、
 - ラスタライズ: `FT_LOAD_NO_HINTING | FT_LOAD_NO_BITMAP`、`FT_RENDER_MODE_NORMAL`。
   sideways は輪郭を 90° 回してから描く（ビットマップを回すのではなく）。
   失敗は必ず `Result` のエラーで返す（A19 の表）。空のビットマップを返すのは空白グリフだけ
+- シェーピングと計測の失敗も必ず `Result` のエラーで返す（A30 の表）。成功して空の
+  `ShapedText` を返してよいのは入力が空文字列のときだけで、「測れなかった」を空で表さない
 - `FontStore::load()`: 輪郭を持たないフォント（`FT_IS_SCALABLE` が偽。埋め込みビットマップ専用の
   カラー絵文字フォントなど）は `FontLoad` で拒否する。ラスタライザは輪郭しか扱えないので、
   「全部の字が消えた PNG」になる前に一番早い段で落とす（A19）

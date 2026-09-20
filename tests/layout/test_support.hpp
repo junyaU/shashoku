@@ -32,11 +32,16 @@ inline constexpr float kDescentRatio = 0.12F;
 
 class FakeMeasurer final : public text::TextMeasurer {
  public:
-  text::ShapedText shape(std::u32string_view text, const text::TextStyle& style) override;
-  text::FontMetrics metrics(const text::TextStyle& style) override;
+  Result<text::ShapedText> shape(std::u32string_view text, const text::TextStyle& style) override;
+  Result<text::FontMetrics> metrics(const text::TextStyle& style) override;
 
   // フォールバックの再現。ここに入れた文字だけ font = 1 を返す
   std::u32string fallback_chars;
+  // 豆腐の再現。ここに入れた文字のクラスタは missing = true になる（issue #9）
+  std::u32string missing_chars;
+  // 失敗の注入（A30 / issue #3）。ここの文字を含む区間の shape() がエラーを返す
+  std::u32string fail_on;
+  bool fail_metrics = false;
   // メトリクスの比率。既定は 0.88 / 0.12（dump の文字列固定テストだけ切りのいい値に変える）
   float ascent_ratio = kAscentRatio;
   float descent_ratio = kDescentRatio;

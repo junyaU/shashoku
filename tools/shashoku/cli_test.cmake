@@ -52,6 +52,32 @@ elseif(CASE STREQUAL "image_ok")
     message(FATAL_ERROR "stderr に image-not-found がありません: ${missing_stderr}")
   endif()
 
+elseif(CASE STREQUAL "trim_flags")
+  # 約物の空きの旗（値を取らないオプション）。天付きにすると絵が変わる。
+  set(html "${WORK_DIR}/trim.html")
+  file(WRITE "${html}"
+       "<div style=\"font-size: 20px; width: 260px\">「天付きにすると行頭の括弧が詰まる。」</div>\n")
+  execute_process(
+    COMMAND "${CLI}" "${html}" --font "${font}" -o "${WORK_DIR}/plain.png" --width 300
+    RESULT_VARIABLE plain_status ERROR_VARIABLE stderr_text)
+  expect_equal("${plain_status}" "0" "exit code (stderr: ${stderr_text})")
+  execute_process(
+    COMMAND "${CLI}" "${html}" --font "${font}" -o "${WORK_DIR}/trimmed.png" --width 300
+            --trim-line-start --no-trim-line-end --no-collapse-punctuation
+    RESULT_VARIABLE trim_status ERROR_VARIABLE stderr_text)
+  expect_equal("${trim_status}" "0" "exit code (stderr: ${stderr_text})")
+  file(READ "${WORK_DIR}/plain.png" plain HEX)
+  file(READ "${WORK_DIR}/trimmed.png" trimmed HEX)
+  if(plain STREQUAL trimmed)
+    message(FATAL_ERROR "--trim-line-start が絵に反映されていません")
+  endif()
+
+  # 値を取らないので `=` を付けたら引数エラー（終了コード 2）
+  execute_process(
+    COMMAND "${CLI}" "${html}" --font "${font}" -o "${WORK_DIR}/never.png" --trim-line-start=1
+    RESULT_VARIABLE bad_status ERROR_VARIABLE bad_stderr)
+  expect_equal("${bad_status}" "2" "exit code for --trim-line-start=1")
+
 elseif(CASE STREQUAL "unsupported_css")
   set(html "${WORK_DIR}/unsupported.html")
   file(WRITE "${html}" "<div style=\"float: left\">あ</div>\n")

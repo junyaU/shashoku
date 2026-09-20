@@ -1,0 +1,21 @@
+<!-- ルビ（<ruby> / <rt> / <rp>）の見本。幅 460px で組むことを想定している。
+     ルビのぶん行が高くなるので line-height はゆとりを持たせる。
+
+       shashoku examples/ruby.html --font NotoSansJP-Regular.otf -o ruby.png --width 460
+-->
+<style>
+  .sheet { background: #fffdf7; padding: 20px; font-size: 19px; line-height: 2.1; color: #1f1b16; }
+  p      { margin-top: 0; margin-bottom: 14px; }
+  .last  { margin-bottom: 0; }
+  .accent{ color: #a03000; font-weight: 700; }
+  .narrow{ width: 200px; background-color: #f4efe4; padding: 10px; margin-bottom: 0; }
+</style>
+<div class="sheet">
+  <p><ruby>写植<rt>しゃしょく</rt></ruby>は、<ruby>東<rt>とう</rt>京<rt>きょう</rt></ruby>の街で
+  文字を組んでいた<ruby>機械<rt>きかい</rt></ruby>の名前です。</p>
+  <p><ruby>鳩<rt>はと</rt></ruby>のようにルビが親文字より長いときは、親文字の側を広げて中央に置きます。
+  <ruby>柿<rp>（</rp><rt>かき</rt><rp>）</rp></ruby>のように <span class="accent">rp</span> を
+  書いても、括弧は<span class="accent">描かれません</span>。</p>
+  <p class="narrow"><ruby>狭<rt>せま</rt></ruby>い<ruby>幅<rt>はば</rt></ruby>でも、
+  ルビの組の直後の<ruby>句読点<rt>くとうてん</rt></ruby>が行頭に落ちることはありません。</p>
+</div>

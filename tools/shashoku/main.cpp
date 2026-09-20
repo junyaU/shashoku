@@ -44,6 +44,12 @@ void print_usage(std::ostream& out) {
   --line-break <mode>     行分割の厳しさ strict | normal | loose（既定 strict）
   --dump-stage <stage>    中間表現を出す dom | style | box | display-list | svg
   -h, --help              この使い方を表示する
+
+約物の空き（JLREQ 3.1）:
+  --trim-line-start       行頭の始め括弧の前の空きを詰める（天付き。既定は詰めない）
+  --no-trim-line-end      行末の終わり括弧・句読点の後ろの空きを詰めない（既定は詰める）
+  --no-collapse-punctuation
+                          連続する約物の間の空きを詰めない（既定は詰める）
 )";
 }
 
@@ -172,6 +178,26 @@ class Parser {
     return std::ranges::find(kWithValue, name) != kWithValue.end();
   }
 
+  // 値を取らないオプション（約物の空きの切り替え）。
+  static std::expected<void, ArgumentError> apply_flag(std::string_view name, Arguments& parsed) {
+    shashoku::LineBreakConfig& config = parsed.options.line_break;
+    if (name == "--trim-line-start") {
+      config.trim_line_start = true;
+    } else if (name == "--no-trim-line-end") {
+      config.trim_line_end = false;
+    } else {
+      config.collapse_punctuation_spacing = false;  // --no-collapse-punctuation
+    }
+    return {};
+  }
+
+  static bool is_flag(std::string_view name) {
+    using namespace std::string_view_literals;
+    static constexpr std::array kFlags{"--trim-line-start"sv, "--no-trim-line-end"sv,
+                                       "--no-collapse-punctuation"sv};
+    return std::ranges::find(kFlags, name) != kFlags.end();
+  }
+
   // 引数 1 つぶん。`-` で始まらなければ入力ファイル。
   std::expected<void, ArgumentError> parse_one(std::string_view arg, Arguments& parsed) {
     if (!arg.starts_with('-')) {
@@ -182,6 +208,12 @@ class Parser {
       return {};
     }
     const auto [name, inline_value] = split(arg);
+    if (is_flag(name)) {
+      if (inline_value) {
+        return error(std::string(name) + " は値を取りません");
+      }
+      return apply_flag(name, parsed);
+    }
     if (!takes_value(name)) {
       return error("知らないオプションです: " + std::string(arg));
     }

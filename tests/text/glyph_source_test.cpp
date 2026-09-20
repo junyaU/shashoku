@@ -145,7 +145,8 @@ TEST(TextGlyphSource, IsDeterministic) {
 
   const GlyphBitmap first = must_rasterize(glyphs, jp, glyph, 24.0F);
   // 別のグリフやサイズを挟んでも結果が変わらないこと（FT_Face の状態に引きずられない）
-  (void)glyphs.rasterize(jp, store.glyph_for(jp, U'あ'), 48.0F, true);
+  const GlyphBitmap between = must_rasterize(glyphs, jp, store.glyph_for(jp, U'あ'), 48.0F, true);
+  ASSERT_TRUE(has_ink(between));
   const GlyphBitmap second = must_rasterize(glyphs, jp, glyph, 24.0F);
 
   EXPECT_EQ(first, second);

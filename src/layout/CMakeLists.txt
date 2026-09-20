@@ -8,6 +8,9 @@ shashoku_add_module(layout
     engine.cpp
     image.cpp
     intrinsic.cpp
+    inline_style.cpp
+    inline_collect.cpp
+    inline_paragraph.cpp
     inline_layout.cpp
     flex_layout.cpp
     layout.cpp

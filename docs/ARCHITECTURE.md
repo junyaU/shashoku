@@ -133,7 +133,8 @@ UCD から生成する。生成物（`src/*/[a-z_]*_table.inc`）はコミット
 （[src/layout/counters.hpp](../src/layout/counters.hpp)）を置き、`layout()` の最後の引数
 （`Counters*`、既定は nullptr）で受け取る。数えるのは layout_block / content_intrinsic /
 インライン整形文脈の準備 / `shape()` の回数と文字数 / `metrics()` / 行ボックス数 /
-行の構築の作業バッファ要素数 / 背景スコープの走査回数。約束は 3 つ:
+行の構築の作業バッファ要素数 / 背景スコープの走査回数 / 文字ごとの属性の表（A27）を引くのに
+行ったスタイルの比較の回数。約束は 3 つ:
 **出力に影響させない**（カウンタの値を読んで分岐しない）、**グローバル状態にしない**
 （DESIGN.md §3-5。LayoutEngine が参照を持つ）、**公開 API に出さない**。
 数え漏れが起きないよう、`TextMeasurer` の呼び出しは `LayoutEngine::shape()` / `metrics()` に通す。
@@ -262,6 +263,37 @@ issue #6）。上限は**入力の一部**なので純粋関数の性質は壊�
 「メモリを使い切らないこと」を保証するのは A25 の上限の仕事で、`OutOfMemory` は最後の網に過ぎない。
 依存ライブラリ（FreeType / HarfBuzz / zlib）の確保失敗は A19 の `Result` 化で拾う。
 `noexcept` は公開関数のどれにも付けない（付けると変換する前に `terminate` する）。
+
+**A27. 文字ごとの属性は層に分ける。シェーピングの境界と装飾の境界は別物。** かつては
+`font-family / font-weight / font-size / color / letter-spacing / line-height` を 1 つの
+`RunStyle` にまとめ、その一致で **シェーピングの区間と `TextFragment` の両方** を決めていた。
+そのため**色だけを変える `<span>` を挟むとそこで `shape()` が切れ、カーニングと合字が消えていた**
+（issue #8。`AVTo` の「o」が font-size の 1 割ずれる）。平坦化したインライン列の文字は
+[src/layout/inline_style.hpp](../src/layout/inline_style.hpp) の `CharStyleTable` に層ごとの
+添字で属性を持つ:
+
+| 層 | 中身 | 効き方 |
+|---|---|---|
+| シェーピング属性 | `text::TextStyle`（font-family / font-weight / font-size / direction） | **この層が等しい連続ごとに `shape()` を 1 回**。メトリクスもこの層で引く |
+| 装飾・行高属性 | color / letter-spacing / line-height | シェーピングの結果を変えない。クラスタ境界で対応付ける |
+
+- **グリフの位置は 1 回のシェーピング結果で決まり、装飾の有無で動かない。** `TextFragment` は
+  従来どおり「同じ FontId・サイズ・色・sideways の連続」で切る（= 1 回の shape 結果を、装飾の
+  境界とフォールバックの境界で複数の断片に切る）。描き分けは変わらず、位置だけが正しくなる
+- **1 つのクラスタ（合字・結合文字）が装飾の境界をまたぐ場合は、クラスタ先頭の文字の装飾を使う。**
+  クラスタは行分割の最小単位（A2）で内部では割らないので、2 色で塗り分ける置き場所がない。
+  先頭側を採るのは「その位置から始まる文字の指定が効く」と説明しやすいため
+- **行分割ポリシー（`line-break` / `overflow-wrap`）をシェーピング属性に入れてはいけない。**
+  入れるとその境界で `shape()` が切れ、#8 と同じ不具合を作る。A23 のとおりアイテムごとに
+  持たせる値なので、`CharStyleTable` に層を 1 本足して `linebreak::Item` に写す（#2）
+- 層の索引は内容で引く（同じ内容には同じ添字）。登録のたびに既存のスタイルを線形探索していると、
+  色違いの `<span>` が S 個ある段落で O(S²) になる（issue #10）ので、順序つきの索引で O(log S) に
+  する。**索引の順序と反復順は出力に使わない**（DESIGN.md §3-5）
+
+インライン整形文脈の実装は、この層分けに合わせて段の境界で 4 つのファイルに分かれている
+（`inline_style` / `inline_collect` = (a) / `inline_paragraph` = (b)(c) / `inline_layout` = (d)(e)）。
+(b)(c) までの結果は行の幅に依らないので `PreparedParagraph`（準備済み段落）として取り出してある。
+
 ---
 
 ## 2. モジュールと依存
@@ -560,11 +592,17 @@ std::string dump_json(const BoxTree&);
 - **block**: 幅は親から降り、高さは子から戻る。`width: auto` は利用可能幅いっぱい。
   `margin: 0 auto` の中央寄せ。兄弟間のマージン相殺（A10）。子が inline と block の混在なら
   inline の連続を無名ブロックで包む
-- **inline**: インライン整形文脈ごとに、(a) 空白の畳み込み（A14）→ (b) スタイルが同じ区間ごとに
-  `TextMeasurer::shape()` → (c) クラスタを `linebreak::Item` に変換（letter-spacing を advance に加算、
-  `<br>` は ForcedBreak、`<img>` とルビのまとまりは Atomic）→ (d) `LineBreaker::break_lines()` →
+- **inline**: インライン整形文脈ごとに、(a) 空白の畳み込み（A14）→ (b) **シェーピング属性**が
+  同じ区間ごとに `TextMeasurer::shape()`（色・letter-spacing・line-height の境界では切らない。A27）
+  → (c) クラスタを `linebreak::Item` に変換（装飾・行高はクラスタ先頭の文字のものを対応付け、
+  letter-spacing を advance に加算、`<br>` は ForcedBreak、`<img>` とルビのまとまりは Atomic）
+  → (d) `LineBreaker::break_lines()` →
   (e) 行ボックスを積み、`Spacing` と `text-align`（justify を含む。A13）を反映してグリフを配置。
-  行の高さは行内の各断片の `line-height` の最大、ベースラインは半行間（half-leading）で決める
+  `TextFragment` は「同じ FontId・サイズ・色・sideways の連続」で切る（1 回の shape 結果を、
+  装飾の境界とフォールバックの境界で複数の断片に切る。位置は動かない）。
+  行の高さは行内の各断片の `line-height` の最大、ベースラインは半行間（half-leading）で決める。
+  ファイルは段の境界で分けてある（A27 の末尾）。(a)〜(c) の結果 `PreparedParagraph` は
+  行の幅に依らないので、固有寸法の計測と実際の配置で同じものを使える
 - **flex**（Phase 6）: 単一行のみ（`flex-wrap` は対応外）。CSS Flexbox §9 のアルゴリズムのうち、
   flex-basis の解決 → grow / shrink の配分（min-content を下限に）→ 交差軸の整列 → justify-content → gap。
   アイテムの max-content / min-content は `kUnbounded` と `min_content_width()` で測る
@@ -582,7 +620,9 @@ std::string dump_json(const BoxTree&);
 `raster::DisplayList build_display_list(const layout::BoxTree&)`。木を前順に辿り、
 背景 → 枠線 → 子 の順で命令を出す。論理 → 物理の変換（A1）はここだけで行う:
 横書きは `x = inline, y = block`、縦書き（vertical-rl）は `x = viewport_width − block − block_size, y = inline`。
-同じフォント・サイズ・色・sideways が連続するグリフは 1 つの `DrawGlyphs` にまとめる。
+同じフォント・サイズ・色・sideways が連続するグリフは 1 つの `DrawGlyphs` にまとめる
+（`DrawGlyphs` の切れ目は**描き分けの都合だけ**で決まる。グリフの位置は layout が 1 回の
+シェーピングから決めていて、色でいくつに分かれても動かない。A27）。
 完全に透明な塗りは命令を出さない。`dump_json(const DisplayList&)` と、デバッグ用の
 `dump_svg()`（DESIGN.md §2「SVG はデバッグダンプに格下げ」。グリフは矩形で代用してよい）を持つ。
 

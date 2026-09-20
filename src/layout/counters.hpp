@@ -31,6 +31,10 @@ struct Counters {
   // インライン背景の構築で調べた（行, 背景スコープ）の組の数。
   // 行ごとに全スコープを舐めていると（#4）ここが行数×スコープ数に膨らむ。
   std::uint64_t background_probes = 0;
+  // 文字ごとの属性の表（inline_style.hpp）を引くのに行ったスタイルの比較の回数。
+  // 登録のたびに既存のスタイルを線形探索していると、色違いの span が S 個ある段落で
+  // ここが S² に膨らむ（issue #10 の L1 からの申し送り）。二分探索なら S×log S。
+  std::uint64_t style_probes = 0;
 };
 
 }  // namespace shashoku::layout

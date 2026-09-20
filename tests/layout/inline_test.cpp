@@ -1,8 +1,11 @@
+#include <cstddef>
 #include <string>
 #include <vector>
 
 #include <gtest/gtest.h>
 
+#include "core/color.hpp"
+#include "layout/counters.hpp"
 #include "layout/test_support.hpp"
 #include "linebreak/line_breaker.hpp"
 
@@ -442,6 +445,115 @@ TEST(LayoutInline, LineBreakAutoFollowsTheEngineDefault) {
   const auto strict_tree = run_layout(strict, options, measurer);
   ASSERT_TRUE(strict_tree.has_value());
   EXPECT_EQ(line_texts(*strict_tree), (std::vector<std::string>{"あっ", "い"}));
+}
+
+// ---- シェーピング境界と装飾境界の分離（issue #8 / A27）---------------------------------
+//
+// シェーピング属性（font-family / font-weight / font-size / direction）が等しい連続は
+// 1 回の shape() にまとめ、色・letter-spacing・line-height の境界では切らない。
+// 切るとその位置のカーニングと合字が消える（#8）。**偽の TextMeasurer はカーニングを
+// 持たないので、位置が戻ったことは tests/integration/shaping_test.cpp（本物の Shaper）で見る。**
+// ここで見るのは「切っていない」こと自体と、断片の分かれ方が変わっていないこと。
+
+constexpr Color kRed{255, 0, 0, 255};
+constexpr Color kBlue{0, 0, 255, 255};
+
+// 色だけが違う隣接 span では shape() を 1 回しか呼ばない。
+TEST(LayoutInline, ColorOnlySpansDoNotSplitShaping) {
+  FakeMeasurer measurer;
+  const auto root = build({block({
+      text("A"),
+      inline_box({text("V")}, [](ComputedStyle& style) { style.color = kRed; }),
+      text("T"),
+      inline_box({text("o")}, [](ComputedStyle& style) { style.color = kBlue; }),
+  })});
+  Counters counters;
+  const auto tree = run_layout(root, make_options(400), measurer, counters);
+  ASSERT_TRUE(tree.has_value());
+
+  EXPECT_EQ(counters.shape_calls, 1U) << "色の境界でシェーピングが切れている（#8）";
+  EXPECT_EQ(counters.shaped_chars, 4U);
+
+  // 断片は色の境界で分かれたまま（描き分けは従来どおり）。位置は 1 回のシェーピングのもの
+  const std::vector<const LineBox*> lines = all_lines(*tree);
+  ASSERT_EQ(lines.size(), 1U);
+  const std::vector<const TextFragment*> fragments = text_fragments(*lines[0]);
+  ASSERT_EQ(fragments.size(), 4U);
+  EXPECT_EQ(fragments[0]->color, kBlack);
+  EXPECT_EQ(fragments[1]->color, kRed);
+  EXPECT_EQ(fragments[2]->color, kBlack);
+  EXPECT_EQ(fragments[3]->color, kBlue);
+  EXPECT_EQ(glyph_positions(*lines[0]), (std::vector<float>{0, 8, 16, 24}));
+}
+
+// letter-spacing・line-height・background-color も送り / 行の高さ / 背景に効くだけで、
+// シェーピングの結果を変えない。
+TEST(LayoutInline, OtherDecorationSpansDoNotSplitShaping) {
+  FakeMeasurer measurer;
+  const auto root = build({block({
+      text("あ"),
+      inline_box({text("い")}, [](ComputedStyle& style) { style.letter_spacing = 4; }),
+      inline_box({text("う")},
+                 [](ComputedStyle& style) {
+                   style.line_height = style::LineHeight{style::LineHeight::Kind::Px, 40};
+                 }),
+      inline_box({text("え")}, [](ComputedStyle& style) { style.background_color = kRed; }),
+  })});
+  Counters counters;
+  const auto tree = run_layout(root, make_options(400), measurer, counters);
+  ASSERT_TRUE(tree.has_value());
+
+  EXPECT_EQ(counters.shape_calls, 1U);
+  const std::vector<const LineBox*> lines = all_lines(*tree);
+  ASSERT_EQ(lines.size(), 1U);
+  // letter-spacing は「い」の送りにだけ足される（クラスタ単位で効く）
+  EXPECT_EQ(glyph_positions(*lines[0]), (std::vector<float>{0, 16, 36, 52}));
+  // line-height: 40px の span が行の高さを決める
+  EXPECT_FLOAT_EQ(lines[0]->rect.block_size, 40);
+  ASSERT_EQ(backgrounds(*lines[0]).size(), 1U);
+}
+
+// シェーピング属性の境界では従来どおり分かれる。
+TEST(LayoutInline, ShapingAttributesStillSplitRuns) {
+  const auto count_shape_calls = [](const StyleFn& span_style) {
+    FakeMeasurer measurer;
+    const auto root =
+        build({block({text("あ"), inline_box({text("い")}, span_style), text("う")})});
+    Counters counters;
+    const auto tree = run_layout(root, make_options(400), measurer, counters);
+    EXPECT_TRUE(tree.has_value());
+    return counters.shape_calls;
+  };
+
+  EXPECT_EQ(count_shape_calls([](ComputedStyle& style) { style.font_size = 32; }), 3U);
+  EXPECT_EQ(count_shape_calls([](ComputedStyle& style) { style.font_weight = 700; }), 3U);
+  EXPECT_EQ(count_shape_calls([](ComputedStyle& style) { style.font_family = {"Other"}; }), 3U);
+  // 比較: 色だけなら分かれない
+  EXPECT_EQ(count_shape_calls([](ComputedStyle& style) { style.color = kRed; }), 1U);
+}
+
+// 1 つのクラスタ（結合文字・合字）が装飾の境界をまたぐときは、**クラスタ先頭の文字**の
+// 装飾を使う（A27）。偽の TextMeasurer では U+3099 が直前のクラスタに吸収される。
+TEST(LayoutInline, ClusterAcrossADecorationBoundaryTakesTheFirstCharsDecoration) {
+  FakeMeasurer measurer;
+  const auto root = build({block({
+      text("か"),
+      inline_box({text("゙")}, [](ComputedStyle& style) { style.color = kRed; }),
+      text("き"),
+  })});
+  Counters counters;
+  const auto tree = run_layout(root, make_options(400), measurer, counters);
+  ASSERT_TRUE(tree.has_value());
+
+  EXPECT_EQ(counters.shape_calls, 1U);
+  const std::vector<const LineBox*> lines = all_lines(*tree);
+  ASSERT_EQ(lines.size(), 1U);
+  const std::vector<const TextFragment*> fragments = text_fragments(*lines[0]);
+  // 「か」+ 濁点 は 1 クラスタなので 1 つの断片にまとまり、色はクラスタ先頭の「か」のもの
+  ASSERT_EQ(fragments.size(), 1U);
+  EXPECT_EQ(fragments[0]->color, kBlack);
+  EXPECT_EQ(fragments[0]->glyphs.size(), 3U);
+  EXPECT_EQ(glyph_positions(*lines[0]), (std::vector<float>{0, 16, 16}));
 }
 
 }  // namespace

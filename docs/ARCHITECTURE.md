@@ -103,10 +103,10 @@ CSS どおりに効く。`box-sizing` は content-box のみ（A11）なので�
 黙って落ちていた（issue #2）。`linebreak::Item` に `std::optional<Strictness> strictness` と
 `std::optional<bool> break_anywhere` を持たせ、nullopt なら `Config` の値を使う
 （すべて nullopt なら出力は従来と完全に同じ）。
-CSS Text Level 3 の「Line Breaking Details」（現行 TR では §5.5。本書の他の引用が使う旧番号では §5.1）は
-*「which elements' line-break, word-break, and overflow-wrap properties control the determination of
-soft wrap opportunities at such boundaries is undefined in this level」* としているので、境界は
-仕様に反しない範囲でこちらで決める:
+CSS Text Level 3 の「Line Breaking Details」（2026-09 時点の TR では §5.5。本書の他の引用が使っている
+版とは節番号がずれている）は *「which elements' line-break, word-break, and overflow-wrap properties
+control the determination of soft wrap opportunities at such boundaries is undefined in this level」*
+としているので、境界は仕様に反しない範囲でこちらで決める:
 
 - **`strictness` は「分割クラスの解決」にだけ使い、アイテム自身の値で解決する。** CJ（小書きの仮名・
   長音）を NS とみなすか ID とみなすか、loose の追加規則（‥ … 々 ・ ！ ％ ￥ など）で ID に
@@ -123,6 +123,7 @@ soft wrap opportunities at such boundaries is undefined in this level」* とし
   `break-word` 相当）。CSS Text 3 §5.4 は `anywhere` を min-content に効かせると定めているが、
   現行の `Config::break_anywhere` は `anywhere` と `break-word` を 1 つのフラグにまとめているので
   区別しない。区別が要るようになったら `Config` の意味論の問題として別に決める
+
 ---
 
 ## 2. モジュールと依存

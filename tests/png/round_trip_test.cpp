@@ -75,6 +75,32 @@ TEST(PngRoundTrip, TallAndWide) {
   expect_round_trip(test::make_gradient(512, 1), "512x1");
 }
 
+// 圧縮レベルは「どれだけ縮めるか」だけを変える。0〜9 のどれでも元の Bitmap に戻る
+// （ARCHITECTURE.md A33。受け入れ条件「どのレベルでも encode → decode が元に戻る」）。
+TEST(PngRoundTrip, EveryCompressionLevel) {
+  const std::vector<Bitmap> images{
+      test::make_solid(1, 1, Color{9, 8, 7, 6}),
+      test::make_solid(48, 32, Color{0x33, 0x66, 0x99, 0x80}),
+      test::make_gradient(97, 61),
+      test::make_noise(64, 40, 20260920),
+  };
+  for (const Bitmap& image : images) {
+    for (int level = 0; level <= 9; ++level) {
+      const Result<std::vector<std::uint8_t>> encoded = encode(image, level);
+      ASSERT_TRUE(encoded.has_value())
+          << "level " << level << ": "
+          << (encoded.has_value() ? std::string{} : to_string(encoded.error()));
+      const Result<Bitmap> decoded = decode(*encoded);
+      ASSERT_TRUE(decoded.has_value())
+          << "level " << level << ": "
+          << (decoded.has_value() ? std::string{} : to_string(decoded.error()));
+      EXPECT_EQ(decoded->width, image.width) << "level " << level;
+      EXPECT_EQ(decoded->height, image.height) << "level " << level;
+      EXPECT_EQ(decoded->rgba, image.rgba) << "level " << level;
+    }
+  }
+}
+
 TEST(PngRoundTrip, EveryByteValueSurvives) {
   // 256 通りのバイト値がすべて素通しされることを 1 枚で確かめる
   Bitmap bitmap(256, 1);

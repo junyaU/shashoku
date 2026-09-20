@@ -253,6 +253,7 @@ struct RenderOptions {
   float scale = 1.0f;                // 2.0 で Retina 向け 2 倍解像度
   LineBreakConfig line_break;        // 禁則テーブル・OverflowPolicy
   RenderLimits limits;               // 入力の上限（バイト数・ノード数・font-size・画素数…）
+  int compression_level = 6;         // PNG（zlib）の圧縮レベル 0〜9。範囲外は InvalidOption
 };
 
 // 処理全体の予算。上限は「入力の一部」なので、同じ入力 + 同じ上限なら出力も同じ。
@@ -283,6 +284,7 @@ render(std::string_view html, const FontSet& fonts, const RenderOptions& opts);
 
 - エラー（`RenderError`）: パース失敗、未対応タグ / プロパティ / 値、フォント読込失敗、上限超過（`LimitExceeded`）、メモリ不足（`OutOfMemory`）。**どの入力のどこが原因かを必ず含める**
 - 信頼できない HTML を受けるときは `RenderOptions::limits` で予算を決める。メモリ不足の扱い（`OutOfMemory` は最善努力で、保証は上限の側）は ARCHITECTURE.md A26
+- **圧縮レベルも「入力の一部」**。同じ HTML + 同じ `RenderOptions` なら常に同じバイト列が出る。レベルを変えるとファイルの大きさは変わるが、デコードした画素は 1 ビットも変わらない（ARCHITECTURE.md A33）
 - CLI も薄く用意する: `shashoku input.html --font NotoSansJP.ttf -o out.png --dump-stage=box`
 
 ## 9. 開発フェーズ（出口から通す）

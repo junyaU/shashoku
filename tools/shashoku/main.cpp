@@ -40,6 +40,7 @@ void print_usage(std::ostream& out) {
   --width <N>             ビューポートの幅（CSS px、既定 1200）
   --height <N>            ビューポートの高さ（CSS px、既定は内容の高さに追従）
   --scale <S>             出力倍率（既定 1.0。2.0 で Retina 向け）
+  --compression <N>       PNG の圧縮レベル 0〜9（既定 6。0 が最速、9 が最小）
   --overflow <policy>     あふれ処理 oidashi | oikomi | burasage（既定 oidashi）
   --line-break <mode>     行分割の厳しさ strict | normal | loose（既定 strict）
   --dump-stage <stage>    中間表現を出す dom | style | box | display-list | svg
@@ -172,9 +173,10 @@ class Parser {
   // 値を取るオプションの一覧（shashoku の CLI に旗だけのオプションは無い）。
   static bool takes_value(std::string_view name) {
     using namespace std::string_view_literals;
-    static constexpr std::array kWithValue{
-        "--font"sv,   "--image"sv, "-o"sv,         "--output"sv,     "--width"sv,
-        "--height"sv, "--scale"sv, "--overflow"sv, "--line-break"sv, "--dump-stage"sv};
+    static constexpr std::array kWithValue{"--font"sv,       "--image"sv,       "-o"sv,
+                                           "--output"sv,     "--width"sv,       "--height"sv,
+                                           "--scale"sv,      "--compression"sv, "--overflow"sv,
+                                           "--line-break"sv, "--dump-stage"sv};
     return std::ranges::find(kWithValue, name) != kWithValue.end();
   }
 
@@ -243,6 +245,9 @@ class Parser {
     if (name == "--scale") {
       return apply_scale(value, parsed);
     }
+    if (name == "--compression") {
+      return apply_compression(value, parsed);
+    }
     if (name == "--overflow") {
       return apply_overflow(value, parsed);
     }
@@ -281,6 +286,17 @@ class Parser {
       return error("--scale には数値を指定します: " + std::string(value));
     }
     parsed.options.scale = *number;
+    return {};
+  }
+
+  // 範囲の検査は render() に任せる（オプションの正は 1 か所）。ここは形の検査だけ。
+  static std::expected<void, ArgumentError> apply_compression(std::string_view value,
+                                                              Arguments& parsed) {
+    const std::optional<int> number = parse_int(value);
+    if (!number) {
+      return error("--compression には 0〜9 の整数を指定します: " + std::string(value));
+    }
+    parsed.options.compression_level = *number;
     return {};
   }
 

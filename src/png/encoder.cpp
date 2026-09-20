@@ -23,6 +23,11 @@ constexpr std::size_t kBytesPerPixel = 4;  // color type 6 / bit depth 8
 constexpr std::uint8_t kColorTypeRgba = 6;
 constexpr std::uint8_t kBitDepth = 8;
 constexpr std::uint32_t kMaxChunkLength = 0x7FFFFFFFU;  // PNG のチャンク長は 31bit
+// zlib の圧縮レベルの範囲（Z_NO_COMPRESSION 〜 Z_BEST_COMPRESSION）。
+// Z_DEFAULT_COMPRESSION（-1）は「zlib に任せる」を意味する別物なので受け付けない
+// （同じ値でも zlib の版によって実際のレベルが変わりうる。決定性のため）。
+constexpr int kMinCompressionLevel = 0;
+constexpr int kMaxCompressionLevel = 9;
 
 // フィルタ種別（PNG 仕様 §9.2）。番号がそのままフィルタバイトになる。
 enum class Filter : std::uint8_t { None = 0, Sub = 1, Up = 2, Average = 3, Paeth = 4 };
@@ -43,37 +48,73 @@ std::uint8_t paeth_predictor(std::uint8_t a, std::uint8_t b, std::uint8_t c) {
   return c;
 }
 
-// 1 行に filter を適用して out に書く。raw / prior / out は同じ長さ。
-void apply_filter(Filter filter, std::span<const std::uint8_t> raw,
-                  std::span<const std::uint8_t> prior, std::span<std::uint8_t> out) {
-  for (std::size_t i = 0; i < raw.size(); ++i) {
-    const std::uint8_t a = i >= kBytesPerPixel ? raw[i - kBytesPerPixel] : 0;
-    const std::uint8_t b = prior[i];
-    const std::uint8_t c = i >= kBytesPerPixel ? prior[i - kBytesPerPixel] : 0;
-    std::uint8_t pred = 0;
-    switch (filter) {
-      case Filter::None:
-        pred = 0;
-        break;
-      case Filter::Sub:
-        pred = a;
-        break;
-      case Filter::Up:
-        pred = b;
-        break;
-      case Filter::Average:
-        pred = static_cast<std::uint8_t>((unsigned{a} + unsigned{b}) / 2U);
-        break;
-      case Filter::Paeth:
-        pred = paeth_predictor(a, b, c);
-        break;
-    }
-    // 差は 8bit の剰余で取る（PNG 仕様 §9.2）。
-    out[i] = static_cast<std::uint8_t>(int{raw[i]} - int{pred});
+// F の予測値（PNG 仕様 §9.2）。a=左, b=上, c=左上。
+template <Filter F>
+unsigned predictor(std::uint8_t a, std::uint8_t b, std::uint8_t c) {
+  if constexpr (F == Filter::Sub) {
+    return a;
+  } else if constexpr (F == Filter::Up) {
+    return b;
+  } else if constexpr (F == Filter::Average) {
+    return (unsigned{a} + unsigned{b}) / 2U;
+  } else if constexpr (F == Filter::Paeth) {
+    return paeth_predictor(a, b, c);
+  } else {
+    return 0U;  // None
+  }
+}
+
+// 1 バイトぶんの残差。差は 8bit の剰余で取る（PNG 仕様 §9.2）。
+template <Filter F>
+std::uint8_t residual(std::uint8_t x, std::uint8_t a, std::uint8_t b, std::uint8_t c) {
+  return static_cast<std::uint8_t>(unsigned{x} - predictor<F>(a, b, c));
+}
+
+// 1 行に F を適用して out に書く。raw / prior / out は同じ長さ。
+//
+// フィルタ種別が**テンプレート引数**なのが速さの肝（A33）。種別を実行時の引数にして
+// 1 バイトごとに switch していたときは、繰り返しの中の分岐のせいでベクトル化できず、
+// 行走査だけで 12.9 ms かかっていた（1200x630）。種別ごとに関数を分けると 5.3 ms になる。
+//
+// 先頭 1 画素ぶんは左（a）と左上（c）が無いので 0 とみなす（PNG 仕様 §9.2）。そこだけを
+// 別の繰り返しに切り出してあるので、残りの繰り返しには境界の条件分岐が入らない。
+template <Filter F>
+void filter_row(std::span<const std::uint8_t> raw, std::span<const std::uint8_t> prior,
+                std::span<std::uint8_t> out) {
+  const std::size_t size = raw.size();
+  const std::size_t head = std::min(size, kBytesPerPixel);
+  for (std::size_t i = 0; i < head; ++i) {
+    out[i] = residual<F>(raw[i], 0, prior[i], 0);
+  }
+  for (std::size_t i = head; i < size; ++i) {
+    out[i] = residual<F>(raw[i], raw[i - kBytesPerPixel], prior[i], prior[i - kBytesPerPixel]);
+  }
+}
+
+// 種別で呼び分ける。分岐はここ（1 行に 1 回）だけで、行の中には持ち込まない。
+void filter_row(Filter filter, std::span<const std::uint8_t> raw,
+                std::span<const std::uint8_t> prior, std::span<std::uint8_t> out) {
+  switch (filter) {
+    case Filter::None:
+      filter_row<Filter::None>(raw, prior, out);
+      return;
+    case Filter::Sub:
+      filter_row<Filter::Sub>(raw, prior, out);
+      return;
+    case Filter::Up:
+      filter_row<Filter::Up>(raw, prior, out);
+      return;
+    case Filter::Average:
+      filter_row<Filter::Average>(raw, prior, out);
+      return;
+    case Filter::Paeth:
+      filter_row<Filter::Paeth>(raw, prior, out);
+      return;
   }
 }
 
 // PNG 仕様 §12.8 のヒューリスティック: 符号つきバイトとみなした絶対値の和。
+// 残差を書く繰り返しとは分けてある（融合すると 8bit のまま進めなくなって遅くなる。A33）。
 std::uint64_t filter_cost(std::span<const std::uint8_t> filtered) {
   std::uint64_t sum = 0;
   for (const std::uint8_t v : filtered) {
@@ -123,13 +164,12 @@ std::array<std::uint8_t, 13> make_ihdr(std::uint32_t width, std::uint32_t height
 std::vector<std::uint8_t> filter_image(const Bitmap& bitmap, std::size_t stride) {
   std::vector<std::uint8_t> raw((stride + 1) * bitmap.height);
   const std::vector<std::uint8_t> zero_row(stride, 0);
-
-  std::array<std::vector<std::uint8_t>, kFilterCount> candidates;
-  for (std::vector<std::uint8_t>& candidate : candidates) {
-    candidate.resize(stride);
-  }
+  // 候補は 1 行ぶんの作業バッファで使い回す（5 本持っても速くならず、広い絵ではキャッシュに
+  // 載らなくなるだけ）。勝ったフィルタだけを、最後にもう一度だけ出力の位置へ適用する。
+  std::vector<std::uint8_t> scratch(stride);
 
   const std::span<const std::uint8_t> pixels(bitmap.rgba);
+  const std::span<std::uint8_t> out(raw);
   std::size_t out_pos = 0;
   for (std::uint32_t y = 0; y < bitmap.height; ++y) {
     const std::span<const std::uint8_t> row = pixels.subspan(std::size_t{y} * stride, stride);
@@ -140,8 +180,8 @@ std::vector<std::uint8_t> filter_image(const Bitmap& bitmap, std::size_t stride)
     std::size_t best = 0;
     std::uint64_t best_cost = 0;
     for (std::size_t f = 0; f < kFilterCount; ++f) {
-      apply_filter(static_cast<Filter>(f), row, prior, candidates[f]);
-      const std::uint64_t cost = filter_cost(candidates[f]);
+      filter_row(static_cast<Filter>(f), row, prior, scratch);
+      const std::uint64_t cost = filter_cost(scratch);
       // 同点なら番号の小さいフィルタを選ぶ（仕様は同点の扱いを決めていないので自分で固定する）。
       if (f == 0 || cost < best_cost) {
         best_cost = cost;
@@ -151,7 +191,7 @@ std::vector<std::uint8_t> filter_image(const Bitmap& bitmap, std::size_t stride)
 
     raw[out_pos] = static_cast<std::uint8_t>(best);
     ++out_pos;
-    std::ranges::copy(candidates[best], raw.begin() + static_cast<std::ptrdiff_t>(out_pos));
+    filter_row(static_cast<Filter>(best), row, prior, out.subspan(out_pos, stride));
     out_pos += stride;
   }
   return raw;
@@ -159,11 +199,16 @@ std::vector<std::uint8_t> filter_image(const Bitmap& bitmap, std::size_t stride)
 
 }  // namespace
 
-Result<std::vector<std::uint8_t>> encode(const Bitmap& bitmap) {
+Result<std::vector<std::uint8_t>> encode(const Bitmap& bitmap, int compression_level) {
   if (bitmap.width == 0 || bitmap.height == 0) {
     return fail(ErrorKind::InvalidOption,
                 std::format("cannot encode a PNG with zero {}: the bitmap is {}x{}",
                             bitmap.width == 0 ? "width" : "height", bitmap.width, bitmap.height));
+  }
+  if (compression_level < kMinCompressionLevel || compression_level > kMaxCompressionLevel) {
+    return fail(ErrorKind::InvalidOption,
+                std::format("compression level must be between {} and {} (got {})",
+                            kMinCompressionLevel, kMaxCompressionLevel, compression_level));
   }
   const std::uint64_t needed =
       std::uint64_t{bitmap.width} * bitmap.height * std::uint64_t{kBytesPerPixel};
@@ -176,14 +221,14 @@ Result<std::vector<std::uint8_t>> encode(const Bitmap& bitmap) {
   const std::size_t stride = static_cast<std::size_t>(bitmap.width) * kBytesPerPixel;
   const std::vector<std::uint8_t> raw = filter_image(bitmap, stride);
 
-  // zlib の設定は固定する（レベル・ストラテジ・windowBits・memLevel を変えると
-  // 出力バイト列が変わり、ゴールデンテストが崩れる）。compress2 は deflateInit 相当なので
-  // ストラテジ / windowBits / memLevel はすべて既定値になる。
+  // レベル以外の zlib の設定は固定する（ストラテジ・windowBits・memLevel を変えると
+  // 出力バイト列が変わる）。compress2 は deflateInit 相当なので、それらはすべて既定値になる。
+  // レベルは入力の一部（A33）: 同じレベルなら常に同じバイト列が出る。
   uLongf compressed_size = compressBound(static_cast<uLong>(raw.size()));
   std::vector<std::uint8_t> compressed(compressed_size);
   const int rc = compress2(reinterpret_cast<Bytef*>(compressed.data()), &compressed_size,
                            reinterpret_cast<const Bytef*>(raw.data()),
-                           static_cast<uLong>(raw.size()), Z_BEST_COMPRESSION);
+                           static_cast<uLong>(raw.size()), compression_level);
   if (rc != Z_OK) {
     return fail(ErrorKind::Internal,
                 std::format("zlib compress2 failed with code {} while encoding a {}x{} PNG", rc,

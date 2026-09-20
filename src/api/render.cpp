@@ -55,6 +55,11 @@ static_assert(RenderLimits{}.image_pixels == png::kMaxPixels,
 static_assert(RenderLimits{}.device_pixels == raster::kMaxDevicePixels,
               "RenderLimits::device_pixels と raster::kMaxDevicePixels の既定値が食い違っている");
 
+// 圧縮レベル（A33）も同じ流儀: 既定値は RenderOptions が正で、png は単体利用の既定を持つ。
+static_assert(
+    RenderOptions{}.compression_level == png::kDefaultCompressionLevel,
+    "RenderOptions::compression_level と png::kDefaultCompressionLevel の既定値が食い違っている");
+
 // ---------------------------------------------------------------------------
 // オプションの検証と変換
 // ---------------------------------------------------------------------------
@@ -113,6 +118,13 @@ Result<void> validate(const RenderOptions& options) {
     return fail(ErrorKind::LimitExceeded, std::format("scale is {}, which exceeds the limit of {} "
                                                       "(raise RenderLimits::scale to allow it)",
                                                       options.scale, options.limits.scale));
+  }
+  // 圧縮レベル（A33）。png::encode も同じ範囲を検査するが、ここで弾けば
+  // 「オプションの誤りは HTML を読む前に分かる」という順序（§3.10）を保てる。
+  if (options.compression_level < 0 || options.compression_level > 9) {
+    return fail(ErrorKind::InvalidOption,
+                std::format("compression level must be between 0 and 9 (got {})",
+                            options.compression_level));
   }
   return {};
 }
@@ -429,7 +441,8 @@ Result<RenderResult> render_impl(std::string_view html, const FontSet& fonts,
     }
     return std::unexpected(bitmap.error());
   }
-  Result<std::vector<std::uint8_t>> encoded = png::encode(*bitmap);
+  // 圧縮レベルは必ず明示的に渡す（既定値を 2 か所で別々に持たない。A25 / A33）。
+  Result<std::vector<std::uint8_t>> encoded = png::encode(*bitmap, options.compression_level);
   if (!encoded) {
     return std::unexpected(encoded.error());
   }

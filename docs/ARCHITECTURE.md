@@ -489,6 +489,58 @@ PNG のバイト列を 2 つに割り、それぞれ別の方法で固定した:
 保証する範囲・保証しない範囲は [README の「決定性」](../README.md#決定性同じ入力から同じ-png)に
 利用者向けに書いてある。
 
+**A33. zlib の圧縮レベルは入力の一部。それ以外の設定は固定のまま。フィルタ選択は
+「選ばれるフィルタを 1 つも変えない」形で速くする。**
+`render()` の時間の約 90% が PNG エンコードだった（OG カード 1200x630 で 63.4 ms 中 56.9 ms。
+issue #13）。原因は 2 つで、**`Z_BEST_COMPRESSION` 固定**と、**行ごとのフィルタ選択が
+ベクトル化できていなかった**こと。
+
+- **レベルは `RenderOptions::compression_level`（0〜9、既定 6）。** 決定性は「同じ入力 →
+  同じバイト列」であって「レベルが 1 つしかないこと」ではないので、レベルが入力に加わるだけでは
+  DESIGN.md §3-5 は崩れない（A25 の上限と同じ理屈）。範囲外は `InvalidOption`。
+  `Z_DEFAULT_COMPRESSION`（-1）は受け付けない: 同じ値でも zlib の版によって実際のレベルが
+  変わりうるため。**ストラテジ・windowBits・memLevel は従来どおり固定**で、増やすつもりもない
+  （`compress2` の既定。設定が増えるほど「同じ絵なのに違うファイル」が増える）
+- 既定を 9 から 6（zlib の既定）に下げた。ファイルは 1〜2% 大きくなるが、エンコードは 4 分の 1
+  になる。最小サイズが要る使い方（画像を配布物に焼き込む等）では 9 を指定できる
+- 既定値は `RenderOptions` が正で、`png::kDefaultCompressionLevel` は png を単体で使うときの
+  既定。両者の一致は `src/api/render.cpp` の `static_assert` が検査する（A25 と同じ流儀）。
+  api は既定に頼らず必ず明示的に渡す
+- **フィルタ選択の最適化は出力バイト列を 1 ビットも変えない。** 速くなった理由は
+  「フィルタ種別を実行時の引数からテンプレート引数に移した」ことだけ。1 バイトごとに
+  `switch (filter)` していたせいで、5 種ともベクトル化されていなかった（1200x630 の行走査で
+  12.9 ms）。種別ごとに関数を分けると 5.3 ms になる。境界（先頭 1 画素は左と左上が無い）も
+  別の繰り返しに切り出して、残りから条件分岐を追い出した
+- **候補バッファは 5 本から 1 本に。** 勝ったフィルタだけを最後にもう一度だけ出力の位置へ
+  適用する。5 本のままでも速さは同じだったが、広い絵ではキャッシュに載らなくなるだけなので
+  1 本にした
+- **残差の書き出しと絶対値和は融合しない。** 1 パスにまとめると、合計のために 32bit へ広げる
+  必要が出て残差の計算まで 32bit レーンに落ち、**2 倍遅くなった**（11.0 ms）。
+  「パスを減らす」が常に速いとは限らない
+- SIMD の組み込み関数は書かない（移植性と決定性のため。自動ベクトル化に任せる）。
+  libm にも触らない（A9）
+
+計測（release、i9-14900KF、21 回の中央値。`png::encode` のみ。load average 1.4〜1.6 の静かな状態で測った。
+同じマシンで他のビルドが走っていると 1.5〜2 倍に膨らむので、絶対値ではなく比を見ること）:
+
+| 入力 | 修正前（level 9） | 修正後 level 9 | 修正後 level 6（新しい既定） |
+|---|---:|---:|---:|
+| OG カード 1200x630 | 59.1 ms / 73,689 B | 51.7 ms / 73,689 B | **12.5 ms** / 74,733 B |
+| OG カード @2x 2400x1260 | 154.7 ms / 158,939 B | 126.1 ms / 158,939 B | **45.4 ms** / 161,517 B |
+| 和文の長いページ 800x1320 | 189.0 ms / 361,482 B | 179.3 ms / 361,482 B | **26.8 ms** / 366,026 B |
+
+フィルタ選択の段だけ（level 0 で測ったもの。zlib の無圧縮ブロックの複写と adler32 のぶん約 6 ms を含む）:
+OG カード 18.8 → 11.7 ms、@2x 73.6 → 45.7 ms、長いページ 26.4 → 16.5 ms。
+行走査だけを切り出した細かい計測（1200x630）は上に書いた 12.9 → 5.3 ms。
+
+`render()` 全体では、OG カードが 63.8 ms（修正前・level 9）→ 17.9 ms（修正後・既定の level 6）、
+@2x が 173.5 → 66.3 ms、和文の長いページが 200.9 → 40.3 ms（41 回の中央値）。
+
+**バイト一致の検証**: 修正前のエンコーダと、合成画像 11 種（1x1 / 単色 / 傾き / ノイズ /
+写真風 800x600 / 4096 幅 / 4096 高 ほか）x レベル 0〜9 の 110 通りでバイト完全一致。
+examples 4 種と和文の長いページも level 9 で `cmp` 一致。ゴールデン 16 枚は
+デコードした画素で比べているのでもともと影響を受けない。
+
 ---
 
 ## 2. モジュールと依存
@@ -533,7 +585,8 @@ linebreak（孤立）─┴─────────────────�
 
 ```cpp
 namespace shashoku::png {
-Result<std::vector<std::uint8_t>> encode(const Bitmap& bitmap);  // RGBA8 → PNG
+Result<std::vector<std::uint8_t>> encode(const Bitmap& bitmap,   // RGBA8 → PNG
+                                         int compression_level = kDefaultCompressionLevel);
 Result<Bitmap> decode(std::span<const std::uint8_t> bytes,       // PNG → RGBA8
                       std::uint64_t max_pixels = kMaxPixels);
 }
@@ -541,10 +594,13 @@ Result<Bitmap> decode(std::span<const std::uint8_t> bytes,       // PNG → RGBA
 
 - **encode**: シグネチャ + IHDR + IDAT + IEND。color type 6（RGBA）/ 8bit / 非インターレース。
   フィルタは行ごとに 5 種（None / Sub / Up / Average / Paeth）を試し、「符号つきバイトとみなした
-  絶対値和」が最小のものを選ぶ（PNG 仕様 §12.8 のヒューリスティック）。zlib は `Z_BEST_COMPRESSION`・
-  既定ストラテジで固定（出力バイト列の決定性のため、設定を変えない）。CRC32 は自前で実装する
-  （zlib の `crc32()` は使わない: PNG エンコーダの自作範囲）。幅か高さが 0、または
-  `rgba.size() != width*height*4` の Bitmap は `InvalidOption` エラー
+  絶対値和」が最小のものを選ぶ（PNG 仕様 §12.8 のヒューリスティック。同点なら番号の小さい方）。
+  **zlib はレベルだけが入力で（0〜9、既定 6。A33）、ストラテジ・windowBits・memLevel は固定**。
+  レベルはフィルタの選択には影響しない。CRC32 は自前で実装する
+  （zlib の `crc32()` は使わない: PNG エンコーダの自作範囲）。幅か高さが 0、
+  `rgba.size() != width*height*4`、`compression_level` が 0〜9 の外: いずれも `InvalidOption` エラー。
+  api は `RenderOptions::compression_level` を必ず明示的に渡し、既定値の一致は `static_assert`
+  で検査する（A25 と同じ流儀）
 - **decode**: `<img>` とゴールデンテストの比較用。対応: 8bit の gray / gray+alpha / RGB / RGBA /
   パレット（tRNS 対応）、および 16bit（上位 8bit に落とす）、非インターレースのみ。
   対応外（インターレース、1/2/4bit）とシグネチャ・CRC・チャンク構造・zlib の破損は
@@ -552,7 +608,8 @@ Result<Bitmap> decode(std::span<const std::uint8_t> bytes,       // PNG → RGBA
   **`max_pixels`（幅 x 高さ）の判定は IHDR を読んだ時点で行う**（画素を確保する前。A25 の (c)）。
   超過は `LimitExceeded`。api は `RenderLimits::image_pixels` と `total_image_pixels` から
   「いま効いている方」の値を渡す
-- 受け入れ: `pngcheck` が通る。encode → decode が元の Bitmap に戻る。壊れた入力で落ちない（ASan）
+- 受け入れ: `pngcheck` が**圧縮レベル 0〜9 のすべてで**通る。encode → decode がどのレベルでも
+  元の Bitmap に戻る。同じ入力・同じレベルなら 2 回目もバイト一致。壊れた入力で落ちない（ASan）
 
 ### 3.3 raster（⑤b）
 
@@ -849,6 +906,10 @@ std::string dump_json(const BoxTree&);
 api は並べ替えない（順序を決めるのは ③ の仕事）。CLI は `warning[missing-glyph]: <detail>` を
 stderr に出す。
 
+`validate(options)` は寸法・`scale`・`compression_level`（0〜9。A33）を見る。**オプションの誤りは
+HTML を読む前に返す**（壊れた HTML でも `InvalidOption` が先に出る）。`png::encode` も同じ範囲を
+自分で検査するが、api はそこに頼らない。
+
 入力の上限（A25）は api が一手に引き受ける。順序は
 `validate(options)` → (a) `check_input_limits` → `html::parse` → (b) `check_dom_limits` →
 `style::resolve` → (b) `check_computed_limits` → `load_resources`（(c) 画像）→ … → `rasterize`（(c) 出力）。
@@ -859,8 +920,10 @@ stderr に出す。
 CLI に上限を変えるフラグは足していない（既定値のまま使う）。
 
 CLI は `tools/shashoku/`: `shashoku input.html --font A.otf [--font B.ttf …] [--image name=path …]
--o out.png [--width N] [--height N] [--scale S] [--overflow oidashi|oikomi|burasage]
-[--dump-stage dom|style|box|display-list|svg]`。エラーは `to_string(RenderError)` を stderr に出して終了コード 1。
+-o out.png [--width N] [--height N] [--scale S] [--compression 0-9]
+[--overflow oidashi|oikomi|burasage] [--dump-stage dom|style|box|display-list|svg]`。
+エラーは `to_string(RenderError)` を stderr に出して終了コード 1。
+値の範囲の検査は `render()` に任せる（オプションの正は 1 か所。CLI は形だけを見る）。
 
 ---
 

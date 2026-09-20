@@ -50,6 +50,7 @@ shashoku::RenderOptions options;
 options.viewport_width = 1200;
 options.viewport_height = 630;        // 未指定なら内容の高さに追従する
 options.line_break.overflow = shashoku::OverflowPolicy::Burasage;  // 既定は追い出し
+options.compression_level = 6;        // PNG の圧縮レベル 0〜9（既定 6。9 で最小・最遅）
 
 const auto result = shashoku::render(html, fonts, images, options);
 if (!result) {
@@ -92,6 +93,7 @@ shashoku input.html --font A.otf --dump-stage box                 # 中間表現
 | `--font <file>` | フォント（複数指定可。**指定順がフォールバック順**） |
 | `--image <name>=<file>` | PNG 画像。`<img src="name">` で引く |
 | `--width` / `--height` / `--scale` | ビューポート（CSS px）と出力倍率。縦書きでは `--height` 必須 |
+| `--compression <N>` | PNG の圧縮レベル `0`〜`9`（既定 `6`）。`0` が最速、`9` が最小 |
 | `--overflow` | あふれ処理 `oidashi`（既定）\| `oikomi` \| `burasage` |
 | `--line-break` | 行分割の厳しさ `strict`（既定）\| `normal` \| `loose` |
 | `--trim-line-start` | 行頭の始め括弧の前の空きを詰める（天付き。既定は詰めない） |
@@ -100,6 +102,21 @@ shashoku input.html --font A.otf --dump-stage box                 # 中間表現
 | `--dump-stage` | `dom \| style \| box \| display-list \| svg` で中間表現を出す |
 
 終了コードは 0 成功 / 1 レンダリングエラー・入出力エラー / 2 引数の誤り。
+
+## 速さ
+
+`render()` 1 回の時間（release ビルド、i9-14900KF、41 回の中央値。フォントの読み込みも含みます）:
+
+| 入力 | 既定（`compression_level = 6`） | `= 9`（最小サイズ） |
+|---|---:|---:|
+| OG カード 1200×630 | **17.9 ms** / 74.7 KB | 56.4 ms / 73.7 KB |
+| OG カード @2x 2400×1260 | **66.3 ms** / 161.5 KB | 145.2 ms / 158.9 KB |
+| 和文の長いページ 800×1320 | **40.3 ms** / 366.0 KB | 191.8 ms / 361.5 KB |
+
+時間の大半は PNG のエンコード（zlib）です。`compression_level` を上げるとファイルは 1〜2% 小さく
+なりますが、時間は 2〜5 倍になります。リクエストごとに OG 画像を作るなら既定の 6 が釣り合いますし、
+配布物に焼き込む画像なら 9 を選んでください。**レベルを変えても絵（デコードした画素）は
+1 ビットも変わりません**。同じ入力・同じレベルなら出力は常にバイト単位で同じです。
 
 ## 信頼できない入力を受けるとき
 

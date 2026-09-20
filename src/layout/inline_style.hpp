@@ -1,7 +1,9 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <map>
+#include <memory>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -60,15 +62,22 @@ struct CharStyle {
 namespace detail {
 
 // std::map の索引に使うだけの順序。**出力には一切使わない**（DESIGN.md §3-5）。
+// 呼ばれた回数を数えるのは計測カウンタ（A21）のため。数えた値で分岐はしない。
 struct ShapingLess {
+  std::uint64_t* probes = nullptr;
+
   bool operator()(const text::TextStyle& a, const text::TextStyle& b) const {
+    ++*probes;
     return std::tie(a.font_weight, a.font_size, a.direction, a.font_family) <
            std::tie(b.font_weight, b.font_size, b.direction, b.font_family);
   }
 };
 
 struct DecorationLess {
+  std::uint64_t* probes = nullptr;
+
   bool operator()(const DecorationStyle& a, const DecorationStyle& b) const {
+    ++*probes;
     return std::tie(a.color.r, a.color.g, a.color.b, a.color.a, a.letter_spacing,
                     a.line_height.kind, a.line_height.value) <
            std::tie(b.color.r, b.color.g, b.color.b, b.color.a, b.letter_spacing,
@@ -81,9 +90,12 @@ struct DecorationLess {
 class CharStyleTable {
  public:
   // ComputedStyle を層に分けて登録し、文字が指す添字を返す。内容が同じなら同じ添字。
-  // 1 ノードにつき 1 回呼ぶ想定で、1 回は O(log(表の大きさ))
+  // 1 ノードにつき 1 回呼ぶ想定で、1 回のスタイルの比較は O(log(表の大きさ))
   // （線形探索だと色違いの span が S 個ある段落で O(S²) になる。issue #10）。
   std::size_t intern(const style::ComputedStyle& style, text::Direction direction);
+
+  // 索引を引くのに行ったスタイルの比較の回数（計測カウンタ用。A21）。
+  [[nodiscard]] std::uint64_t probes() const { return *probes_; }
 
   [[nodiscard]] std::size_t size() const { return styles_.size(); }
   [[nodiscard]] std::size_t shaping_count() const { return shaping_.size(); }
@@ -108,8 +120,14 @@ class CharStyleTable {
   std::vector<DecorationStyle> decoration_;
   std::vector<CharStyle> styles_;
 
-  std::map<text::TextStyle, std::size_t, detail::ShapingLess> shaping_index_;
-  std::map<DecorationStyle, std::size_t, detail::DecorationLess> decoration_index_;
+  // 比較の回数。比較器が指すので、表を move しても指し先が動かないようヒープに置く
+  // （宣言順に初期化されるので、索引より先に置くこと）。
+  std::unique_ptr<std::uint64_t> probes_ = std::make_unique<std::uint64_t>(0);
+
+  std::map<text::TextStyle, std::size_t, detail::ShapingLess> shaping_index_{
+      detail::ShapingLess{probes_.get()}};
+  std::map<DecorationStyle, std::size_t, detail::DecorationLess> decoration_index_{
+      detail::DecorationLess{probes_.get()}};
   std::map<std::pair<std::size_t, std::size_t>, std::size_t> style_index_;
 };
 

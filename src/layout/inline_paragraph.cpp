@@ -196,6 +196,7 @@ Result<PreparedParagraph> prepare_paragraph(const InlineInput& input, LayoutEngi
   }
 
   ParagraphBuilder(out, collected->ruby_at, collected->rubies, engine).build();
+  engine.counters().style_probes += out.styles.probes();
   return out;
 }
 

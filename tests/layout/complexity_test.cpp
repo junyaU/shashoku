@@ -1,5 +1,7 @@
 #include <cstddef>
+#include <cstdint>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -82,6 +84,39 @@ TEST(LayoutComplexity, ManyBackgroundScopesProbeOnlyIntersectingOnes) {
   // 行と交差するスコープ（この入力では 1 行あたり 1 個）だけを見る
   EXPECT_LE(counters.background_probes, 4 * kTotalChars);
   EXPECT_LE(counters.line_scratch, 4 * kTotalChars);
+}
+
+// #8 / #10: 色だけが違う span が S 個ある段落。
+//   * シェーピングは段落で 1 回（色の境界では切らない。かつては S 回呼んでいた）
+//   * 文字ごとの属性の表は二分探索で引く（登録のたびに線形探索すると S² に膨らむ）
+TEST(LayoutComplexity, ManyColorOnlySpansShapeOnceAndInternInLogTime) {
+  constexpr std::size_t kSpans = 2000;
+  constexpr std::size_t kCharsPerSpan = 2;
+  FakeMeasurer measurer;
+  std::vector<Tree> children;
+  children.reserve(kSpans);
+  for (std::size_t i = 0; i < kSpans; ++i) {
+    // span ごとに違う色（= 装飾属性は S 種類）。シェーピング属性はすべて同じ
+    const auto low = static_cast<std::uint8_t>(i & 0xFFU);
+    const auto high = static_cast<std::uint8_t>((i >> 8U) & 0xFFU);
+    children.push_back(inline_box({text("あい")}, [low, high](ComputedStyle& style) {
+      style.color = Color{low, high, 0, 255};
+    }));
+  }
+  const auto root = build({block(std::move(children))});
+  Counters counters;
+  const auto tree = run_layout(root, make_options(kFontSize), measurer, counters);
+  ASSERT_TRUE(tree.has_value());
+
+  constexpr std::size_t kTotalChars = kSpans * kCharsPerSpan;
+  ASSERT_EQ(all_lines(*tree).size(), kTotalChars);  // 1 行 1 文字
+  EXPECT_EQ(counters.shape_calls, 1U) << "色の境界でシェーピングが切れている（#8）";
+  EXPECT_EQ(counters.shaped_chars, kTotalChars);
+  // 断片（= 描き分け）は色の境界で分かれたまま
+  EXPECT_EQ(text_fragments(*all_lines(*tree).front()).size(), 1U);
+
+  // 二分探索なら S×log S 程度。線形探索だと S²/2 = 2,000,000 を超える
+  EXPECT_LE(counters.style_probes, 64 * kSpans);
 }
 
 }  // namespace

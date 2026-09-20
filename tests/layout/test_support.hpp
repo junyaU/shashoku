@@ -105,6 +105,9 @@ struct ImageEntry {
                                          text::TextMeasurer& measurer);
 [[nodiscard]] Result<BoxTree> run_layout(const style::StyledNode& root, const Options& options,
                                          text::TextMeasurer& measurer, const ImageLookup& images);
+// 計測カウンタ（counters.hpp）つき。計算量の回帰テスト用（issue #10-3）。
+[[nodiscard]] Result<BoxTree> run_layout(const style::StyledNode& root, const Options& options,
+                                         text::TextMeasurer& measurer, Counters& counters);
 // 幅だけ指定する短縮形。
 [[nodiscard]] Result<BoxTree> run_layout(const style::StyledNode& root, float viewport_width,
                                          text::TextMeasurer& measurer);

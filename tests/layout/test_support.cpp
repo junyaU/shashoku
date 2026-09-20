@@ -301,6 +301,12 @@ Result<BoxTree> run_layout(const style::StyledNode& root, const Options& options
   return layout(root, options, measurer, images);
 }
 
+Result<BoxTree> run_layout(const style::StyledNode& root, const Options& options,
+                           text::TextMeasurer& measurer, Counters& counters) {
+  const ImageLookup images = [](std::string_view) { return std::optional<ImageInfo>{}; };
+  return layout(root, options, measurer, images, &counters);
+}
+
 Result<BoxTree> run_layout(const style::StyledNode& root, float viewport_width,
                            text::TextMeasurer& measurer) {
   return run_layout(root, make_options(viewport_width), measurer);

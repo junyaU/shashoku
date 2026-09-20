@@ -296,7 +296,7 @@ Result<void> collect_element(const StyledNode& node, LayoutEngine& engine, float
   std::size_t scope = kNone;
   if (!node.style.background_color.transparent()) {
     const RunStyle run = run_style_of(node.style);
-    const text::FontMetrics metrics = engine.measurer().metrics(text_style_of(run, engine.map()));
+    const text::FontMetrics metrics = engine.metrics(text_style_of(run, engine.map()));
     const bool vertical = engine.map().vertical();
     out.scopes.push_back(
         BackgroundScope{.color = node.style.background_color,
@@ -586,9 +586,9 @@ void InlineFormatter::build_ruby_item(std::size_t group_index) {
       text.push_back(chars_[end].cp);
       ++end;
     }
-    runs_.push_back(ShapedRun{.style = style_id,
-                              .shaped = engine_->measurer().shape(
-                                  text, text_style_of(styles_[style_id], engine_->map()))});
+    runs_.push_back(
+        ShapedRun{.style = style_id,
+                  .shaped = engine_->shape(text, text_style_of(styles_[style_id], engine_->map()))});
     const ShapedRun& run = runs_.back();
     float advance = 0;
     for (const text::ShapedCluster& cluster : run.shaped.clusters) {
@@ -607,9 +607,9 @@ void InlineFormatter::build_ruby_item(std::size_t group_index) {
 
   // ルビ文字。letter-spacing はルビには掛けない
   const std::size_t rt_style = group.rt_style;
-  runs_.push_back(ShapedRun{.style = rt_style,
-                            .shaped = engine_->measurer().shape(
-                                group.rt_text, text_style_of(styles_[rt_style], engine_->map()))});
+  runs_.push_back(ShapedRun{
+      .style = rt_style,
+      .shaped = engine_->shape(group.rt_text, text_style_of(styles_[rt_style], engine_->map()))});
   piece.rt_run = runs_.size() - 1;
   piece.rt_style = rt_style;
   for (const text::ShapedCluster& cluster : runs_.back().shaped.clusters) {
@@ -678,9 +678,9 @@ void InlineFormatter::build_items() {
       ++end;
     }
     const std::size_t style_id = flat.style;
-    runs_.push_back(ShapedRun{.style = style_id,
-                              .shaped = engine_->measurer().shape(
-                                  text, text_style_of(styles_[style_id], engine_->map()))});
+    runs_.push_back(
+        ShapedRun{.style = style_id,
+                  .shaped = engine_->shape(text, text_style_of(styles_[style_id], engine_->map()))});
     const std::size_t run = runs_.size() - 1;
     // (c) クラスタ → Item。letter-spacing は送りに足す
     for (const text::ShapedCluster& cluster : runs_[run].shaped.clusters) {
@@ -766,6 +766,7 @@ Extent InlineFormatter::measure_line(const linebreak::Line& line) const {
   Extent extent;
   extend_line_height(kNone, strut_metrics_, extent);  // 支柱は内容によらず全行に参加する
   std::vector<bool> seen(styles_.size(), false);
+  engine_->counters().line_scratch += styles_.size();
   for (std::size_t i = line.begin; i < line.content_end; ++i) {
     const ItemSource& source = sources_[i];
     if (source.image != kNone) {
@@ -910,6 +911,7 @@ void InlineFormatter::place_line(const linebreak::Line& line, const linebreak::B
 std::vector<InlineBackground> InlineFormatter::build_backgrounds(
     const linebreak::Line& line, const std::vector<Placement>& placement, float baseline) const {
   std::vector<InlineBackground> backgrounds;
+  engine_->counters().background_probes += scopes_.size();
   for (const BackgroundScope& scope : scopes_) {
     std::size_t first = kNone;
     std::size_t last = kNone;
@@ -946,6 +948,8 @@ LineBox InlineFormatter::build_line(const linebreak::Line& line, const linebreak
 
   std::vector<InlineFragment> content;
   std::vector<Placement> placement(items_.size());
+  engine_->counters().line_scratch += items_.size();
+  engine_->counters().line_boxes += 1;
   place_line(line, breaks, align_line(line, is_last), box.baseline, content, placement);
 
   // 描画順: 背景 → 文字・画像
@@ -971,6 +975,7 @@ linebreak::Config InlineFormatter::config() const {
 }
 
 Result<void> InlineFormatter::prepare() {
+  ++engine_->counters().inline_prepare;
   Collected collected;
   if (const Result<void> result =
           collect(input_->children, *engine_, input_->content_inline_size, collected);
@@ -1004,10 +1009,10 @@ Result<void> InlineFormatter::prepare() {
   }
 
   strut_ = run_style_of(*input_->block_style);
-  strut_metrics_ = engine_->measurer().metrics(text_style_of(strut_, engine_->map()));
+  strut_metrics_ = engine_->metrics(text_style_of(strut_, engine_->map()));
   metrics_.reserve(styles_.size());
   for (const RunStyle& run_style : styles_) {
-    metrics_.push_back(engine_->measurer().metrics(text_style_of(run_style, engine_->map())));
+    metrics_.push_back(engine_->metrics(text_style_of(run_style, engine_->map())));
   }
   build_items();
   return {};

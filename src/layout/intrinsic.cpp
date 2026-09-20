@@ -30,6 +30,7 @@ bool has_block_child(const BlockInput& input) {
 }  // namespace
 
 Result<Intrinsic> LayoutEngine::content_intrinsic(const BlockInput& input, float percent_basis) {
+  ++counters().content_intrinsic;
   if (input.replaced != nullptr) {
     const Result<ResolvedImage> image = resolve_image(*input.replaced, percent_basis);
     if (!image) {

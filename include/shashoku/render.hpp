@@ -15,10 +15,10 @@
 namespace shashoku {
 
 struct RenderResult {
-  std::vector<std::uint8_t> png;   // PNG バイト列（RGBA8 / 非インターレース）
-  std::vector<Warning> warnings;   // 豆腐など、続行できた問題。コードポイント昇順
-  int width = 0;                   // 出力画像の幅（デバイスピクセル = ceil(CSS px * scale)）
-  int height = 0;                  // 同・高さ
+  std::vector<std::uint8_t> png;  // PNG バイト列（RGBA8 / 非インターレース）
+  std::vector<Warning> warnings;  // 豆腐など、続行できた問題。コードポイント昇順
+  int width = 0;   // 出力画像の幅（デバイスピクセル = ceil(CSS px * scale)）
+  int height = 0;  // 同・高さ
 };
 
 // 唯一のエントリポイント（DESIGN.md §8）。**純粋関数**: 同じ入力からは常にバイト単位で

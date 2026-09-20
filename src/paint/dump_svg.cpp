@@ -52,9 +52,7 @@ std::string rgb_hex(const Color& color) {
   return out;
 }
 
-std::string opacity(const Color& color) {
-  return number(static_cast<float>(color.a) / 255.0F);
-}
+std::string opacity(const Color& color) { return number(static_cast<float>(color.a) / 255.0F); }
 
 // XML のテキスト / 属性値に使えない 5 文字を実体参照にする。
 std::string escaped(std::string_view text) {
@@ -125,9 +123,10 @@ class SvgWriter {
     const float inset = cmd.width / 2;
     const Rect rect{cmd.rect.x + inset, cmd.rect.y + inset, cmd.rect.width - cmd.width,
                     cmd.rect.height - cmd.width};
-    line(std::format(R"(<rect {}{} fill="none" stroke="{}" stroke-opacity="{}" stroke-width="{}"/>)",
-                     rect_attrs(rect), radius_attrs(cmd.radius - inset), rgb_hex(cmd.color),
-                     opacity(cmd.color), number(cmd.width)));
+    line(
+        std::format(R"(<rect {}{} fill="none" stroke="{}" stroke-opacity="{}" stroke-width="{}"/>)",
+                    rect_attrs(rect), radius_attrs(cmd.radius - inset), rgb_hex(cmd.color),
+                    opacity(cmd.color), number(cmd.width)));
   }
 
   void write(const raster::DrawGlyphs& cmd) {
@@ -139,11 +138,10 @@ class SvgWriter {
     for (const raster::GlyphInstance& glyph : cmd.glyphs) {
       // 横書きの em box は原点から見て x ∈ [0, size]、y ∈ [-0.8 size, 0.2 size]。
       // sideways はそれを原点まわりに時計回りへ 90° 回したもの。
-      const Rect box = cmd.sideways
-                           ? Rect{glyph.origin.x - (0.2F * cmd.size), glyph.origin.y, cmd.size,
-                                  cmd.size}
-                           : Rect{glyph.origin.x, glyph.origin.y - (0.8F * cmd.size), cmd.size,
-                                  cmd.size};
+      const Rect box =
+          cmd.sideways
+              ? Rect{glyph.origin.x - (0.2F * cmd.size), glyph.origin.y, cmd.size, cmd.size}
+              : Rect{glyph.origin.x, glyph.origin.y - (0.8F * cmd.size), cmd.size, cmd.size};
       line(std::format("<rect {}/>", rect_attrs(box)));
     }
     --indent_;

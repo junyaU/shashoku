@@ -15,9 +15,9 @@ constexpr Color kRed{255, 0, 0, 255};
 constexpr Color kYellow{255, 255, 0, 255};
 
 BoxTree with_line(std::vector<InlineFragment> fragments, float baseline = 16) {
-  return tree(block("#root", lrect(0, 0, 100, 20), {},
-                    std::vector<LineBox>{line(lrect(0, 0, 100, 20), baseline,
-                                              std::move(fragments))}));
+  return tree(
+      block("#root", lrect(0, 0, 100, 20), {},
+            std::vector<LineBox>{line(lrect(0, 0, 100, 20), baseline, std::move(fragments))}));
 }
 
 // グリフ原点 = ペン位置 + (x_offset, y_offset)。横書きのペン位置は (inline, baseline)。
@@ -39,22 +39,19 @@ TEST(PaintInline, MergesRunsWithSameStyle) {
                  text(0, 16, kBlack, 16, {{12, 32}})});
 
   const raster::DisplayList list = build_display_list(box_tree);
-  EXPECT_TRUE(commands_eq(list, {raster::DrawGlyphs{
-                                    0,
-                                    16,
-                                    kBlack,
-                                    false,
-                                    {{10, Point{0, 16}}, {11, Point{16, 16}}, {12, Point{32, 16}}}}}));
+  EXPECT_TRUE(commands_eq(
+      list,
+      {raster::DrawGlyphs{
+          0, 16, kBlack, false, {{10, Point{0, 16}}, {11, Point{16, 16}}, {12, Point{32, 16}}}}}));
 }
 
 // フォント・サイズ・色・sideways のどれか 1 つでも違えば分かれる。
 TEST(PaintInline, DoesNotMergeDifferentStyles) {
   TextFragment sideways = text(0, 16, kBlack, 16, {{13, 48}});
   sideways.sideways = true;
-  const BoxTree box_tree = with_line({text(0, 16, kBlack, 16, {{10, 0}}),
-                                      text(1, 16, kBlack, 16, {{11, 16}}),
-                                      text(1, 20, kBlack, 16, {{12, 32}}),
-                                      text(1, 20, kRed, 16, {{12, 40}}), sideways});
+  const BoxTree box_tree =
+      with_line({text(0, 16, kBlack, 16, {{10, 0}}), text(1, 16, kBlack, 16, {{11, 16}}),
+                 text(1, 20, kBlack, 16, {{12, 32}}), text(1, 20, kRed, 16, {{12, 40}}), sideways});
 
   const raster::DisplayList list = build_display_list(box_tree);
   EXPECT_EQ(list.size(), 5U);
@@ -62,11 +59,10 @@ TEST(PaintInline, DoesNotMergeDifferentStyles) {
 
 // 別の行の断片はまとめない（間に他の命令が入りうるので行をまたがない）。
 TEST(PaintInline, DoesNotMergeAcrossLines) {
-  const BoxTree box_tree =
-      tree(block("#root", lrect(0, 0, 100, 40), {},
-                 std::vector<LineBox>{
-                     line(lrect(0, 0, 100, 20), 16, {text(0, 16, kBlack, 16, {{10, 0}})}),
-                     line(lrect(0, 20, 100, 20), 36, {text(0, 16, kBlack, 36, {{11, 0}})})}));
+  const BoxTree box_tree = tree(block(
+      "#root", lrect(0, 0, 100, 40), {},
+      std::vector<LineBox>{line(lrect(0, 0, 100, 20), 16, {text(0, 16, kBlack, 16, {{10, 0}})}),
+                           line(lrect(0, 20, 100, 20), 36, {text(0, 16, kBlack, 36, {{11, 0}})})}));
 
   EXPECT_TRUE(commands_eq(build_display_list(box_tree),
                           {raster::DrawGlyphs{0, 16, kBlack, false, {{10, Point{0, 16}}}},
@@ -75,8 +71,8 @@ TEST(PaintInline, DoesNotMergeAcrossLines) {
 
 // インライン背景は FillRect。断片の順序どおりに文字の前に出る。
 TEST(PaintInline, InlineBackground) {
-  const BoxTree box_tree = with_line({InlineBackground{lrect(8, 2, 32, 16), kYellow},
-                                      text(0, 16, kBlack, 16, {{10, 8}})});
+  const BoxTree box_tree = with_line(
+      {InlineBackground{lrect(8, 2, 32, 16), kYellow}, text(0, 16, kBlack, 16, {{10, 8}})});
 
   EXPECT_TRUE(commands_eq(build_display_list(box_tree),
                           {raster::FillRect{Rect{8, 2, 32, 16}, kYellow},
@@ -97,7 +93,8 @@ TEST(PaintInline, BackgroundBreaksGlyphRun) {
 }
 
 TEST(PaintInline, TransparentInlineBackgroundEmitsNothing) {
-  const BoxTree box_tree = with_line({InlineBackground{lrect(8, 2, 32, 16), Color{255, 255, 0, 0}}});
+  const BoxTree box_tree =
+      with_line({InlineBackground{lrect(8, 2, 32, 16), Color{255, 255, 0, 0}}});
   EXPECT_TRUE(build_display_list(box_tree).empty());
 }
 
@@ -117,10 +114,10 @@ TEST(PaintInline, ImageWithoutRadius) {
   image.decoration.background_color = kYellow;
   const BoxTree box_tree = with_line({image});
 
-  EXPECT_TRUE(commands_eq(build_display_list(box_tree),
-                          {raster::FillRect{Rect{0, 0, 40, 40}, kYellow},
-                           raster::DrawImage{2, Rect{2, 2, 36, 36}},
-                           raster::StrokeRoundedRect{Rect{0, 0, 40, 40}, 0, 2, kRed}}));
+  EXPECT_TRUE(commands_eq(
+      build_display_list(box_tree),
+      {raster::FillRect{Rect{0, 0, 40, 40}, kYellow}, raster::DrawImage{2, Rect{2, 2, 36, 36}},
+       raster::StrokeRoundedRect{Rect{0, 0, 40, 40}, 0, 2, kRed}}));
 }
 
 // 角丸つきの画像: content_rect を内周の角丸（radius − border_width）でクリップする。
@@ -132,10 +129,10 @@ TEST(PaintInline, ImageWithRadiusIsClipped) {
   image.decoration = border(3, kRed, 20);
   const BoxTree box_tree = with_line({image});
 
-  EXPECT_TRUE(commands_eq(build_display_list(box_tree),
-                          {raster::PushClip{Rect{3, 3, 34, 34}, 17},
-                           raster::DrawImage{0, Rect{3, 3, 34, 34}}, raster::PopClip{},
-                           raster::StrokeRoundedRect{Rect{0, 0, 40, 40}, 20, 3, kRed}}));
+  EXPECT_TRUE(commands_eq(
+      build_display_list(box_tree),
+      {raster::PushClip{Rect{3, 3, 34, 34}, 17}, raster::DrawImage{0, Rect{3, 3, 34, 34}},
+       raster::PopClip{}, raster::StrokeRoundedRect{Rect{0, 0, 40, 40}, 20, 3, kRed}}));
 }
 
 // 内周の半径は負にならない（枠線が半径より太い場合）。

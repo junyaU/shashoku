@@ -34,7 +34,8 @@ int use_public_api() {
 
   // フォントが壊れている（1 バイト）ので必ず失敗する。ここで見たいのは
   // 「公開ヘッダだけで render() を呼んでエラーを読めること」。
-  const std::expected<RenderResult, RenderError> result = render("<p>あ</p>", fonts, images, options);
+  const std::expected<RenderResult, RenderError> result =
+      render("<p>あ</p>", fonts, images, options);
   if (result) {
     return static_cast<int>(result->png.size() + result->warnings.size());
   }

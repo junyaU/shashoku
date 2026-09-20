@@ -26,9 +26,7 @@ namespace {
 
 // include パスを include/ だけに絞った TU がリンクできている
 // （＝公開ヘッダが src/ の内部ヘッダも FreeType / HarfBuzz も引いていない）。
-TEST(PublicHeaders, IsolatedTranslationUnitLinks) {
-  EXPECT_EQ(header_check::use_public_api(), 0);
-}
+TEST(PublicHeaders, IsolatedTranslationUnitLinks) { EXPECT_EQ(header_check::use_public_api(), 0); }
 
 // コンパイルでの検査に加えて、テキストとしても見る（将来ヘッダを足したときの網）。
 TEST(PublicHeaders, IncludeOnlyPublicAndStandardHeaders) {
@@ -78,9 +76,7 @@ TEST(PublicHeaders, IncludeOnlyPublicAndStandardHeaders) {
 // FontSet / ImageSet
 // ---------------------------------------------------------------------------
 
-std::vector<std::uint8_t> bytes_of(std::string_view text) {
-  return {text.begin(), text.end()};
-}
+std::vector<std::uint8_t> bytes_of(std::string_view text) { return {text.begin(), text.end()}; }
 
 TEST(FontSetTest, KeepsInsertionOrderAndCopiesBytes) {
   std::vector<std::uint8_t> source = bytes_of("first");
@@ -128,9 +124,7 @@ TEST(ApiStrings, DumpStage) {
   EXPECT_EQ(to_string(DumpStage::Svg), "svg");
 }
 
-TEST(ApiStrings, WarningKind) {
-  EXPECT_EQ(to_string(WarningKind::MissingGlyph), "missing-glyph");
-}
+TEST(ApiStrings, WarningKind) { EXPECT_EQ(to_string(WarningKind::MissingGlyph), "missing-glyph"); }
 
 TEST(ApiStrings, Version) {
   EXPECT_FALSE(version().empty());

@@ -1,3 +1,5 @@
+#include "support/golden.hpp"
+
 #include <cstdint>
 #include <filesystem>
 #include <string>
@@ -10,7 +12,6 @@
 #include "core/result.hpp"
 #include "integration/integration_support.hpp"
 #include "shashoku/shashoku.hpp"
-#include "support/golden.hpp"
 
 // ゴールデンテスト（DESIGN.md §10-1 / ARCHITECTURE.md §4）。
 // 期待画像は tests/golden/*.png。純粋関数なのでピクセル完全一致で比べられる。

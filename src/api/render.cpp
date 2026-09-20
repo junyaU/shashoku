@@ -203,10 +203,10 @@ std::vector<Warning> to_warnings(std::vector<text::MissingGlyph> missing) {
   std::vector<Warning> warnings;
   warnings.reserve(missing.size());
   for (const text::MissingGlyph& glyph : missing) {
-    warnings.push_back(Warning{WarningKind::MissingGlyph,
-                               std::format("no font has a glyph for U+{:04X}",
-                                           static_cast<std::uint32_t>(glyph.cp)),
-                               glyph.cp});
+    warnings.push_back(Warning{
+        WarningKind::MissingGlyph,
+        std::format("no font has a glyph for U+{:04X}", static_cast<std::uint32_t>(glyph.cp)),
+        glyph.cp});
   }
   return warnings;
 }
@@ -314,8 +314,7 @@ std::expected<RenderResult, RenderError> render(std::string_view html, const Fon
 }
 
 std::expected<RenderResult, RenderError> render(std::string_view html, const FontSet& fonts,
-                                                const ImageSet& images,
-                                                const RenderOptions& opts) {
+                                                const ImageSet& images, const RenderOptions& opts) {
   return render_impl(html, fonts, images, opts);
 }
 

@@ -106,8 +106,8 @@ class Builder {
       // グリフ原点 = ペン位置 + (x_offset, y_offset)。オフセットは物理 px のまま運ばれる
       // （box_tree.hpp）ので、変換せずに足す。
       const Point pen = axes_.pen(glyph.inline_position, fragment.baseline);
-      run.glyphs.push_back(
-          raster::GlyphInstance{glyph.glyph_id, Point{pen.x + glyph.x_offset, pen.y + glyph.y_offset}});
+      run.glyphs.emplace_back(glyph.glyph_id,
+                              Point{pen.x + glyph.x_offset, pen.y + glyph.y_offset});
     }
   }
 
@@ -132,7 +132,7 @@ class Builder {
     run.sideways = fragment.sideways;
     append_glyphs(run, fragment);
     open_run_ = list_.size();
-    list_.push_back(std::move(run));
+    list_.emplace_back(std::move(run));
   }
 
   // 描画順は box_tree.hpp の ImageFragment のコメントどおり:

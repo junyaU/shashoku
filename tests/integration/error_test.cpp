@@ -1,5 +1,6 @@
 #include <cstdint>
 #include <limits>
+#include <ostream>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -22,6 +23,12 @@ struct ErrorCase {
   bool has_location = true;
 };
 
+// GoogleTest の既定はパラメータをバイト列として表示する。ポインタ値が混ざって
+// テスト名が実行ごとに変わってしまうので（CTest の登録名が古くなる）、名前を出す。
+std::ostream& operator<<(std::ostream& out, const ErrorCase& test_case) {
+  return out << test_case.name;
+}
+
 class RenderErrorCase : public ::testing::TestWithParam<ErrorCase> {};
 
 TEST_P(RenderErrorCase, IsReported) {
@@ -31,7 +38,8 @@ TEST_P(RenderErrorCase, IsReported) {
   EXPECT_EQ(result.error().kind, test_case.kind) << to_string(result.error());
   EXPECT_NE(result.error().message.find(test_case.message_contains), std::string::npos)
       << to_string(result.error());
-  EXPECT_EQ(result.error().location.has_value(), test_case.has_location) << to_string(result.error());
+  EXPECT_EQ(result.error().location.has_value(), test_case.has_location)
+      << to_string(result.error());
 }
 
 INSTANTIATE_TEST_SUITE_P(
@@ -109,8 +117,8 @@ TEST(RenderErrors, BrokenImageSaysWhichOne) {
 // ImageSet に無い名前は ImageNotFound（A12）。layout の第 2 段が入るまでは <img> 自体が
 // UnsupportedLayout なので、どちらでも「黙って無視しない」ことだけを見る。
 TEST(RenderErrors, UnknownImageNameIsNotIgnored) {
-  const auto result = render(R"(<img src="missing">)", japanese_fonts(), ImageSet{},
-                             options_for(320));
+  const auto result =
+      render(R"(<img src="missing">)", japanese_fonts(), ImageSet{}, options_for(320));
   ASSERT_FALSE(result.has_value());
   EXPECT_TRUE(result.error().kind == ErrorKind::ImageNotFound ||
               result.error().kind == ErrorKind::UnsupportedLayout)
@@ -167,8 +175,8 @@ TEST(RenderErrors, InvalidOptions) {
 
 // エラーの書式（error.hpp のコメント）: 位置があれば "at 行:桁" が入る。
 TEST(RenderErrors, ToStringIncludesLocation) {
-  const auto result = render("<div>\n<float>あ</float>\n</div>", japanese_fonts(),
-                             options_for(320));
+  const auto result =
+      render("<div>\n<float>あ</float>\n</div>", japanese_fonts(), options_for(320));
   ASSERT_FALSE(result.has_value());
   const std::string text = to_string(result.error());
   EXPECT_TRUE(text.starts_with("error[")) << text;

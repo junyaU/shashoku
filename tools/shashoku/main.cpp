@@ -4,9 +4,12 @@
 //
 // 公開 API だけを使う（`src/` のヘッダは include しない）。ライブラリの利用例も兼ねる。
 // 終了コード: 0 成功 / 1 レンダリングエラー・入出力エラー / 2 引数の誤り。
+#include <algorithm>
+#include <array>
 #include <charconv>
 #include <cstddef>
 #include <cstdint>
+#include <exception>
 #include <expected>
 #include <fstream>
 #include <ios>
@@ -127,8 +130,8 @@ std::optional<shashoku::LineBreakStrictness> parse_strictness(std::string_view t
 
 std::optional<shashoku::DumpStage> parse_stage(std::string_view text) {
   using shashoku::DumpStage;
-  for (const DumpStage stage : {DumpStage::Dom, DumpStage::Style, DumpStage::Box,
-                                DumpStage::DisplayList, DumpStage::Svg}) {
+  for (const DumpStage stage :
+       {DumpStage::Dom, DumpStage::Style, DumpStage::Box, DumpStage::DisplayList, DumpStage::Svg}) {
     if (to_string(stage) == text) {
       return stage;
     }
@@ -148,97 +151,140 @@ class Parser {
         parsed.help = true;
         return parsed;
       }
-      if (!arg.starts_with('-')) {
-        if (!parsed.input.empty()) {
-          return error("入力ファイルが 2 つ以上あります: " + std::string(arg));
-        }
-        parsed.input = arg;
-        continue;
-      }
-      const auto [name, inline_value] = split(arg);
-      if (name == "--font") {
-        auto value = take(name, inline_value);
-        if (!value) {
-          return std::unexpected(value.error());
-        }
-        parsed.fonts.emplace_back(*value);
-      } else if (name == "--image") {
-        auto value = take(name, inline_value);
-        if (!value) {
-          return std::unexpected(value.error());
-        }
-        const std::size_t equals = value->find('=');
-        if (equals == std::string_view::npos || equals == 0) {
-          return error("--image は <名前>=<パス> の形で指定します: " + std::string(*value));
-        }
-        parsed.images.emplace_back(value->substr(0, equals), value->substr(equals + 1));
-      } else if (name == "-o" || name == "--output") {
-        auto value = take(name, inline_value);
-        if (!value) {
-          return std::unexpected(value.error());
-        }
-        parsed.output = *value;
-      } else if (name == "--width" || name == "--height") {
-        auto value = take(name, inline_value);
-        if (!value) {
-          return std::unexpected(value.error());
-        }
-        const std::optional<int> number = parse_int(*value);
-        if (!number) {
-          return error(std::string(name) + " には整数を指定します: " + std::string(*value));
-        }
-        if (name == "--width") {
-          parsed.options.viewport_width = *number;
-        } else {
-          parsed.options.viewport_height = *number;
-        }
-      } else if (name == "--scale") {
-        auto value = take(name, inline_value);
-        if (!value) {
-          return std::unexpected(value.error());
-        }
-        const std::optional<float> number = parse_float(*value);
-        if (!number) {
-          return error("--scale には数値を指定します: " + std::string(*value));
-        }
-        parsed.options.scale = *number;
-      } else if (name == "--overflow") {
-        auto value = take(name, inline_value);
-        if (!value) {
-          return std::unexpected(value.error());
-        }
-        const std::optional<shashoku::OverflowPolicy> policy = parse_overflow(*value);
-        if (!policy) {
-          return error("--overflow は oidashi | oikomi | burasage のいずれかです: " +
-                       std::string(*value));
-        }
-        parsed.options.line_break.overflow = *policy;
-      } else if (name == "--line-break") {
-        auto value = take(name, inline_value);
-        if (!value) {
-          return std::unexpected(value.error());
-        }
-        const std::optional<shashoku::LineBreakStrictness> strictness = parse_strictness(*value);
-        if (!strictness) {
-          return error("--line-break は strict | normal | loose のいずれかです: " +
-                       std::string(*value));
-        }
-        parsed.options.line_break.strictness = *strictness;
-      } else if (name == "--dump-stage") {
-        auto value = take(name, inline_value);
-        if (!value) {
-          return std::unexpected(value.error());
-        }
-        const std::optional<shashoku::DumpStage> stage = parse_stage(*value);
-        if (!stage) {
-          return error("--dump-stage は dom | style | box | display-list | svg のいずれかです: " +
-                       std::string(*value));
-        }
-        parsed.stage = *stage;
-      } else {
-        return error("知らないオプションです: " + std::string(arg));
+      if (const auto step = parse_one(arg, parsed); !step) {
+        return std::unexpected(step.error());
       }
     }
+    return finish(std::move(parsed));
+  }
+
+ private:
+  static std::unexpected<ArgumentError> error(std::string message) {
+    return std::unexpected(ArgumentError{std::move(message)});
+  }
+
+  // 値を取るオプションの一覧（shashoku の CLI に旗だけのオプションは無い）。
+  static bool takes_value(std::string_view name) {
+    using namespace std::string_view_literals;
+    static constexpr std::array kWithValue{
+        "--font"sv,   "--image"sv, "-o"sv,         "--output"sv,     "--width"sv,
+        "--height"sv, "--scale"sv, "--overflow"sv, "--line-break"sv, "--dump-stage"sv};
+    return std::ranges::find(kWithValue, name) != kWithValue.end();
+  }
+
+  // 引数 1 つぶん。`-` で始まらなければ入力ファイル。
+  std::expected<void, ArgumentError> parse_one(std::string_view arg, Arguments& parsed) {
+    if (!arg.starts_with('-')) {
+      if (!parsed.input.empty()) {
+        return error("入力ファイルが 2 つ以上あります: " + std::string(arg));
+      }
+      parsed.input = arg;
+      return {};
+    }
+    const auto [name, inline_value] = split(arg);
+    if (!takes_value(name)) {
+      return error("知らないオプションです: " + std::string(arg));
+    }
+    const auto value = take(name, inline_value);
+    if (!value) {
+      return std::unexpected(value.error());
+    }
+    return apply(name, *value, parsed);
+  }
+
+  static std::expected<void, ArgumentError> apply(std::string_view name, std::string_view value,
+                                                  Arguments& parsed) {
+    if (name == "--font") {
+      parsed.fonts.emplace_back(value);
+      return {};
+    }
+    if (name == "-o" || name == "--output") {
+      parsed.output = value;
+      return {};
+    }
+    if (name == "--image") {
+      return apply_image(value, parsed);
+    }
+    if (name == "--width" || name == "--height") {
+      return apply_size(name, value, parsed);
+    }
+    if (name == "--scale") {
+      return apply_scale(value, parsed);
+    }
+    if (name == "--overflow") {
+      return apply_overflow(value, parsed);
+    }
+    if (name == "--line-break") {
+      return apply_strictness(value, parsed);
+    }
+    return apply_stage(value, parsed);  // --dump-stage
+  }
+
+  static std::expected<void, ArgumentError> apply_image(std::string_view value, Arguments& parsed) {
+    const std::size_t equals = value.find('=');
+    if (equals == std::string_view::npos || equals == 0) {
+      return error("--image は <名前>=<パス> の形で指定します: " + std::string(value));
+    }
+    parsed.images.emplace_back(value.substr(0, equals), value.substr(equals + 1));
+    return {};
+  }
+
+  static std::expected<void, ArgumentError> apply_size(std::string_view name,
+                                                       std::string_view value, Arguments& parsed) {
+    const std::optional<int> number = parse_int(value);
+    if (!number) {
+      return error(std::string(name) + " には整数を指定します: " + std::string(value));
+    }
+    if (name == "--width") {
+      parsed.options.viewport_width = *number;
+    } else {
+      parsed.options.viewport_height = number;
+    }
+    return {};
+  }
+
+  static std::expected<void, ArgumentError> apply_scale(std::string_view value, Arguments& parsed) {
+    const std::optional<float> number = parse_float(value);
+    if (!number) {
+      return error("--scale には数値を指定します: " + std::string(value));
+    }
+    parsed.options.scale = *number;
+    return {};
+  }
+
+  static std::expected<void, ArgumentError> apply_overflow(std::string_view value,
+                                                           Arguments& parsed) {
+    const std::optional<shashoku::OverflowPolicy> policy = parse_overflow(value);
+    if (!policy) {
+      return error("--overflow は oidashi | oikomi | burasage のいずれかです: " +
+                   std::string(value));
+    }
+    parsed.options.line_break.overflow = *policy;
+    return {};
+  }
+
+  static std::expected<void, ArgumentError> apply_strictness(std::string_view value,
+                                                             Arguments& parsed) {
+    const std::optional<shashoku::LineBreakStrictness> strictness = parse_strictness(value);
+    if (!strictness) {
+      return error("--line-break は strict | normal | loose のいずれかです: " + std::string(value));
+    }
+    parsed.options.line_break.strictness = *strictness;
+    return {};
+  }
+
+  static std::expected<void, ArgumentError> apply_stage(std::string_view value, Arguments& parsed) {
+    const std::optional<shashoku::DumpStage> stage = parse_stage(value);
+    if (!stage) {
+      return error("--dump-stage は dom | style | box | display-list | svg のいずれかです: " +
+                   std::string(value));
+    }
+    parsed.stage = stage;
+    return {};
+  }
+
+  // 引数を読み切ったあとの整合性。
+  static std::expected<Arguments, ArgumentError> finish(Arguments parsed) {
     if (parsed.input.empty()) {
       return error("入力の HTML ファイルを指定してください");
     }
@@ -251,11 +297,6 @@ class Parser {
     return parsed;
   }
 
- private:
-  static std::unexpected<ArgumentError> error(std::string message) {
-    return std::unexpected(ArgumentError{std::move(message)});
-  }
-
   // "--width=800" を ("--width", "800") に割る。`=` がなければ値は nullopt。
   static std::pair<std::string_view, std::optional<std::string_view>> split(std::string_view arg) {
     const std::size_t equals = arg.find('=');
@@ -265,8 +306,8 @@ class Parser {
     return {arg.substr(0, equals), arg.substr(equals + 1)};
   }
 
-  std::expected<std::string_view, ArgumentError> take(std::string_view name,
-                                                      std::optional<std::string_view> inline_value) {
+  std::expected<std::string_view, ArgumentError> take(
+      std::string_view name, std::optional<std::string_view> inline_value) {
     if (inline_value) {
       return *inline_value;
     }
@@ -344,8 +385,8 @@ int run(const Arguments& arguments) {
       std::cout << *dumped << '\n';
       return kExitOk;
     }
-    const std::span<const std::uint8_t> bytes{
-        reinterpret_cast<const std::uint8_t*>(dumped->data()), dumped->size()};
+    const std::span<const std::uint8_t> bytes{reinterpret_cast<const std::uint8_t*>(dumped->data()),
+                                              dumped->size()};
     if (!write_binary(arguments.output, bytes)) {
       return fail_with("出力を書けません: " + arguments.output);
     }
@@ -366,10 +407,7 @@ int run(const Arguments& arguments) {
   return kExitOk;
 }
 
-}  // namespace
-
-int main(int argc, char** argv) {
-  const std::vector<std::string_view> args(argv + 1, argv + argc);
+int cli_main(std::span<const std::string_view> args) {
   const auto arguments = Parser(args).parse();
   if (!arguments) {
     std::cerr << "error: " << arguments.error().message << "\n\n";
@@ -381,4 +419,21 @@ int main(int argc, char** argv) {
     return kExitOk;
   }
   return run(*arguments);
+}
+
+}  // namespace
+
+int main(int argc, char** argv) {
+  // shashoku 自身は例外を投げない（CLAUDE.md のコード規約）が、確保失敗や
+  // iostream までは保証できない。main から例外を出さないための最後の網。
+  try {
+    const std::vector<std::string_view> args(argv + 1, argv + argc);
+    return cli_main(args);
+  } catch (const std::exception& error) {
+    std::cerr << "error: " << error.what() << '\n';
+    return kExitError;
+  } catch (...) {
+    std::cerr << "error: 不明な例外\n";
+    return kExitError;
+  }
 }

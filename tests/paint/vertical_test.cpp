@@ -19,9 +19,9 @@ constexpr Color kRed{255, 0, 0, 255};
 constexpr float kViewportWidth = 200;
 
 TEST(PaintVertical, BlockRectIsTransposedFromTheRightEdge) {
-  const BoxTree box_tree = tree(
-      block("#root", lrect(10, 20, 50, 30), fill(kRed), std::vector<BlockBox>{}), kViewportWidth,
-      WritingMode::VerticalRl);
+  const BoxTree box_tree =
+      tree(block("#root", lrect(10, 20, 50, 30), fill(kRed), std::vector<BlockBox>{}),
+           kViewportWidth, WritingMode::VerticalRl);
 
   // block は紙面の右端からの距離。左端は block_end = 20 + 30 = 50 の側。
   EXPECT_TRUE(commands_eq(build_display_list(box_tree),
@@ -76,8 +76,8 @@ TEST(PaintVertical, ImageRectIsTransposed) {
                  std::vector<LineBox>{line(lrect(0, 16, 100, 40), 36, {image})}),
            kViewportWidth, WritingMode::VerticalRl);
 
-  EXPECT_TRUE(commands_eq(build_display_list(box_tree),
-                          {raster::DrawImage{1, Rect{200 - 56, 8, 40, 40}}}));
+  EXPECT_TRUE(
+      commands_eq(build_display_list(box_tree), {raster::DrawImage{1, Rect{200 - 56, 8, 40, 40}}}));
 }
 
 }  // namespace

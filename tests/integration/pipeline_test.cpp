@@ -41,11 +41,11 @@ TEST(Determinism, FreshFontSetsGiveSameBytes) {
 // ---------------------------------------------------------------------------
 
 TEST(OutputSize, HeightFollowsContent) {
-  RenderOptions options = options_for(320);
-  const auto one_line = render(R"(<div style="line-height: 20px">あ</div>)", japanese_fonts(),
-                               options);
-  const auto two_lines = render(R"(<div style="line-height: 20px">あ<br>い</div>)",
-                                japanese_fonts(), options);
+  const RenderOptions options = options_for(320);
+  const auto one_line =
+      render(R"(<div style="line-height: 20px">あ</div>)", japanese_fonts(), options);
+  const auto two_lines =
+      render(R"(<div style="line-height: 20px">あ<br>い</div>)", japanese_fonts(), options);
   ASSERT_TRUE(one_line.has_value()) << to_string(one_line.error());
   ASSERT_TRUE(two_lines.has_value()) << to_string(two_lines.error());
   EXPECT_EQ(one_line->width, 320);
@@ -56,8 +56,8 @@ TEST(OutputSize, HeightFollowsContent) {
 TEST(OutputSize, ExplicitHeightWins) {
   RenderOptions options = options_for(320);
   options.viewport_height = 100;
-  const auto result = render(R"(<div style="line-height: 20px">あ</div>)", japanese_fonts(),
-                             options);
+  const auto result =
+      render(R"(<div style="line-height: 20px">あ</div>)", japanese_fonts(), options);
   ASSERT_TRUE(result.has_value()) << to_string(result.error());
   EXPECT_EQ(result->width, 320);
   EXPECT_EQ(result->height, 100);
@@ -68,8 +68,8 @@ TEST(OutputSize, ScaleMultipliesDevicePixels) {
   RenderOptions options = options_for(101);
   options.viewport_height = 51;
   options.scale = 2.0F;
-  const auto result = render(R"(<div style="line-height: 20px">あ</div>)", japanese_fonts(),
-                             options);
+  const auto result =
+      render(R"(<div style="line-height: 20px">あ</div>)", japanese_fonts(), options);
   ASSERT_TRUE(result.has_value()) << to_string(result.error());
   EXPECT_EQ(result->width, 202);
   EXPECT_EQ(result->height, 102);
@@ -96,8 +96,8 @@ TEST(OutputSize, EmptyDocumentWithExplicitHeightIsFine) {
 // ---------------------------------------------------------------------------
 
 TEST(Warnings, MissingGlyphIsReportedAndRenderingContinues) {
-  const auto result = render(R"(<div style="font-size: 20px">ABC😀あ</div>)",
-                             latin_then_japanese(), options_for(320));
+  const auto result = render(R"(<div style="font-size: 20px">ABC😀あ</div>)", latin_then_japanese(),
+                             options_for(320));
   ASSERT_TRUE(result.has_value()) << to_string(result.error());
   ASSERT_EQ(result->warnings.size(), 1U);
   EXPECT_EQ(result->warnings[0].kind, WarningKind::MissingGlyph);
@@ -108,8 +108,8 @@ TEST(Warnings, MissingGlyphIsReportedAndRenderingContinues) {
 
 // 警告の並びはコードポイント昇順に固定する（出現順ではない）。
 TEST(Warnings, SortedByCodepoint) {
-  const auto result = render(R"(<div style="font-size: 20px">😀あ😃</div>)", japanese_fonts(),
-                             options_for(320));
+  const auto result =
+      render(R"(<div style="font-size: 20px">😀あ😃</div>)", japanese_fonts(), options_for(320));
   ASSERT_TRUE(result.has_value()) << to_string(result.error());
   ASSERT_EQ(result->warnings.size(), 2U);
   EXPECT_EQ(result->warnings[0].codepoint, U'\U0001F600');

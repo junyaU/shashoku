@@ -65,13 +65,13 @@ TEST(PaintBlock, ZeroWidthBorderEmitsNothing) {
 
 // 前順（親の背景と枠線 → 子）。兄弟は並び順。
 TEST(PaintBlock, PreorderTraversal) {
-  const BoxTree box_tree = tree(block(
-      "#root", lrect(0, 0, 100, 60), fill(kRed),
-      std::vector<BlockBox>{
-          block("div", lrect(0, 0, 100, 30), border(1, kGreen),
-                std::vector<BlockBox>{
-                    block("p", lrect(5, 5, 90, 20), fill(kBlue), std::vector<BlockBox>{})}),
-          block("div", lrect(0, 30, 100, 30), fill(kGreen), std::vector<BlockBox>{})}));
+  const BoxTree box_tree =
+      tree(block("#root", lrect(0, 0, 100, 60), fill(kRed),
+                 std::vector<BlockBox>{
+                     block("div", lrect(0, 0, 100, 30), border(1, kGreen),
+                           std::vector<BlockBox>{block("p", lrect(5, 5, 90, 20), fill(kBlue),
+                                                       std::vector<BlockBox>{})}),
+                     block("div", lrect(0, 30, 100, 30), fill(kGreen), std::vector<BlockBox>{})}));
 
   EXPECT_TRUE(commands_eq(build_display_list(box_tree),
                           {raster::FillRect{Rect{0, 0, 100, 60}, kRed},

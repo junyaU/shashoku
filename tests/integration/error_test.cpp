@@ -155,6 +155,12 @@ TEST(RenderErrors, InvalidOptions) {
     options.scale = scale;
     return options;
   };
+  const auto with_level = [](int level) {
+    RenderOptions options;
+    options.viewport_width = 320;
+    options.compression_level = level;
+    return options;
+  };
   const std::vector<OptionCase> cases{
       {"zero-width", make(0, 0, 1.0F), "viewport width"},
       {"negative-width", make(-100, 0, 1.0F), "viewport width"},
@@ -165,6 +171,9 @@ TEST(RenderErrors, InvalidOptions) {
       {"huge-scale", make(320, 0, 1e9F), "scale", ErrorKind::LimitExceeded},
       {"nan-scale", make(320, 0, std::numeric_limits<float>::quiet_NaN()), "scale"},
       {"inf-scale", make(320, 0, std::numeric_limits<float>::infinity()), "scale"},
+      // 圧縮レベルは 0〜9（A32）。範囲外は「不正な値」なので InvalidOption。
+      {"level-below-range", with_level(-1), "compression level"},
+      {"level-above-range", with_level(10), "compression level"},
   };
   for (const OptionCase& test_case : cases) {
     const auto result = render("<div>あ</div>", japanese_fonts(), test_case.options);

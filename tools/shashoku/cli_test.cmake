@@ -78,6 +78,38 @@ elseif(CASE STREQUAL "trim_flags")
     RESULT_VARIABLE bad_status ERROR_VARIABLE bad_stderr)
   expect_equal("${bad_status}" "2" "exit code for --trim-line-start=1")
 
+elseif(CASE STREQUAL "compression")
+  # --compression（A32）。レベルはファイルの大きさだけを変え、絵は変えない。
+  set(html "${WORK_DIR}/compression.html")
+  file(WRITE "${html}" "<div style=\"font-size: 20px; width: 400px\">圧縮レベルの検査。</div>\n")
+  foreach(level 0 9)
+    execute_process(
+      COMMAND "${CLI}" "${html}" --font "${font}" -o "${WORK_DIR}/level${level}.png" --width 420
+              --compression ${level}
+      RESULT_VARIABLE status ERROR_VARIABLE stderr_text)
+    expect_equal("${status}" "0" "exit code for --compression ${level} (stderr: ${stderr_text})")
+  endforeach()
+  file(SIZE "${WORK_DIR}/level0.png" size0)
+  file(SIZE "${WORK_DIR}/level9.png" size9)
+  if(NOT size0 GREATER size9)
+    message(FATAL_ERROR "--compression 0 (${size0} B) が 9 (${size9} B) より大きくありません")
+  endif()
+
+  # 範囲外は render() が InvalidOption で落とす（終了コード 1）
+  execute_process(
+    COMMAND "${CLI}" "${html}" --font "${font}" -o "${WORK_DIR}/never.png" --compression 10
+    RESULT_VARIABLE bad_status ERROR_VARIABLE bad_stderr)
+  expect_equal("${bad_status}" "1" "exit code for --compression 10")
+  if(NOT bad_stderr MATCHES "invalid-option")
+    message(FATAL_ERROR "stderr に invalid-option がありません: ${bad_stderr}")
+  endif()
+
+  # 数値でなければ引数エラー（終了コード 2）
+  execute_process(
+    COMMAND "${CLI}" "${html}" --font "${font}" -o "${WORK_DIR}/never.png" --compression fast
+    RESULT_VARIABLE junk_status ERROR_VARIABLE junk_stderr)
+  expect_equal("${junk_status}" "2" "exit code for --compression fast")
+
 elseif(CASE STREQUAL "unsupported_css")
   set(html "${WORK_DIR}/unsupported.html")
   file(WRITE "${html}" "<div style=\"float: left\">あ</div>\n")

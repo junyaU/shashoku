@@ -48,6 +48,15 @@ struct RenderOptions {
   LineBreakConfig line_break;
   RenderLimits limits;  // 入力の上限（limits.hpp）。既定値で OG 画像には十分広い
 
+  // PNG（zlib deflate）の圧縮レベル。0（無圧縮・最速）〜 9（最小・最遅）。範囲外は
+  // `InvalidOption`。既定は zlib の既定と同じ 6 で、9 に比べて時間がおよそ半分、
+  // ファイルは 6% ほど大きくなる（ARCHITECTURE.md A32 の実測）。
+  //
+  // レベルは**入力の一部**なので純粋関数の性質は壊れない（DESIGN.md §3-5）:
+  // 同じ HTML と同じ RenderOptions からは常にバイト単位で同じ PNG が出る。
+  // レベルを変えるとファイルのバイト列は変わるが、デコードした画素は 1 ビットも変わらない。
+  int compression_level = 6;
+
   bool operator==(const RenderOptions&) const = default;
 };
 

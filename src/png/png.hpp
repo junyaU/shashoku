@@ -26,14 +26,25 @@ inline constexpr std::array<std::uint8_t, 8> kSignature{0x89, 0x50, 0x4E, 0x47,
 // RenderLimits の既定と同じ（食い違わないことを src/api/render.cpp が static_assert する）。
 inline constexpr std::uint64_t kMaxPixels = std::uint64_t{1} << 24U;
 
+// zlib の圧縮レベルの既定（A32）。利用者が調整するのは `RenderOptions::compression_level`
+// に一本化してあり、api は必ずそちらの値を encode() に渡す。ここの定数は png を単体で
+// 使うときの既定で、値は RenderOptions の既定と同じ
+// （食い違わないことを src/api/render.cpp が static_assert する。A25 と同じ流儀）。
+inline constexpr int kDefaultCompressionLevel = 6;
+
 // Bitmap（RGBA8 ストレートアルファ）→ PNG バイト列。
 // 出力は color type 6 / bit depth 8 / 非インターレース固定。フィルタは行ごとに
-// 5 種（None / Sub / Up / Average / Paeth）を試し、符号つきバイトとみなした絶対値和が
-// 最小のものを選ぶ（PNG 仕様 §12.8。同点なら番号の小さい方）。zlib の設定も固定なので、
-// 同じ Bitmap からは常にバイト単位で同じ結果が出る（DESIGN.md §3-5）。
+// 5 種（None / Sub / Up / Average / Paeth）の「符号つきバイトとみなした絶対値和」を比べ、
+// 最小のものを選ぶ（PNG 仕様 §12.8。同点なら番号の小さい方）。
 //
-// 幅か高さが 0、または rgba の長さが width*height*4 でない Bitmap は InvalidOption。
-Result<std::vector<std::uint8_t>> encode(const Bitmap& bitmap);
+// compression_level は zlib の圧縮レベル（0〜9）。**レベルだけが入力で、ストラテジ・
+// windowBits・memLevel は固定**なので、同じ Bitmap と同じレベルからは常にバイト単位で
+// 同じ結果が出る（DESIGN.md §3-5）。レベルはフィルタの選択には影響しない。
+//
+// 幅か高さが 0、rgba の長さが width*height*4 でない、compression_level が 0〜9 の外：
+// いずれも InvalidOption。
+Result<std::vector<std::uint8_t>> encode(const Bitmap& bitmap,
+                                         int compression_level = kDefaultCompressionLevel);
 
 // PNG バイト列 → Bitmap（RGBA8）。<img> とゴールデンテストの比較用。
 // 信頼できない入力を受ける前提で、どんなバイト列でも落ちずに ImageDecode を返す。

@@ -8,7 +8,10 @@
 
 #include <gtest/gtest.h>
 
+#include "core/bitmap.hpp"
+#include "core/result.hpp"
 #include "integration/integration_support.hpp"
+#include "png/png.hpp"
 #include "shashoku/shashoku.hpp"
 
 // パイプライン全体の性質: 決定性・出力サイズ・各段のダンプ・豆腐の警告。
@@ -38,6 +41,68 @@ TEST(Determinism, FreshFontSetsGiveSameBytes) {
   ASSERT_TRUE(first.has_value()) << to_string(first.error());
   ASSERT_TRUE(second.has_value()) << to_string(second.error());
   EXPECT_EQ(first->png, second->png);
+}
+
+// ---------------------------------------------------------------------------
+// PNG の圧縮レベル（ARCHITECTURE.md A32）
+//
+// レベルは「入力の一部」。同じ入力 + 同じレベルなら同じバイト列が出る（DESIGN.md §3-5）。
+// 変わるのは IDAT の縮み方だけで、絵（デコードした画素）は 1 ビットも変わらない。
+// ---------------------------------------------------------------------------
+
+TEST(CompressionLevel, DefaultIsSix) {
+  EXPECT_EQ(RenderOptions{}.compression_level, 6);
+
+  RenderOptions explicit_six = options_for(320);
+  explicit_six.compression_level = 6;
+  const auto with_default = render(kSample, japanese_fonts(), options_for(320));
+  const auto with_six = render(kSample, japanese_fonts(), explicit_six);
+  ASSERT_TRUE(with_default.has_value()) << to_string(with_default.error());
+  ASSERT_TRUE(with_six.has_value()) << to_string(with_six.error());
+  EXPECT_EQ(with_default->png, with_six->png);
+}
+
+TEST(CompressionLevel, ChangesTheSizeButNotThePixels) {
+  RenderOptions fastest = options_for(320);
+  fastest.compression_level = 0;
+  RenderOptions smallest = options_for(320);
+  smallest.compression_level = 9;
+
+  const auto loose = render(kSample, japanese_fonts(), fastest);
+  const auto tight = render(kSample, japanese_fonts(), smallest);
+  ASSERT_TRUE(loose.has_value()) << to_string(loose.error());
+  ASSERT_TRUE(tight.has_value()) << to_string(tight.error());
+  EXPECT_GT(loose->png.size(), tight->png.size());
+  EXPECT_EQ(loose->width, tight->width);
+  EXPECT_EQ(loose->height, tight->height);
+
+  const Result<Bitmap> loose_pixels = png::decode(loose->png);
+  const Result<Bitmap> tight_pixels = png::decode(tight->png);
+  ASSERT_TRUE(loose_pixels.has_value()) << to_string(loose_pixels.error());
+  ASSERT_TRUE(tight_pixels.has_value()) << to_string(tight_pixels.error());
+  EXPECT_EQ(loose_pixels->rgba, tight_pixels->rgba);
+}
+
+TEST(CompressionLevel, EveryLevelRendersTheSamePicture) {
+  const auto reference = render(kSample, japanese_fonts(), options_for(320));
+  ASSERT_TRUE(reference.has_value()) << to_string(reference.error());
+  const Result<Bitmap> expected = png::decode(reference->png);
+  ASSERT_TRUE(expected.has_value()) << to_string(expected.error());
+
+  for (int level = 0; level <= 9; ++level) {
+    RenderOptions options = options_for(320);
+    options.compression_level = level;
+    const auto result = render(kSample, japanese_fonts(), options);
+    ASSERT_TRUE(result.has_value()) << "level " << level << ": " << to_string(result.error());
+    const Result<Bitmap> pixels = png::decode(result->png);
+    ASSERT_TRUE(pixels.has_value()) << "level " << level << ": " << to_string(pixels.error());
+    EXPECT_EQ(pixels->rgba, expected->rgba) << "level " << level;
+
+    // 同じレベルで 2 回描けばバイト列まで一致する。
+    const auto again = render(kSample, japanese_fonts(), options);
+    ASSERT_TRUE(again.has_value()) << "level " << level;
+    EXPECT_EQ(result->png, again->png) << "level " << level;
+  }
 }
 
 // ---------------------------------------------------------------------------

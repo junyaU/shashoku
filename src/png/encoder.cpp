@@ -23,6 +23,11 @@ constexpr std::size_t kBytesPerPixel = 4;  // color type 6 / bit depth 8
 constexpr std::uint8_t kColorTypeRgba = 6;
 constexpr std::uint8_t kBitDepth = 8;
 constexpr std::uint32_t kMaxChunkLength = 0x7FFFFFFFU;  // PNG のチャンク長は 31bit
+// zlib の圧縮レベルの範囲（Z_NO_COMPRESSION 〜 Z_BEST_COMPRESSION）。
+// Z_DEFAULT_COMPRESSION（-1）は「zlib に任せる」を意味する別物なので受け付けない
+// （同じ値でも zlib の版によって実際のレベルが変わりうる。決定性のため）。
+constexpr int kMinCompressionLevel = 0;
+constexpr int kMaxCompressionLevel = 9;
 
 // フィルタ種別（PNG 仕様 §9.2）。番号がそのままフィルタバイトになる。
 enum class Filter : std::uint8_t { None = 0, Sub = 1, Up = 2, Average = 3, Paeth = 4 };
@@ -159,11 +164,16 @@ std::vector<std::uint8_t> filter_image(const Bitmap& bitmap, std::size_t stride)
 
 }  // namespace
 
-Result<std::vector<std::uint8_t>> encode(const Bitmap& bitmap) {
+Result<std::vector<std::uint8_t>> encode(const Bitmap& bitmap, int compression_level) {
   if (bitmap.width == 0 || bitmap.height == 0) {
     return fail(ErrorKind::InvalidOption,
                 std::format("cannot encode a PNG with zero {}: the bitmap is {}x{}",
                             bitmap.width == 0 ? "width" : "height", bitmap.width, bitmap.height));
+  }
+  if (compression_level < kMinCompressionLevel || compression_level > kMaxCompressionLevel) {
+    return fail(ErrorKind::InvalidOption,
+                std::format("compression level must be between {} and {} (got {})",
+                            kMinCompressionLevel, kMaxCompressionLevel, compression_level));
   }
   const std::uint64_t needed =
       std::uint64_t{bitmap.width} * bitmap.height * std::uint64_t{kBytesPerPixel};
@@ -176,14 +186,14 @@ Result<std::vector<std::uint8_t>> encode(const Bitmap& bitmap) {
   const std::size_t stride = static_cast<std::size_t>(bitmap.width) * kBytesPerPixel;
   const std::vector<std::uint8_t> raw = filter_image(bitmap, stride);
 
-  // zlib の設定は固定する（レベル・ストラテジ・windowBits・memLevel を変えると
-  // 出力バイト列が変わり、ゴールデンテストが崩れる）。compress2 は deflateInit 相当なので
-  // ストラテジ / windowBits / memLevel はすべて既定値になる。
+  // レベル以外の zlib の設定は固定する（ストラテジ・windowBits・memLevel を変えると
+  // 出力バイト列が変わる）。compress2 は deflateInit 相当なので、それらはすべて既定値になる。
+  // レベルは入力の一部（A32）: 同じレベルなら常に同じバイト列が出る。
   uLongf compressed_size = compressBound(static_cast<uLong>(raw.size()));
   std::vector<std::uint8_t> compressed(compressed_size);
   const int rc = compress2(reinterpret_cast<Bytef*>(compressed.data()), &compressed_size,
                            reinterpret_cast<const Bytef*>(raw.data()),
-                           static_cast<uLong>(raw.size()), Z_BEST_COMPRESSION);
+                           static_cast<uLong>(raw.size()), compression_level);
   if (rc != Z_OK) {
     return fail(ErrorKind::Internal,
                 std::format("zlib compress2 failed with code {} while encoding a {}x{} PNG", rc,

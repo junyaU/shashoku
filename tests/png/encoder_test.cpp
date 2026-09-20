@@ -35,6 +35,14 @@ std::vector<std::uint8_t> encode_or_die(const Bitmap& bitmap) {
   return encoded.value_or(std::vector<std::uint8_t>{});
 }
 
+std::vector<std::uint8_t> encode_or_die(const Bitmap& bitmap, int level) {
+  Result<std::vector<std::uint8_t>> encoded = encode(bitmap, level);
+  EXPECT_TRUE(encoded.has_value())
+      << "level " << level << ": "
+      << (encoded.has_value() ? std::string{} : to_string(encoded.error()));
+  return encoded.value_or(std::vector<std::uint8_t>{});
+}
+
 std::uint32_t be32_at(std::span<const std::uint8_t> bytes, std::size_t at) {
   return (static_cast<std::uint32_t>(bytes[at]) << 24U) |
          (static_cast<std::uint32_t>(bytes[at + 1]) << 16U) |
@@ -172,6 +180,66 @@ TEST(PngEncode, IdatIsAValidZlibStreamOfTheExpectedLength) {
                        static_cast<uLong>(chunks[1].data.size())),
             Z_OK);
   EXPECT_EQ(raw_size, (stride + 1) * bitmap.height);
+}
+
+// ---- 圧縮レベル（ARCHITECTURE.md A32）--------------------------------------
+
+TEST(PngEncode, DefaultCompressionLevelIsSix) {
+  // 既定は zlib の既定と同じ 6（RenderOptions::compression_level と一致させてある）。
+  EXPECT_EQ(kDefaultCompressionLevel, 6);
+  const Bitmap bitmap = test::make_gradient(64, 48);
+  EXPECT_EQ(encode_or_die(bitmap), encode_or_die(bitmap, kDefaultCompressionLevel));
+  EXPECT_EQ(encode_or_die(bitmap), encode_or_die(bitmap, 6));
+}
+
+TEST(PngEncode, RejectsCompressionLevelsOutsideZeroToNine) {
+  const Bitmap bitmap = test::make_gradient(8, 8);
+  for (const int level : {-1, 10, 1000}) {
+    const Result<std::vector<std::uint8_t>> encoded = encode(bitmap, level);
+    ASSERT_FALSE(encoded.has_value()) << "level " << level;
+    EXPECT_EQ(encoded.error().kind, ErrorKind::InvalidOption) << "level " << level;
+    // message には「いくつを渡したか」と「許される範囲」が入る（fail loudly）。
+    EXPECT_NE(encoded.error().message.find(std::to_string(level)), std::string::npos)
+        << encoded.error().message;
+    EXPECT_NE(encoded.error().message.find("0"), std::string::npos) << encoded.error().message;
+    EXPECT_NE(encoded.error().message.find("9"), std::string::npos) << encoded.error().message;
+  }
+}
+
+TEST(PngEncode, EveryLevelIsAcceptedAndDeterministic) {
+  const Bitmap bitmap = test::make_noise(37, 23, 0xBEEF);
+  for (int level = 0; level <= 9; ++level) {
+    const std::vector<std::uint8_t> first = encode_or_die(bitmap, level);
+    const std::vector<std::uint8_t> second = encode_or_die(bitmap, level);
+    ASSERT_FALSE(first.empty()) << "level " << level;
+    EXPECT_EQ(first, second) << "level " << level;
+  }
+}
+
+TEST(PngEncode, LevelChangesTheBytesButNotThePixels) {
+  const Bitmap bitmap = test::make_gradient(96, 64);
+  const std::vector<std::uint8_t> level0 = encode_or_die(bitmap, 0);
+  const std::vector<std::uint8_t> level9 = encode_or_die(bitmap, 9);
+  // level 0 は deflate の「無圧縮」ブロックなので必ず大きくなる。
+  EXPECT_GT(level0.size(), level9.size());
+  EXPECT_NE(level0, level9);
+  for (int level = 0; level <= 9; ++level) {
+    const Result<Bitmap> decoded = decode(encode_or_die(bitmap, level));
+    ASSERT_TRUE(decoded.has_value())
+        << "level " << level << ": "
+        << (decoded.has_value() ? std::string{} : to_string(decoded.error()));
+    EXPECT_EQ(*decoded, bitmap) << "level " << level;
+  }
+}
+
+// レベルは zlib にしか効かない。行ごとのフィルタ選択はレベルに依存しない。
+TEST(PngFilter, FilterChoiceDoesNotDependOnTheLevel) {
+  const Bitmap bitmap = test::make_gradient(40, 24);
+  const std::vector<std::uint8_t> expected = extract_filters(encode_or_die(bitmap, 0));
+  ASSERT_EQ(expected.size(), bitmap.height);
+  for (int level = 1; level <= 9; ++level) {
+    EXPECT_EQ(extract_filters(encode_or_die(bitmap, level)), expected) << "level " << level;
+  }
 }
 
 // ---- 決定性（DESIGN.md §3-5）------------------------------------------------

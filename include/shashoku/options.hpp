@@ -1,0 +1,51 @@
+#pragma once
+
+#include <cstdint>
+#include <optional>
+#include <string>
+
+namespace shashoku {
+
+// 行に収まらなかったときの処理（DESIGN.md §5 / JIS X 4051・JLREQ）。
+enum class OverflowPolicy : std::uint8_t {
+  Oidashi,  // 追い出し: 禁則に掛かる文字を道連れにして次の行へ送る（既定）
+  Oikomi,  // 追い込み: 約物の空きを詰めて行内に収める。詰めきれなければ追い出し
+  Burasage,  // ぶら下げ: 行末の句読点 1 文字を行の外にはみ出させる。対象外の文字なら追い出し
+};
+
+// CSS の line-break（CSS Text Level 3 §5.3）。小書きの仮名・長音の前で
+//   Strict: 割らない（JIS X 4051 の標準的な行頭禁則）
+//   Normal: 割ってよい
+//   Loose : Normal に加えて繰り返し記号（々 ゝ ゞ）などの前でも割ってよい
+enum class LineBreakStrictness : std::uint8_t { Strict, Normal, Loose };
+
+// 行分割器の設定。CSS で指定できないもの（利用者のポリシー）をここに置く。
+// CSS の `line-break` を書いた要素では strictness がその値で上書きされる。
+struct LineBreakConfig {
+  OverflowPolicy overflow = OverflowPolicy::Oidashi;
+  // CSS の line-break が auto のときの既定
+  LineBreakStrictness strictness = LineBreakStrictness::Strict;
+  // 約物が連続するときの空きを詰める（JLREQ 3.1.4）。「」」「」が間延びしない
+  bool collapse_punctuation_spacing = true;
+  // 行末に来た終わり括弧・句読点が収まらないとき、後ろの半角空きを詰めてよい
+  bool trim_line_end = true;
+  // 行頭に来た始め括弧の前の半角空きを詰める（天付き）
+  bool trim_line_start = false;
+  // 禁則テーブルへの追加（「この文字も行頭 / 行末に置きたくない」を足す口）
+  std::u32string extra_line_start_prohibited;
+  std::u32string extra_line_end_prohibited;
+
+  bool operator==(const LineBreakConfig&) const = default;
+};
+
+// render() に渡す設定（DESIGN.md §8）。
+struct RenderOptions {
+  int viewport_width = 1200;           // CSS px。OG 画像の定番サイズを既定にする
+  std::optional<int> viewport_height;  // CSS px。未指定なら内容の高さに追従する
+  float scale = 1.0F;                  // 2.0 で Retina 向けの 2 倍解像度
+  LineBreakConfig line_break;
+
+  bool operator==(const RenderOptions&) const = default;
+};
+
+}  // namespace shashoku

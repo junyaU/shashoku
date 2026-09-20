@@ -8,6 +8,7 @@ project(shashoku
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 option(SHASHOKU_BUILD_TESTS "テストをビルドする" ${PROJECT_IS_TOP_LEVEL})
+option(SHASHOKU_BUILD_TOOLS "CLI（tools/shashoku）をビルドする" ${PROJECT_IS_TOP_LEVEL})
 option(SHASHOKU_WARNINGS_AS_ERRORS "警告をエラーとして扱う" OFF)
 option(SHASHOKU_SANITIZE "ASan + UBSan を有効にする（依存ライブラリにも適用）" OFF)
 
@@ -50,6 +51,7 @@ if(SHASHOKU_SANITIZE)
 endif()
 
 include(CompilerOptions)
+include(Modules)
 include(Dependencies)
 
 add_subdirectory(src)
@@ -57,4 +59,9 @@ add_subdirectory(src)
 if(SHASHOKU_BUILD_TESTS)
   enable_testing()
   add_subdirectory(tests)
+endif()
+
+# CLI はテストのあと（CLI のスモークテストが add_test を使うので enable_testing() より後に置く）
+if(SHASHOKU_BUILD_TOOLS)
+  add_subdirectory(tools/shashoku)
 endif()

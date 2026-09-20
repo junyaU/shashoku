@@ -66,6 +66,20 @@ flex の固有寸法計測がその外側から同じ段落を何度も組み直
 `+ - * /`、`sqrt`、`floor / ceil / round / trunc`、`min / max / abs` だけを使う。
 `pow / exp / log / sin / cos` などは libm の版で結果が変わりうるので使わない。
 
+**棚卸し**（issue #10-4a。`src/` 全体を grep した結果。違反なし）:
+
+| 場所 | 使っているもの | 決定的か |
+|---|---|---|
+| layout | `+ - * /`、`std::min / max`、`std::abs`（`flex_layout.cpp` の 1 か所）だけ。**丸めの関数を 1 つも使っていない** | ○ |
+| raster | `std::sqrt`（角丸の輪郭）、`std::round`（グリフ原点 A8・被覆率 → 0..255）、`std::floor / ceil`（画素範囲）、`std::fabs`、`std::isfinite` | ○（A9 の許可リスト内。`isfinite` は分類述語で誤差を持たない） |
+| paint | 算術のみ。`std::isfinite`（`dump_svg.cpp`）だけ | ○ |
+| text | `std::lround`（`shaper.cpp` の px → 26.6 固定小数点、`freetype_glyph_source.cpp` の pixel_size → 26.6） | ○（`lround` は「絶対値の大きい方へ丸める」と仕様で決まっており、近似ではない） |
+| core / style | `std::to_chars`（JSON の float。**ロケールに依らず、最短往復表現は標準が一意に定める**）、`std::lround`（`css_color.cpp` の `rgb(50%)`） | ○ |
+| float → 整数のキャスト | すべて `round / floor / ceil / lround` を通したあと。切り捨て任せの暗黙変換は出力の経路にない | ○ |
+
+`unordered_map` / `unordered_set` は `src/` と `include/` に 1 つもない（反復順が出力に出る余地がない）。
+豆腐の重複除去は `std::set<MissingGlyph>`（A31）で、順序は値で決まる。
+
 **A10. マージンの相殺は「隣り合う兄弟ブロック間」だけ実装する。** 親子間の相殺はしない。
 flex コンテナの中では一切相殺しない。ブラウザとのピクセル一致は目標ではない（DESIGN.md §4）。
 
@@ -449,6 +463,31 @@ DESIGN.md §6-6 は豆腐の警告を「コードポイント **＋位置**」�
 「参照を含まない区間」の並び）が要る。平坦化の段では畳み込み前の添字まで追えている
 （`inline_collect.cpp` の `Collapsed::source`）ので、html が上の対応を持てば layout 側は
 `FlatChar` に「ノード内オフセット」を 1 本足すだけで桁まで出せる。
+
+**A32. 決定性は 2 層に分けて固定する。zlib の deflate 出力は固定しない。**（issue #10-4）
+DESIGN.md §3-5 の「同じ入力 → バイト単位で同じ PNG」は、**どの範囲で**成り立つかが書かれて
+いなかった。同一プロセス内の一致と、コンパイラ・標準ライブラリ・CPU をまたいだ一致は別の主張。
+PNG のバイト列を 2 つに割り、それぞれ別の方法で固定した:
+
+- **ピクセル**（浮動小数点演算の結果）… `tests/golden/*.png` のピクセル完全一致。CI の 4 ジョブ
+  （clang-18 + libc++ の dev / asan / release と gcc-14 + libstdc++）が同じ画像に通っているので、
+  **この 2 つのツールチェーン（x86-64 Linux）ではピクセルまで一致する**と言い切れる
+- **shashoku 自身が決めるバイト列**（IHDR / 行ごとのフィルタの選択 / フィルタ後の走査線 /
+  チャンクの並びと CRC）… `tests/png/determinism_test.cpp` が「展開後の IDAT の CRC-32」を
+  リポジトリに固定する。整数演算だけなので環境をまたいで 1 ビットも変わってはいけない
+- **zlib の deflate 出力**… **固定しない。** 版（1.3.2 固定）と設定（`compress2` +
+  `Z_BEST_COMPRESSION`）で決まる。圧縮レベルを変えると出力は必ず変わる（実測: IDAT が
+  29 バイトの 16x16 単色画像でもレベル 6 と 9 で違った）ので、レベルの既定を変える作業
+  （issue #13）と期待値が正面衝突する。だから「PNG 全体のバイト列のハッシュ」は持たず、
+  レベルに依らない層だけを固定してある。**#13 が落ち着いたら全体のハッシュを 1 つ足せばよい**
+
+確認した事実: `tests/golden/*.png` は shashoku 自身のエンコーダの出力そのもの（`SHASHOKU_UPDATE_GOLDEN`
+の書き出しは `png::encode()` を通る）。外部の zlib で IDAT を展開 → レベル 9 で再圧縮すると、
+16 枚すべてでファイルのバイト列と一致した。つまり「render() の出力 == ゴールデンのファイル」は
+いま成り立っているが、#13 でレベルを変えると（ピクセルは同じまま）成り立たなくなる。
+
+保証する範囲・保証しない範囲は [README の「決定性」](../README.md#決定性同じ入力から同じ-png)に
+利用者向けに書いてある。
 
 ---
 
@@ -835,3 +874,22 @@ CLI は `tools/shashoku/`: `shashoku input.html --font A.otf [--font B.ttf …] 
 - メモリを触るモジュール（png, raster, text, html, style）は `asan` プリセットでもテストを通す
 - ファジング（DESIGN.md §10-4）は、乱数の種を固定した「ランダム入力の性質テスト」として
   通常のテストに含める（html: 落ちない / linebreak: §3.4 (6) の不変条件）
+
+**性質テスト**（issue #10-2）。ゴールデンは「以前と同じ絵が出る」ことしか見ないので、
+「書き方を変えたら結果が変わってしまう」たぐいの壊れ方は捕まえられない（#2 / #8 がそれだった）。
+次の 2 つの入力を組んで結果を突き合わせる形で、設計判断そのものをテストにする:
+
+| ファイル | 固定する性質 | 根拠 |
+|---|---|---|
+| `tests/layout/writing_mode_property_test.cpp` | 横書き（幅 W）と縦書き（高さ W）で論理座標のボックスツリーが一致する | A1 |
+| `tests/integration/scale_property_test.cpp` | ボックスツリーとディスプレイリストが scale に依らない／整数座標の矩形は @2x で厳密に 2x2 ピクセルになる | A8 |
+| `tests/layout/invariance_test.cpp` | 素の `<span>` で包む・テキストノードを切る・既定値を明示的に書く・空白の畳み込みを 2 度かける、が組版を変えない | A27 / A14 |
+| `tests/layout/property_test.cpp` | 計測のメモの有無で結果が変わらない | A29 |
+| `tests/integration/shaping_test.cpp` / `line_policy_test.cpp` / `tests/layout/inline_test.cpp` | 装飾だけの `<span>` でグリフ位置が動かない／ブロックに書いた継承プロパティと span に書いたものが一致する | A27 |
+| `tests/integration/determinism_test.cpp` / `tests/png/determinism_test.cpp` | 決定性（A32） | A32 |
+
+**書字方向で一致しないもの**（上の 1 つめのファイル冒頭に全部書いてある。Chrome 比較の
+「意図した差」の候補にもなる）: ベースライン（縦書きでは行の中心軸）／`sideways` と、それによる
+断片の切れ目／`<img>` の行内での揃え方（横書きはベースライン揃え、縦書きは中心軸に中央揃え）と
+固有寸法が物理であること／行に font-size の大小が混ざるときのインライン背景の block 方向／
+ルビの行高の float 1 ulp。

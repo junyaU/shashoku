@@ -62,7 +62,8 @@ tests/<module>/     GoogleTest（実行ファイル名は <module>_test）。end
 tools/shashoku/     CLI
 cmake/              CompilerOptions（警告・決定性フラグ）/ Modules（shashoku_add_module, shashoku_add_test）/ Dependencies（FetchContent）
 scripts/            format.sh / tidy.sh
-docs/               DESIGN.md
+examples/           サンプル HTML（README から参照。統合テストのゴールデンにもなっている）
+docs/               DESIGN.md / ARCHITECTURE.md / images/
 ```
 
 モジュール一覧と依存の向きは ARCHITECTURE.md §2。未着手のモジュールのディレクトリは先に作らない。
@@ -91,7 +92,10 @@ docs/               DESIGN.md
 - **すべて FetchContent でバージョン + SHA256 固定**（cmake/Dependencies.cmake）。システムのライブラリを
   `find_package` で拾わない: 依存の版が変わると出力バイト列が変わり、ゴールデンテストが崩れる
 - 依存ターゲットは `shashoku_mark_system()` でヘッダを SYSTEM 扱いにする（他人のマクロで `-Werror` が落ちるのを防ぐ）
-- 現在: zlib 1.3.2、GoogleTest 1.17.0。FreeType / HarfBuzz は Phase 2 で追加
+- 現在: zlib 1.3.2、FreeType 2.14.3、HarfBuzz 14.4.0（アマルガム `harfbuzz.cc` を自前の add_library でビルド。
+  公式 CMake は FreeType 連携を勝手に有効にするため。ARCHITECTURE.md A7）、GoogleTest 1.17.0
+- テスト用フォント（Noto Sans JP Regular / Bold、Noto Sans）はリポジトリに置かず、configure 時に
+  コミット SHA とハッシュ固定で取得する（cmake/TestAssets.cmake → `build/<preset>/test_assets/fonts/`）
 - 依存を増やす前に DESIGN.md §7「自作する / 借りる」の表と照合する
 
 ## テスト方針（DESIGN.md §10）
@@ -100,3 +104,7 @@ docs/               DESIGN.md
   ケースには出典（JIS X 4051 / JLREQ / UAX #14 の該当規則）をコメントで添える
 - ゴールデンテストはピクセル完全一致。期待画像の更新は必ず人間が差分を目視してから
 - `tests/toolchain_test.cpp` は環境の配線確認用。製品コードのテストをここに足さない
+- ゴールデンは `tests/golden/*.png`。`SHASHOKU_UPDATE_GOLDEN=1` で再生成できるが、**再生成した画像は必ず
+  1 枚ずつ開いて目で確認してからコミットする**。失敗時は `build/<preset>/test_output/` に actual / expected / diff が出る
+- 単体テストが通っていても絵が間違っていることはある（例: 縦書きのルビが左右逆だった）。組版に関わる変更は
+  CLI で実際に PNG を出して目視する: `build/dev/tools/shashoku/shashoku in.html --font build/dev/test_assets/fonts/NotoSansJP-Regular.otf -o out.png`

@@ -146,19 +146,42 @@ struct Breaks {
 
 inline constexpr float kUnbounded = std::numeric_limits<float>::infinity();
 
+// 計算量の回帰を「時間」ではなく「回数」で測るための計測カウンタ（ARCHITECTURE.md A21 / A24）。
+// linebreak は何にも依存しないので layout::Counters は使えず、同じ約束で自前に持つ:
+//   * 出力（Breaks）には一切影響しない。値を読んで分岐しない。読むのはテストだけ
+//   * グローバル状態・static を持たない。呼び出しごとに引数で受け取る
+//   * 既定は nullptr なので、既存の呼び出し側は書き換えずに済む
+struct Counters {
+  std::uint64_t lines = 0;  // 出した行の数（1 行あたりの作業量を見るときの分母）
+  // 行の決定で調べた位置の数。行ごとに段落の残り全体を舐めていると行数 × N に膨らむ。
+  std::uint64_t line_scan = 0;
+  // 幅と字間調整の計算で舐めたアイテム数の合計（lay_out / squeeze_pool / strip_trailing）。
+  std::uint64_t width_items = 0;
+  // 次の強制改行（<br>）を探して進んだ位置の数。行ごとに前方走査すると行数 × N になる。
+  std::uint64_t mandatory_scan = 0;
+  // 緊急分割（break_anywhere）の位置選びで見た位置の数。
+  std::uint64_t anywhere_scan = 0;
+  // 分割可能位置の判定で前に遡った位置の数（空白越し・数値の並び・地域表示記号の並び）。
+  std::uint64_t rule_scan = 0;
+};
+
 class LineBreaker {
  public:
   explicit LineBreaker(Config config = {});
 
   // available_width に kUnbounded を渡すと ForcedBreak でしか改行しない（max-content の計測）。
-  [[nodiscard]] Breaks break_lines(std::span<const Item> items, float available_width) const;
+  // counters は省略可能な計測の口（出力には影響しない）。
+  [[nodiscard]] Breaks break_lines(std::span<const Item> items, float available_width,
+                                   Counters* counters = nullptr) const;
 
   // 分割不能な最長区間の幅（min-content）。flex アイテムの最小幅の計算に使う。
-  [[nodiscard]] float min_content_width(std::span<const Item> items) const;
+  [[nodiscard]] float min_content_width(std::span<const Item> items,
+                                        Counters* counters = nullptr) const;
 
   // items[i - 1] と items[i] の間で改行してよいか（i は 1..size-1）。
   // 幅を考えない純粋な UAX #14 + 禁則の判定。テストとデバッグダンプ用に公開する。
-  [[nodiscard]] std::vector<bool> break_opportunities(std::span<const Item> items) const;
+  [[nodiscard]] std::vector<bool> break_opportunities(std::span<const Item> items,
+                                                      Counters* counters = nullptr) const;
 
  private:
   Config config_;

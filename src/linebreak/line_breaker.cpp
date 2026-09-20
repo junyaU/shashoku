@@ -49,13 +49,20 @@ constexpr bool is_line_end_prohibited(BreakClass cls) { return cls == BreakClass
 // 1 回の呼び出しぶんの解析結果。アイテム列は呼び出し側が所有する。
 class Analysis {
  public:
-  Analysis(Config config, std::span<const Item> items);
+  Analysis(Config config, std::span<const Item> items, Counters* counters);
 
   [[nodiscard]] std::vector<bool> opportunities() const;
   [[nodiscard]] Breaks break_lines(float available_width) const;
   [[nodiscard]] float min_content_width() const;
 
  private:
+  // 計測（line_breaker.hpp の Counters）。出力には一切影響しない: 足すだけで、読まない。
+  void count(std::uint64_t Counters::*field, std::uint64_t amount = 1) const {
+    if (counters_ != nullptr) {
+      counters_->*field += amount;
+    }
+  }
+
   // 1 行ぶんの幅の測り方。content_end は行末の空白と ForcedBreak を落とした終端。
   struct Fit {
     std::size_t content_end = 0;
@@ -109,9 +116,13 @@ class Analysis {
   [[nodiscard]] Fit fit(std::size_t begin, std::size_t end, float available) const;
 
   // --- 行の決定 ---
+  // begin より後ろで最初に「必ず割る」位置 / 最初の「割ってよい」位置。どちらも無ければ末尾。
+  // break_lines() は begin が前にしか進まないことを使って結果を持ち回るので、
+  // 段落全体での走査は合計 O(N) に収まる（ARCHITECTURE.md A24）。
   [[nodiscard]] std::size_t mandatory_limit(std::size_t begin) const;
+  [[nodiscard]] std::size_t next_opportunity(std::size_t from) const;
   void scan_candidates(std::size_t begin, std::size_t limit, float available, std::size_t& best,
-                       std::size_t& first, std::size_t& next) const;
+                       std::size_t& next) const;
   // 緊急分割（break_anywhere）の候補にできる位置か。
   [[nodiscard]] bool anywhere_candidate(std::size_t p) const;
   void rank_anywhere_position(std::size_t p, std::array<std::size_t, 5>& choice) const;
@@ -146,10 +157,14 @@ class Analysis {
   // （両側のアイテムがともに anywhere のときだけ。ARCHITECTURE.md A23）
   std::vector<std::uint8_t> anywhere_;
   bool has_anywhere_ = false;  // anywhere_ に 1 が 1 つでもあるか
+  // sig_ 上の位置 k の直前に並ぶ地域表示記号（RI）の個数が奇数か（LB30a）。
+  std::vector<std::uint8_t> ri_odd_;
+
+  Counters* counters_ = nullptr;  // 省略可能な計測の口（nullptr なら何もしない）
 };
 
-Analysis::Analysis(Config config, std::span<const Item> items)
-    : config_(std::move(config)), items_(items) {
+Analysis::Analysis(Config config, std::span<const Item> items, Counters* counters)
+    : config_(std::move(config)), items_(items), counters_(counters) {
   const std::size_t n = items_.size();
   cls_.assign(n, BreakClass::Al);
   attached_.assign(n, 0);
@@ -308,6 +323,7 @@ std::size_t Analysis::before_spaces(std::size_t k) const {
   std::size_t j = k;
   while (j > 0) {
     --j;
+    count(&Counters::rule_scan);
     if (sig_class(j) != BreakClass::Sp) {
       return j;
     }
@@ -326,6 +342,7 @@ bool Analysis::numeric_run_ends_at(std::size_t k) const {
   }
   std::size_t j = k;
   while (sig_class(j) == BreakClass::Sy || sig_class(j) == BreakClass::Is) {
+    count(&Counters::rule_scan);
     if (j == 0) {
       return false;
     }
@@ -533,17 +550,8 @@ std::optional<bool> Analysis::rule_letter(std::size_t k) const {
       !is_east_asian_bracket(sig_cp(k - 1))) {
     return false;  // LB30 [CP - $EastAsian] × (AL | NU)
   }
-  if (prev == BreakClass::Ri && next == BreakClass::Ri) {
-    // LB30a: 直前に並ぶ RI が奇数個ならその 2 個で 1 組になるので割らない
-    std::size_t run = 0;
-    std::size_t j = k;
-    while (j > 0 && sig_class(j - 1) == BreakClass::Ri) {
-      ++run;
-      --j;
-    }
-    if (run % 2 == 1) {
-      return false;
-    }
+  if (prev == BreakClass::Ri && next == BreakClass::Ri && ri_odd_[k] != 0) {
+    return false;  // LB30a: 直前に並ぶ RI が奇数個ならその 2 個で 1 組になるので割らない
   }
   if (prev == BreakClass::Eb && next == BreakClass::Em) {
     return false;  // LB30b EB × EM（肌色修飾子）
@@ -571,6 +579,15 @@ bool Analysis::can_break_between(std::size_t k) const {
 }
 
 void Analysis::compute_opportunities() {
+  // LB30a の「直前に並ぶ RI の個数の偶奇」を 1 回の走査で作る。位置ごとに遡ると、
+  // 国旗の絵文字が並んだだけで O(N^2) になる（A24）。
+  ri_odd_.assign(sig_count(), 0);
+  std::size_t regional_run = 0;
+  for (std::size_t k = 0; k < sig_count(); ++k) {
+    ri_odd_[k] = static_cast<std::uint8_t>(regional_run % 2 == 1);
+    regional_run = sig_class(k) == BreakClass::Ri ? regional_run + 1 : 0;
+  }
+
   // LB2 sot ×: 先頭では割らない（opp_[0] は常に false）。
   for (std::size_t k = 1; k < sig_count(); ++k) {
     const std::size_t i = sig_[k];
@@ -605,6 +622,7 @@ bool Analysis::strippable(std::size_t i) const {
 std::size_t Analysis::strip_trailing(std::size_t begin, std::size_t end) const {
   std::size_t content_end = end;
   while (content_end > begin && strippable(content_end - 1)) {
+    count(&Counters::width_items);
     --content_end;
   }
   return content_end;
@@ -613,6 +631,7 @@ std::size_t Analysis::strip_trailing(std::size_t begin, std::size_t end) const {
 float Analysis::lay_out(std::size_t begin, std::size_t content_end, bool end_trim, float squeeze,
                         std::vector<Spacing>* out) const {
   float width = 0.0F;
+  count(&Counters::width_items, content_end > begin ? content_end - begin : 0);
   for (std::size_t i = begin; i < content_end; ++i) {
     float before = i > begin ? collapse_before_[i] : 0.0F;
     float after = i + 1 < content_end ? collapse_after_[i] : 0.0F;
@@ -636,6 +655,7 @@ float Analysis::lay_out(std::size_t begin, std::size_t content_end, bool end_tri
 
 float Analysis::squeeze_pool(std::size_t begin, std::size_t content_end, bool end_trim) const {
   float pool = 0.0F;
+  count(&Counters::width_items, content_end > begin ? content_end - begin : 0);
   for (std::size_t i = begin; i < content_end; ++i) {
     float before = i > begin ? collapse_before_[i] : 0.0F;
     float after = i + 1 < content_end ? collapse_after_[i] : 0.0F;
@@ -666,6 +686,7 @@ Analysis::Fit Analysis::fit(std::size_t begin, std::size_t end, float available)
 
 std::size_t Analysis::mandatory_limit(std::size_t begin) const {
   for (std::size_t i = begin + 1; i < items_.size(); ++i) {
+    count(&Counters::mandatory_scan);
     if (mandatory_[i] != 0) {
       return i;
     }
@@ -673,16 +694,26 @@ std::size_t Analysis::mandatory_limit(std::size_t begin) const {
   return items_.size();
 }
 
+std::size_t Analysis::next_opportunity(std::size_t from) const {
+  for (std::size_t i = from; i < items_.size(); ++i) {
+    count(&Counters::line_scan);
+    if (opp_[i] != 0) {
+      return i;
+    }
+  }
+  return items_.size();
+}
+
 void Analysis::scan_candidates(std::size_t begin, std::size_t limit, float available,
-                               std::size_t& best, std::size_t& first, std::size_t& next) const {
+                               std::size_t& best, std::size_t& next) const {
   best = kNone;
-  first = kNone;
   next = kNone;
   float raw = 0.0F;        // [begin, e) の幅（アキ詰め込み。行末の空白も含む）
   float tail = 0.0F;       // 末尾に溜まった空白・ForcedBreak の幅
   float pool_hint = 0.0F;  // 追い込みで詰められる量の上限
   float hang_hint = 0.0F;  // ぶら下げで外に出せる量の上限
   for (std::size_t e = begin + 1; e <= limit; ++e) {
+    count(&Counters::line_scan);
     const std::size_t i = e - 1;
     raw += items_[i].advance;
     if (i > begin) {
@@ -695,13 +726,11 @@ void Analysis::scan_candidates(std::size_t begin, std::size_t limit, float avail
     if (e != limit && opp_[e] == 0) {
       // 候補でない位置。どう詰めても収まらないところまで来たら走査を打ち切る
       // （長い分割不能列の後ろを毎行なめ直さないため。幅の単調増加を使う）。
-      if (first != kNone && raw - tail - pool_hint - hang_hint > available + kWidthEpsilon) {
+      // 「最初の候補」は呼び出し側が持ち回っているので、ここで探し当てる必要はない（A24）。
+      if (raw - tail - pool_hint - hang_hint > available + kWidthEpsilon) {
         return;
       }
       continue;
-    }
-    if (first == kNone) {
-      first = e;
     }
     if (fit(begin, e, available).width <= available + kWidthEpsilon) {
       best = e;
@@ -752,9 +781,14 @@ std::size_t Analysis::break_anywhere_at(std::size_t begin, std::size_t limit,
   // クラスタの内部（結合文字・異体字セレクタ・ZWJ 列の吸収）では、4 でも絶対に割らない。
   // anywhere_[p] が 0 の位置（両側のどちらかが anywhere でない = 要素の境界）も候補にしない。
   std::array<std::size_t, 5> choice{kNone, kNone, kNone, kNone, kNone};
+  std::size_t leftmost = kNone;  // 最初の候補（1 クラスタも収まらないときの逃げ場）
   for (std::size_t p = begin + 1; p < limit; ++p) {
+    count(&Counters::anywhere_scan);
     if (!anywhere_candidate(p)) {
       continue;
+    }
+    if (leftmost == kNone) {
+      leftmost = p;
     }
     if (fit(begin, p, available).width > available + kWidthEpsilon) {
       break;  // 幅は単調に増えるので、ここから先はどれも収まらない
@@ -768,12 +802,8 @@ std::size_t Analysis::break_anywhere_at(std::size_t begin, std::size_t limit,
   }
   // 1 クラスタも収まらない幅。それでもクラスタ 1 個だけを置く（その行ははみ出す）。
   // 割れる位置が 1 つもなければ kNone（= A4 禁則 > 幅 で、割らずにはみ出す）。
-  for (std::size_t p = begin + 1; p < limit; ++p) {
-    if (anywhere_candidate(p)) {
-      return p;
-    }
-  }
-  return kNone;
+  // 上の走査で見た最初の候補をそのまま使う（同じ列を 2 度舐めない。A24）。
+  return leftmost;
 }
 
 bool Analysis::ends_forced(std::size_t end) const {
@@ -873,23 +903,33 @@ Breaks Analysis::break_lines(float available_width) const {
   // kUnbounded（max-content の計測）では ForcedBreak でしか改行しない。
   const bool unbounded = available_width >= kUnbounded;
   std::size_t begin = 0;
+  // 「次の強制改行」と「次の分割可能位置」は begin が追い越したときだけ探し直す。
+  // begin は前にしか進まないので、段落全体での走査は合計 O(N)（A24）。
+  // 0 は「まだ探していない」印（どちらも begin より後ろの位置しか返さない）。
+  std::size_t limit = 0;
+  std::size_t first_opp = 0;
   while (begin < n) {
-    const std::size_t limit = mandatory_limit(begin);
+    if (limit <= begin) {
+      limit = mandatory_limit(begin);
+    }
     if (unbounded) {
       emit_line(begin, limit, available_width, result);
       begin = limit;
       continue;
     }
+    if (first_opp <= begin) {
+      first_opp = next_opportunity(begin + 1);
+    }
 
     std::size_t best = kNone;
-    std::size_t first = kNone;
     std::size_t next = kNone;
-    scan_candidates(begin, limit, available_width, best, first, next);
+    scan_candidates(begin, limit, available_width, best, next);
 
     if (best == kNone) {
       // 収まる分割位置がない。break_anywhere が許されていればクラスタ境界で割り、
       // それも駄目なら A4「禁則 > 幅」で、割らずにはみ出す。
-      std::size_t end = first != kNone ? first : limit;
+      // 候補は「次の分割可能位置」か、無ければ強制改行の位置（= 段落の末尾）。
+      std::size_t end = std::min(first_opp, limit);
       if (has_anywhere_) {
         const std::size_t forced = break_anywhere_at(begin, end, available_width);
         if (forced != kNone) {
@@ -914,6 +954,7 @@ Breaks Analysis::break_lines(float available_width) const {
     emit_line(begin, best, available_width, result);
     begin = best;
   }
+  count(&Counters::lines, result.lines.size());
   return result;
 }
 
@@ -938,16 +979,18 @@ float Analysis::min_content_width() const {
 
 LineBreaker::LineBreaker(Config config) : config_(std::move(config)) {}
 
-Breaks LineBreaker::break_lines(std::span<const Item> items, float available_width) const {
-  return Analysis(config_, items).break_lines(available_width);
+Breaks LineBreaker::break_lines(std::span<const Item> items, float available_width,
+                                Counters* counters) const {
+  return Analysis(config_, items, counters).break_lines(available_width);
 }
 
-float LineBreaker::min_content_width(std::span<const Item> items) const {
-  return Analysis(config_, items).min_content_width();
+float LineBreaker::min_content_width(std::span<const Item> items, Counters* counters) const {
+  return Analysis(config_, items, counters).min_content_width();
 }
 
-std::vector<bool> LineBreaker::break_opportunities(std::span<const Item> items) const {
-  return Analysis(config_, items).opportunities();
+std::vector<bool> LineBreaker::break_opportunities(std::span<const Item> items,
+                                                   Counters* counters) const {
+  return Analysis(config_, items, counters).opportunities();
 }
 
 }  // namespace shashoku::linebreak

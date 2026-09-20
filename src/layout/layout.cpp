@@ -58,8 +58,7 @@ struct Stacked {
 };
 
 Result<std::vector<Pending>> build_children(LayoutEngine& engine, const BlockInput& input,
-                                            float content_inline_start,
-                                            float content_inline_size) {
+                                            float content_inline_start, float content_inline_size) {
   std::vector<Pending> pending;
   const std::span<const StyledNode> children = input.children;
   std::size_t i = 0;
@@ -115,9 +114,8 @@ Result<std::vector<Pending>> build_children(LayoutEngine& engine, const BlockInp
     }
     const float child_inline_start = content_inline_start + sizing->margin.inline_start +
                                      sizing->border + sizing->padding.inline_start;
-    pending.push_back(Pending{.input = input_of(child),
-                              .sizing = *sizing,
-                              .content_inline_start = child_inline_start});
+    pending.push_back(Pending{
+        .input = input_of(child), .sizing = *sizing, .content_inline_start = child_inline_start});
   }
   return pending;
 }
@@ -247,8 +245,7 @@ Result<BoxTree> layout(const style::StyledNode& root, const Options& options,
   // ルートの包含ブロックは viewport（A1: 横書きでは inline = viewport_width）
   const float viewport_inline_size = options.viewport_width;
   LayoutEngine engine(options, measurer, images, mode);
-  Result<BoxSizing> sizing =
-      engine.resolve_box(root.style, viewport_inline_size, root.location);
+  Result<BoxSizing> sizing = engine.resolve_box(root.style, viewport_inline_size, root.location);
   if (!sizing) {
     return std::unexpected(sizing.error());
   }

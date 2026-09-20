@@ -151,18 +151,17 @@ Result<void> collect_image(const StyledNode& node, LayoutEngine& engine, float p
   if (!image) {
     return std::unexpected(image.error());
   }
-  out.images.push_back(
-      ImagePiece{.id = image->id,
-                 .margin = engine.resolve_margin(node.style, percent_basis),
-                 .padding = engine.map().edges(node.style.padding),
-                 .border = std::max(node.style.border_width, 0.0F),
-                 .content_inline_size = image->inline_size,
-                 .content_block_size = image->block_size,
-                 .decoration = BoxDecoration{
-                     .background_color = node.style.background_color,
-                     .border_width = std::max(node.style.border_width, 0.0F),
-                     .border_color = node.style.border_color,
-                     .border_radius = std::max(node.style.border_radius, 0.0F)}});
+  out.images.push_back(ImagePiece{
+      .id = image->id,
+      .margin = engine.resolve_margin(node.style, percent_basis),
+      .padding = engine.map().edges(node.style.padding),
+      .border = std::max(node.style.border_width, 0.0F),
+      .content_inline_size = image->inline_size,
+      .content_block_size = image->block_size,
+      .decoration = BoxDecoration{.background_color = node.style.background_color,
+                                  .border_width = std::max(node.style.border_width, 0.0F),
+                                  .border_color = node.style.border_color,
+                                  .border_radius = std::max(node.style.border_radius, 0.0F)}});
   out.chars.push_back(FlatChar{.cp = U'￼',
                                .kind = FlatChar::Kind::Image,
                                .style = style_index(out, node.style),
@@ -225,8 +224,8 @@ Result<void> collect(std::span<const StyledNode> nodes, LayoutEngine& engine, fl
       }
       const std::size_t style_id = style_index(out, node.style);
       for (const char32_t cp : *text) {
-        out.chars.push_back(FlatChar{
-            .cp = cp, .kind = FlatChar::Kind::Text, .style = style_id, .image = kNone});
+        out.chars.push_back(
+            FlatChar{.cp = cp, .kind = FlatChar::Kind::Text, .style = style_id, .image = kNone});
       }
       continue;
     }
@@ -259,8 +258,7 @@ Collapsed collapse_whitespace(const std::vector<FlatChar>& input) {
   std::size_t i = 0;
   while (i < input.size()) {
     const FlatChar& current = input[i];
-    const bool space =
-        current.kind == FlatChar::Kind::Text && is_collapsible_space(current.cp);
+    const bool space = current.kind == FlatChar::Kind::Text && is_collapsible_space(current.cp);
     if (!space) {
       out.chars.push_back(current);
       out.source.push_back(i);
@@ -275,8 +273,7 @@ Collapsed collapse_whitespace(const std::vector<FlatChar>& input) {
       has_break = has_break || is_segment_break(input[end].cp);
       ++end;
     }
-    const bool next_is_break =
-        end < input.size() && input[end].kind == FlatChar::Kind::ForcedBreak;
+    const bool next_is_break = end < input.size() && input[end].kind == FlatChar::Kind::ForcedBreak;
     const char32_t next = end < input.size() && !next_is_break ? effective_cp(input[end]) : 0;
 
     bool drop = last == 0 || next_is_break;
@@ -284,10 +281,8 @@ Collapsed collapse_whitespace(const std::vector<FlatChar>& input) {
       drop = true;  // A14: 和文どうしに挟まれたソース改行は消す
     }
     if (!drop) {
-      out.chars.push_back(FlatChar{.cp = U' ',
-                                   .kind = FlatChar::Kind::Text,
-                                   .style = current.style,
-                                   .image = kNone});
+      out.chars.push_back(FlatChar{
+          .cp = U' ', .kind = FlatChar::Kind::Text, .style = current.style, .image = kNone});
       out.source.push_back(i);
       last = U' ';
     }
@@ -357,8 +352,8 @@ class InlineFormatter {
   [[nodiscard]] Extent measure_line(const linebreak::Line& line) const;
   [[nodiscard]] Alignment align_line(const linebreak::Line& line, bool is_last) const;
   void place_line(const linebreak::Line& line, const linebreak::Breaks& breaks,
-                  const Alignment& alignment, float baseline,
-                  std::vector<InlineFragment>& content, std::vector<Placement>& placement) const;
+                  const Alignment& alignment, float baseline, std::vector<InlineFragment>& content,
+                  std::vector<Placement>& placement) const;
   [[nodiscard]] std::vector<InlineBackground> build_backgrounds(
       const linebreak::Line& line, const std::vector<Placement>& placement, float baseline) const;
   [[nodiscard]] LineBox build_line(const linebreak::Line& line, const linebreak::Breaks& breaks,
@@ -414,18 +409,18 @@ void InlineFormatter::build_items() {
       ++end;
     }
     const std::size_t style_id = flat.style;
-    runs_.push_back(
-        ShapedRun{.style = style_id,
-                  .shaped = engine_->measurer().shape(text, text_style_of(styles_[style_id], map))});
+    runs_.push_back(ShapedRun{
+        .style = style_id,
+        .shaped = engine_->measurer().shape(text, text_style_of(styles_[style_id], map))});
     const std::size_t run = runs_.size() - 1;
     // (c) クラスタ → Item。letter-spacing は送りに足す
     for (const text::ShapedCluster& cluster : runs_[run].shaped.clusters) {
-      items_.push_back(linebreak::Item{
-          .kind = linebreak::ItemKind::Text,
-          .cp = cluster.text_begin < text.size() ? text[cluster.text_begin] : 0,
-          .advance = cluster.advance + styles_[style_id].letter_spacing,
-          .em = styles_[style_id].font_size,
-          .no_break_before = false});
+      items_.push_back(
+          linebreak::Item{.kind = linebreak::ItemKind::Text,
+                          .cp = cluster.text_begin < text.size() ? text[cluster.text_begin] : 0,
+                          .advance = cluster.advance + styles_[style_id].letter_spacing,
+                          .em = styles_[style_id].font_size,
+                          .no_break_before = false});
       sources_.push_back(ItemSource{.run = run,
                                     .glyph_begin = cluster.glyph_begin,
                                     .glyph_end = cluster.glyph_end,
@@ -575,7 +570,7 @@ void InlineFormatter::place_line(const linebreak::Line& line, const linebreak::B
                                           .text = {}});
         open = content.size() - 1;
       }
-      TextFragment& fragment = std::get<TextFragment>(content[open]);
+      auto& fragment = std::get<TextFragment>(content[open]);
       if (g == source.glyph_begin) {
         fragment.text += item_text(source);
       }
@@ -587,7 +582,7 @@ void InlineFormatter::place_line(const linebreak::Line& line, const linebreak::B
     }
     pen = item_start + items_[i].advance + breaks.spacing[i].after;
     if (open != kNone) {
-      TextFragment& fragment = std::get<TextFragment>(content[open]);
+      auto& fragment = std::get<TextFragment>(content[open]);
       fragment.inline_size = pen - fragment.inline_start;
     }
     placement[i] = Placement{.inline_start = item_start, .inline_end = pen};
@@ -611,11 +606,11 @@ std::vector<InlineBackground> InlineFormatter::build_backgrounds(
       continue;
     }
     backgrounds.push_back(InlineBackground{
-        .rect = LogicalRect{.inline_start = placement[first].inline_start,
-                            .block_start = baseline - scope.ascent,
-                            .inline_size =
-                                placement[last].inline_end - placement[first].inline_start,
-                            .block_size = scope.ascent + scope.descent},
+        .rect =
+            LogicalRect{.inline_start = placement[first].inline_start,
+                        .block_start = baseline - scope.ascent,
+                        .inline_size = placement[last].inline_end - placement[first].inline_start,
+                        .block_size = scope.ascent + scope.descent},
         .color = scope.color});
   }
   return backgrounds;
@@ -675,9 +670,8 @@ Result<void> InlineFormatter::prepare() {
     const auto begin =
         std::lower_bound(collapsed.source.begin(), collapsed.source.end(), scope.begin) -
         collapsed.source.begin();
-    const auto end =
-        std::lower_bound(collapsed.source.begin(), collapsed.source.end(), scope.end) -
-        collapsed.source.begin();
+    const auto end = std::lower_bound(collapsed.source.begin(), collapsed.source.end(), scope.end) -
+                     collapsed.source.begin();
     scope.begin = static_cast<std::size_t>(begin);
     scope.end = static_cast<std::size_t>(end);
   }
@@ -730,7 +724,8 @@ Result<std::vector<LineBox>> InlineFormatter::run() {
   lines.reserve(breaks.lines.size());
   float block_cursor = input_->content_block_start;
   for (std::size_t i = 0; i < breaks.lines.size(); ++i) {
-    lines.push_back(build_line(breaks.lines[i], breaks, i + 1 == breaks.lines.size(), block_cursor));
+    lines.push_back(
+        build_line(breaks.lines[i], breaks, i + 1 == breaks.lines.size(), block_cursor));
     block_cursor = lines.back().rect.block_end();
   }
   return lines;

@@ -1,3 +1,4 @@
+#include <optional>
 #include <string>
 
 #include <gtest/gtest.h>
@@ -190,6 +191,75 @@ TEST(LayoutDumpJson, BorderAndInlineBackground) {
                     0
                   ]
                 ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+})JSON");
+}
+
+// 画像断片（第 2 段で足した 3 つ目の InlineFragment）。
+TEST(LayoutDumpJson, ImageFragment) {
+  FakeMeasurer measurer;
+  const ImageLookup images = image_table({{.src = "photo", .id = 7, .width = 80, .height = 40}});
+  const auto root = build({img("photo", std::nullopt, std::nullopt, [](ComputedStyle& style) {
+    style.display = style::Display::Block;
+    style.border_width = 2;
+    style.border_color = Color{0, 0, 255, 255};
+  })});
+  const auto tree = run_layout(root, 100, measurer, images);
+  ASSERT_TRUE(tree.has_value());
+  EXPECT_EQ(dump_json(*tree), R"JSON({
+  "writing_mode": "horizontal-tb",
+  "viewport_width": 100,
+  "viewport_height": null,
+  "root": {
+    "tag": "#root",
+    "rect": [
+      0,
+      0,
+      100,
+      44
+    ],
+    "blocks": [
+      {
+        "tag": "img",
+        "rect": [
+          0,
+          0,
+          84,
+          44
+        ],
+        "lines": [
+          {
+            "rect": [
+              0,
+              0,
+              84,
+              44
+            ],
+            "baseline": 44,
+            "fragments": [
+              {
+                "type": "image",
+                "image": 7,
+                "rect": [
+                  0,
+                  0,
+                  84,
+                  44
+                ],
+                "content_rect": [
+                  2,
+                  2,
+                  80,
+                  40
+                ],
+                "border_width": 2,
+                "border_color": "#0000ffff"
               }
             ]
           }

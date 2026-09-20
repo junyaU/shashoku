@@ -128,11 +128,10 @@ void translate(BlockBox& box, float delta_inline, float delta_block) {
 LogicalEdges<float> LayoutEngine::resolve_margin(const style::ComputedStyle& style,
                                                  float percent_basis) const {
   const LogicalEdges<Dimension> margin = map_.edges(style.margin);
-  return LogicalEdges<float>{
-      .inline_start = resolve_length(margin.inline_start, percent_basis),
-      .inline_end = resolve_length(margin.inline_end, percent_basis),
-      .block_start = resolve_length(margin.block_start, percent_basis),
-      .block_end = resolve_length(margin.block_end, percent_basis)};
+  return LogicalEdges<float>{.inline_start = resolve_length(margin.inline_start, percent_basis),
+                             .inline_end = resolve_length(margin.inline_end, percent_basis),
+                             .block_start = resolve_length(margin.block_start, percent_basis),
+                             .block_end = resolve_length(margin.block_end, percent_basis)};
 }
 
 LogicalEdges<bool> LayoutEngine::margin_is_auto(const style::ComputedStyle& style) const {
@@ -165,9 +164,9 @@ Result<BoxSizing> LayoutEngine::resolve_box(const style::ComputedStyle& style,
     // auto の幅は残り全部。auto のマージンは 0 になる
     sizing.content_inline_size = std::max(available - extra - start - end, 0.0F);
   } else {
-    sizing.content_inline_size =
-        override_inline ? std::max(*override_inline, 0.0F)
-                        : std::max(resolve_length(inline_size, available), 0.0F);
+    sizing.content_inline_size = override_inline
+                                     ? std::max(*override_inline, 0.0F)
+                                     : std::max(resolve_length(inline_size, available), 0.0F);
     const float rest = available - extra - sizing.content_inline_size - start - end;
     if (start_auto && end_auto) {
       const float spare = std::max(rest, 0.0F);  // 余りが負なら中央寄せしない

@@ -64,11 +64,11 @@ TEST(LayoutFlex, RowPlacesItemsAlongTheInlineAxis) {
 
 TEST(LayoutFlex, ColumnStacksItemsAlongTheBlockAxis) {
   FakeMeasurer measurer;
-  const auto root = build({flex({block({}, sized(100, 20)), block({}, sized(50, 30))},
-                                [](ComputedStyle& style) {
-                                  style.flex_direction = FlexDirection::Column;
-                                  style.row_gap = 10;
-                                })});
+  const auto root =
+      build({flex({block({}, sized(100, 20)), block({}, sized(50, 30))}, [](ComputedStyle& style) {
+        style.flex_direction = FlexDirection::Column;
+        style.row_gap = 10;
+      })});
   const auto tree = run_layout(root, 400, measurer);
   ASSERT_TRUE(tree.has_value());
   const std::vector<LogicalRect> rects = item_rects(*tree);
@@ -93,11 +93,11 @@ TEST(LayoutFlex, RowGapUsesColumnGap) {
 // ---- justify-content -------------------------------------------------------------
 
 std::vector<float> justified(FakeMeasurer& measurer, JustifyContent justify) {
-  const auto root = build({flex({block({}, sized(100, 20)), block({}, sized(50, 20))},
-                                [justify](ComputedStyle& style) {
-                                  style.column_gap = 10;
-                                  style.justify_content = justify;
-                                })});
+  const auto root = build(
+      {flex({block({}, sized(100, 20)), block({}, sized(50, 20))}, [justify](ComputedStyle& style) {
+        style.column_gap = 10;
+        style.justify_content = justify;
+      })});
   const auto tree = run_layout(root, 400, measurer);
   EXPECT_TRUE(tree.has_value());
   std::vector<float> out;
@@ -126,10 +126,9 @@ TEST(LayoutFlex, JustifyContentFallsBackWhenOverflowing) {
     style.height = Dimension::px(20);
     style.flex_shrink = 0;  // 縮めずにあふれさせる
   };
-  const auto root = build({flex({block({}, wide), block({}, wide)},
-                                [](ComputedStyle& style) {
-                                  style.justify_content = JustifyContent::SpaceBetween;
-                                })});
+  const auto root = build({flex({block({}, wide), block({}, wide)}, [](ComputedStyle& style) {
+    style.justify_content = JustifyContent::SpaceBetween;
+  })});
   const auto tree = run_layout(root, 400, measurer);
   ASSERT_TRUE(tree.has_value());
   const std::vector<LogicalRect> rects = item_rects(*tree);
@@ -166,10 +165,9 @@ TEST(LayoutFlex, AlignItemsPositionsOnTheCrossAxis) {
 // 交差軸サイズが auto のアイテムは stretch で交差軸いっぱいに伸びる。
 TEST(LayoutFlex, StretchFillsTheCrossAxis) {
   FakeMeasurer measurer;
-  const auto root = build({flex({block({}, [](ComputedStyle& style) {
-                                   style.width = Dimension::px(100);
-                                 })},
-                                [](ComputedStyle& style) { style.height = Dimension::px(100); })});
+  const auto root =
+      build({flex({block({}, [](ComputedStyle& style) { style.width = Dimension::px(100); })},
+                  [](ComputedStyle& style) { style.height = Dimension::px(100); })});
   const auto tree = run_layout(root, 400, measurer);
   ASSERT_TRUE(tree.has_value());
   EXPECT_FLOAT_EQ(item_rects(*tree)[0].block_size, 100);
@@ -227,12 +225,9 @@ TEST(LayoutFlex, GrowDistributesFreeSpaceInProportion) {
 
 TEST(LayoutFlex, ShrinkDistributesTheDeficit) {
   FakeMeasurer measurer;
-  const auto root = build({flex({block({}, [](ComputedStyle& style) {
-                                   style.width = Dimension::px(100);
-                                 }),
-                                 block({}, [](ComputedStyle& style) {
-                                   style.width = Dimension::px(100);
-                                 })})});
+  const auto root =
+      build({flex({block({}, [](ComputedStyle& style) { style.width = Dimension::px(100); }),
+                   block({}, [](ComputedStyle& style) { style.width = Dimension::px(100); })})});
   const auto tree = run_layout(root, 100, measurer);
   ASSERT_TRUE(tree.has_value());
   const std::vector<LogicalRect> rects = item_rects(*tree);
@@ -261,10 +256,11 @@ TEST(LayoutFlex, ShrinkStopsAtTheAutomaticMinimumSize) {
 TEST(LayoutFlex, FlexBasisPxPercentAndAuto) {
   FakeMeasurer measurer;
   const auto root = build({flex({
-      block({}, [](ComputedStyle& style) {  // basis が width より優先
-        style.flex_basis = Dimension::px(80);
-        style.width = Dimension::px(200);
-      }),
+      block({},
+            [](ComputedStyle& style) {  // basis が width より優先
+              style.flex_basis = Dimension::px(80);
+              style.width = Dimension::px(200);
+            }),
       block({}, [](ComputedStyle& style) { style.flex_basis = Dimension::percent(25); }),
       block({}, [](ComputedStyle& style) { style.width = Dimension::px(120); }),
       block({text("あいう")}),  // basis auto + width auto = max-content
@@ -313,11 +309,12 @@ TEST(LayoutFlex, AutoMarginOnTheMainAxisAbsorbsFreeSpace) {
 
 TEST(LayoutFlex, AutoMarginOnTheCrossAxisAbsorbsFreeSpace) {
   FakeMeasurer measurer;
-  const auto root = build({flex({block({}, [](ComputedStyle& style) {
-                                   style.width = Dimension::px(100);
-                                   style.height = Dimension::px(20);
-                                   style.margin.top = Dimension::auto_();
-                                 })},
+  const auto root = build({flex({block({},
+                                       [](ComputedStyle& style) {
+                                         style.width = Dimension::px(100);
+                                         style.height = Dimension::px(20);
+                                         style.margin.top = Dimension::auto_();
+                                       })},
                                 [](ComputedStyle& style) { style.height = Dimension::px(100); })});
   const auto tree = run_layout(root, 400, measurer);
   ASSERT_TRUE(tree.has_value());
@@ -327,17 +324,17 @@ TEST(LayoutFlex, AutoMarginOnTheCrossAxisAbsorbsFreeSpace) {
 // 高さが確定した column + margin-top: auto でフッターを下端に押し付ける（OG 画像の定番）。
 TEST(LayoutFlex, ColumnWithAutoTopMarginPushesTheLastItemDown) {
   FakeMeasurer measurer;
-  const auto root = build({flex({block({}, sized(100, 20)),
-                                 block({},
-                                       [](ComputedStyle& style) {
-                                         style.width = Dimension::px(100);
-                                         style.height = Dimension::px(30);
-                                         style.margin.top = Dimension::auto_();
-                                       })},
-                                [](ComputedStyle& style) {
-                                  style.flex_direction = FlexDirection::Column;
-                                  style.height = Dimension::px(200);
-                                })});
+  const auto root =
+      build({flex({block({}, sized(100, 20)), block({},
+                                                    [](ComputedStyle& style) {
+                                                      style.width = Dimension::px(100);
+                                                      style.height = Dimension::px(30);
+                                                      style.margin.top = Dimension::auto_();
+                                                    })},
+                  [](ComputedStyle& style) {
+                    style.flex_direction = FlexDirection::Column;
+                    style.height = Dimension::px(200);
+                  })});
   const auto tree = run_layout(root, 400, measurer);
   ASSERT_TRUE(tree.has_value());
   const std::vector<LogicalRect> rects = item_rects(*tree);
@@ -349,14 +346,13 @@ TEST(LayoutFlex, ColumnWithAutoTopMarginPushesTheLastItemDown) {
 // column で高さが auto なら伸びる余地がない（grow は効かない）。
 TEST(LayoutFlex, ColumnWithAutoHeightDoesNotGrow) {
   FakeMeasurer measurer;
-  const auto root = build({flex({block({},
-                                       [](ComputedStyle& style) {
-                                         style.height = Dimension::px(20);
-                                         style.flex_grow = 1;
-                                       })},
-                                [](ComputedStyle& style) {
-                                  style.flex_direction = FlexDirection::Column;
-                                })});
+  const auto root =
+      build({flex({block({},
+                         [](ComputedStyle& style) {
+                           style.height = Dimension::px(20);
+                           style.flex_grow = 1;
+                         })},
+                  [](ComputedStyle& style) { style.flex_direction = FlexDirection::Column; })});
   const auto tree = run_layout(root, 400, measurer);
   ASSERT_TRUE(tree.has_value());
   EXPECT_FLOAT_EQ(item_rects(*tree)[0].block_size, 20);
@@ -402,12 +398,11 @@ TEST(LayoutFlex, InlineElementChildIsBlockified) {
 
 TEST(LayoutFlex, NestedFlexContainers) {
   FakeMeasurer measurer;
-  const auto root = build({flex({flex({block({}, sized(30, 10)), block({}, sized(40, 10))},
-                                      [](ComputedStyle& style) {
-                                        style.flex_direction = FlexDirection::Column;
-                                      }),
-                                 block({}, sized(50, 10))},
-                                [](ComputedStyle& style) { style.column_gap = 10; })});
+  const auto root =
+      build({flex({flex({block({}, sized(30, 10)), block({}, sized(40, 10))},
+                        [](ComputedStyle& style) { style.flex_direction = FlexDirection::Column; }),
+                   block({}, sized(50, 10))},
+                  [](ComputedStyle& style) { style.column_gap = 10; })});
   const auto tree = run_layout(root, 400, measurer);
   ASSERT_TRUE(tree.has_value());
   const std::vector<BlockBox>& items = *container_of(*tree).blocks();
@@ -425,10 +420,9 @@ TEST(LayoutFlex, NestedFlexContainers) {
 // flex アイテムの中の block と IFC が動く。
 TEST(LayoutFlex, ItemsContainBlocksAndInlineFormattingContexts) {
   FakeMeasurer measurer;
-  const auto root = build({flex({block({block({text("あい")}), block({text("うえ")})},
-                                      [](ComputedStyle& style) {
-                                        style.width = Dimension::px(200);
-                                      })})});
+  const auto root =
+      build({flex({block({block({text("あい")}), block({text("うえ")})},
+                         [](ComputedStyle& style) { style.width = Dimension::px(200); })})});
   const auto tree = run_layout(root, 400, measurer);
   ASSERT_TRUE(tree.has_value());
   EXPECT_EQ(line_texts(*tree), (std::vector<std::string>{"あい", "うえ"}));
@@ -439,28 +433,28 @@ TEST(LayoutFlex, ItemsContainBlocksAndInlineFormattingContexts) {
 
 TEST(LayoutFlex, ItemMarginPaddingAndBorderCountTowardTheMainAxis) {
   FakeMeasurer measurer;
-  const auto root = build({flex({block({}, [](ComputedStyle& style) {
-                                   style.width = Dimension::px(100);
-                                   style.height = Dimension::px(20);
-                                   style.margin = {Dimension::px(0), Dimension::px(5),
-                                                   Dimension::px(0), Dimension::px(5)};
-                                   style.padding = {0, 4, 0, 4};
-                                   style.border_width = 2;
-                                 }),
+  const auto root = build({flex({block({},
+                                       [](ComputedStyle& style) {
+                                         style.width = Dimension::px(100);
+                                         style.height = Dimension::px(20);
+                                         style.margin = {Dimension::px(0), Dimension::px(5),
+                                                         Dimension::px(0), Dimension::px(5)};
+                                         style.padding = {0, 4, 0, 4};
+                                         style.border_width = 2;
+                                       }),
                                  block({}, sized(50, 20))})});
   const auto tree = run_layout(root, 400, measurer);
   ASSERT_TRUE(tree.has_value());
   const std::vector<LogicalRect> rects = item_rects(*tree);
   EXPECT_FLOAT_EQ(rects[0].inline_start, 5);
-  EXPECT_FLOAT_EQ(rects[0].inline_size, 112);  // 100 + padding 8 + border 4
+  EXPECT_FLOAT_EQ(rects[0].inline_size, 112);   // 100 + padding 8 + border 4
   EXPECT_FLOAT_EQ(rects[1].inline_start, 122);  // 5 + 112 + 5
 }
 
 TEST(LayoutFlex, ContainerPaddingOffsetsTheContentBox) {
   FakeMeasurer measurer;
-  const auto root = build({flex({block({}, sized(100, 20))}, [](ComputedStyle& style) {
-    style.padding = {10, 10, 10, 10};
-  })});
+  const auto root = build({flex({block({}, sized(100, 20))},
+                                [](ComputedStyle& style) { style.padding = {10, 10, 10, 10}; })});
   const auto tree = run_layout(root, 400, measurer);
   ASSERT_TRUE(tree.has_value());
   EXPECT_FLOAT_EQ(item_rects(*tree)[0].inline_start, 10);

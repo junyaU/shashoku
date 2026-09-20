@@ -24,9 +24,9 @@ constexpr float kEpsilon = 1.0F / 1024.0F;
 
 struct Item {
   BlockInput input;
-  const StyledNode* node = nullptr;   // 無名アイテムは null
+  const StyledNode* node = nullptr;      // 無名アイテムは null
   const ComputedStyle* style = nullptr;  // 同上（flex 係数と余白の出どころ）
-  bool replaced = false;              // <img>
+  bool replaced = false;                 // <img>
 
   LogicalEdges<float> margin;
   LogicalEdges<bool> margin_auto;
@@ -181,53 +181,64 @@ Dimension main_dimension(const Item& item, const LogicalMap& map, bool row) {
 
 // ---- 交差軸のサイズ -------------------------------------------------------------
 
-Result<void> prepare_cross(LayoutEngine& engine, std::vector<Item>& items,
-                           const BlockInput& input, bool row, float cross_size) {
-  const AlignItems align = input.style->align_items;
-  for (Item& item : items) {
-    std::optional<ResolvedImage> image;
-    if (item.replaced) {
-      Result<ResolvedImage> resolved = engine.resolve_image(*item.node, cross_size);
-      if (!resolved) {
-        return std::unexpected(resolved.error());
-      }
-      image = *resolved;
-    }
-    const bool auto_cross_margin = auto_cross_start(item, row) || auto_cross_end(item, row);
-    // 無名アイテムは自分のスタイルを持たない（コンテナのスタイルを幅・高さに使わない）
-    const Dimension cross_property =
-        item.style == nullptr
-            ? Dimension::auto_()
-            : (row ? engine.map().block_size(*item.style) : engine.map().inline_size(*item.style));
+// 交差軸のサイズを決めるプロパティ（row なら height、column なら width）。
+// 無名アイテムは自分のスタイルを持たないので auto。
+Dimension cross_property(const Item& item, const LogicalMap& map, bool row) {
+  if (item.style == nullptr) {
+    return Dimension::auto_();
+  }
+  return row ? map.block_size(*item.style) : map.inline_size(*item.style);
+}
 
-    if (row) {
-      if (image) {
-        item.cross_definite = image->block_size;  // <img> は stretch でも歪めない
-        continue;
+Result<void> prepare_cross_row(LayoutEngine& engine, std::vector<Item>& items, AlignItems align,
+                               float percent_basis) {
+  for (Item& item : items) {
+    if (item.replaced) {
+      Result<ResolvedImage> image = engine.resolve_image(*item.node, percent_basis);
+      if (!image) {
+        return std::unexpected(image.error());
       }
-      if (!cross_property.is_auto() && cross_property.kind != Dimension::Kind::Percent) {
-        item.cross_definite = std::max(cross_property.value, 0.0F);
-      }
-      item.stretch = align == AlignItems::Stretch && !item.cross_definite && !auto_cross_margin;
+      item.cross_definite = image->block_size;  // <img> は stretch でも歪めない
       continue;
     }
+    const Dimension height = cross_property(item, engine.map(), true);
+    if (!height.is_auto() && height.kind != Dimension::Kind::Percent) {
+      item.cross_definite = std::max(height.value, 0.0F);
+    }
+    const bool auto_margin = auto_cross_start(item, true) || auto_cross_end(item, true);
+    item.stretch = align == AlignItems::Stretch && !item.cross_definite && !auto_margin;
+  }
+  return {};
+}
 
-    // column: 交差軸 = inline。幅が変わると中身の折り返しが変わるので先に決める
-    const float available = cross_size - margin_cross_start(item, row) -
-                            margin_cross_end(item, row) - cross_extra(item, row);
-    if (image) {
+// column の交差軸は inline 方向。幅が変わると中身の折り返しが変わるので先に決める。
+Result<void> prepare_cross_column(LayoutEngine& engine, std::vector<Item>& items, AlignItems align,
+                                  float cross_size) {
+  for (Item& item : items) {
+    const float available = cross_size - margin_cross_start(item, false) -
+                            margin_cross_end(item, false) - cross_extra(item, false);
+    if (item.replaced) {
+      Result<ResolvedImage> image = engine.resolve_image(*item.node, cross_size);
+      if (!image) {
+        return std::unexpected(image.error());
+      }
       item.cross = image->inline_size;
-    } else if (!cross_property.is_auto()) {
-      item.cross = std::max(resolve_length(cross_property, cross_size), 0.0F);
-    } else if (align == AlignItems::Stretch && !auto_cross_margin) {
+      item.cross_definite = item.cross;
+      continue;
+    }
+    const Dimension width = cross_property(item, engine.map(), false);
+    const bool auto_margin = auto_cross_start(item, false) || auto_cross_end(item, false);
+    if (!width.is_auto()) {
+      item.cross = std::max(resolve_length(width, cross_size), 0.0F);
+    } else if (align == AlignItems::Stretch && !auto_margin) {
       item.cross = std::max(available, 0.0F);
       item.stretch = true;
     } else {
-      // shrink-to-fit = min(max-content, max(利用可能幅, min-content))
       Result<Intrinsic> intrinsic = item_intrinsic(engine, item, cross_size);
       if (!intrinsic) {
         return std::unexpected(intrinsic.error());
       }
+      // shrink-to-fit = min(max-content, max(利用可能幅, min-content))
       item.cross = std::max(
           std::min(intrinsic->max_content, std::max(available, intrinsic->min_content)), 0.0F);
     }
@@ -247,10 +258,10 @@ Result<void> prepare_base_row(LayoutEngine& engine, std::vector<Item>& items, fl
       return std::unexpected(content.error());
     }
     const Dimension main = main_dimension(item, engine.map(), true);
-    item.base = main.is_auto() ? content->max_content
-                               : std::max(resolve_length(main, main_size), 0.0F);
-    item.min_main = main.is_auto() ? content->min_content
-                                   : std::min(content->min_content, item.base);
+    item.base =
+        main.is_auto() ? content->max_content : std::max(resolve_length(main, main_size), 0.0F);
+    item.min_main =
+        main.is_auto() ? content->min_content : std::min(content->min_content, item.base);
     if (item.replaced) {
       item.min_main = std::max(content->min_content, 0.0F);  // 画像は内容サイズより縮めない
     }
@@ -296,6 +307,107 @@ Result<void> prepare_base_column(LayoutEngine& engine, std::vector<Item>& items,
 
 // ---- §9.7 主軸サイズの解決 --------------------------------------------------------
 
+// 未凍結アイテムを base、凍結アイテムを target として数えたときの残り自由空間。
+float remaining_free_space(const std::vector<Item>& items, bool row, float main_size, float gaps) {
+  float remaining = main_size - gaps;
+  for (const Item& item : items) {
+    remaining -= (item.frozen ? item.target : item.base) + main_extra(item, row) +
+                 margin_main_start(item, row) + margin_main_end(item, row);
+  }
+  return remaining;
+}
+
+struct Factors {
+  float scaled = 0;  // grow なら flex-grow、shrink なら flex-shrink × 基準サイズ
+  float raw = 0;
+  std::size_t unfrozen = 0;
+};
+
+Factors unfrozen_factors(const std::vector<Item>& items, bool growing) {
+  Factors out;
+  for (const Item& item : items) {
+    if (item.frozen) {
+      continue;
+    }
+    ++out.unfrozen;
+    out.raw += growing ? item.grow : item.shrink;
+    out.scaled += growing ? item.grow : item.shrink * item.base;
+  }
+  return out;
+}
+
+void freeze_all(std::vector<Item>& items) {
+  for (Item& item : items) {
+    item.frozen = true;
+  }
+}
+
+// §9.7-2: 伸び縮みしないアイテムを凍結する。
+void freeze_inflexible(std::vector<Item>& items, bool growing) {
+  for (Item& item : items) {
+    const float hypothetical = std::max(item.base, item.min_main);
+    const float factor = growing ? item.grow : item.shrink;
+    if (factor <= 0 || (!growing && item.base < hypothetical - kEpsilon)) {
+      item.target = hypothetical;
+      item.frozen = true;
+      continue;
+    }
+    item.target = item.base;
+    item.frozen = false;
+  }
+}
+
+// §9.7-4: 自由空間を 1 回配分して最小サイズ違反を直す。全部凍結したら true。
+bool distribute_once(std::vector<Item>& items, bool row, bool growing, float main_size, float gaps,
+                     float initial_free) {
+  const Factors factors = unfrozen_factors(items, growing);
+  if (factors.unfrozen == 0) {
+    return true;
+  }
+  float remaining = remaining_free_space(items, row, main_size, gaps);
+  // §9.7-4b: 係数の合計が 1 未満なら、初期自由空間にその合計を掛けた値を上限にする
+  if (factors.raw < 1) {
+    const float scaled = initial_free * factors.raw;
+    if (std::abs(scaled) < std::abs(remaining)) {
+      remaining = scaled;
+    }
+  }
+  if (factors.scaled <= 0) {
+    freeze_all(items);
+    return true;
+  }
+
+  std::vector<float> unclamped(items.size(), 0);
+  for (std::size_t i = 0; i < items.size(); ++i) {
+    Item& item = items[i];
+    if (item.frozen) {
+      continue;
+    }
+    const float factor = growing ? item.grow : item.shrink * item.base;
+    item.target = item.base + (remaining * (factor / factors.scaled));
+    unclamped[i] = item.target;
+  }
+  // §9.7-4d: 最小サイズ違反を直す（最大サイズは無いので違反は常に 0 以上）
+  float violation = 0;
+  for (std::size_t i = 0; i < items.size(); ++i) {
+    if (items[i].frozen) {
+      continue;
+    }
+    items[i].target = std::max(items[i].target, items[i].min_main);
+    violation += items[i].target - unclamped[i];
+  }
+  if (violation <= kEpsilon) {
+    freeze_all(items);
+    return true;
+  }
+  for (std::size_t i = 0; i < items.size(); ++i) {
+    if (!items[i].frozen && items[i].target > unclamped[i] + kEpsilon) {
+      items[i].frozen = true;
+    }
+  }
+  return false;
+}
+
 void resolve_flexible_lengths(std::vector<Item>& items, bool row, bool main_definite,
                               float main_size, float gap) {
   for (Item& item : items) {
@@ -313,89 +425,11 @@ void resolve_flexible_lengths(std::vector<Item>& items, bool row, bool main_defi
   }
   const bool growing = hypothetical_sum < main_size;
 
-  // §9.7-2: 伸び縮みしないアイテムを凍結する
-  for (Item& item : items) {
-    const float hypothetical = std::max(item.base, item.min_main);
-    const float factor = growing ? item.grow : item.shrink;
-    if (factor <= 0 || (!growing && item.base < hypothetical - kEpsilon)) {
-      item.target = hypothetical;
-      item.frozen = true;
-      continue;
-    }
-    item.target = item.base;
-    item.frozen = false;
-  }
-
-  // §9.7-3: 初期の自由空間
-  float initial_free = main_size - gaps;
-  for (const Item& item : items) {
-    initial_free -= (item.frozen ? item.target : item.base) + main_extra(item, row) +
-                    margin_main_start(item, row) + margin_main_end(item, row);
-  }
-
-  std::vector<float> unclamped(items.size(), 0);
+  freeze_inflexible(items, growing);
+  const float initial_free = remaining_free_space(items, row, main_size, gaps);
   for (std::size_t guard = 0; guard <= items.size() + 1; ++guard) {
-    float sum_scaled = 0;
-    float sum_raw = 0;
-    std::size_t unfrozen = 0;
-    for (const Item& item : items) {
-      if (item.frozen) {
-        continue;
-      }
-      ++unfrozen;
-      sum_raw += growing ? item.grow : item.shrink;
-      sum_scaled += growing ? item.grow : item.shrink * item.base;
-    }
-    if (unfrozen == 0) {
+    if (distribute_once(items, row, growing, main_size, gaps, initial_free)) {
       return;
-    }
-    float remaining = main_size - gaps;
-    for (const Item& item : items) {
-      remaining -= (item.frozen ? item.target : item.base) + main_extra(item, row) +
-                   margin_main_start(item, row) + margin_main_end(item, row);
-    }
-    // §9.7-4b: 係数の合計が 1 未満なら、初期自由空間にその合計を掛けた値を上限にする
-    if (sum_raw < 1) {
-      const float scaled = initial_free * sum_raw;
-      if (std::abs(scaled) < std::abs(remaining)) {
-        remaining = scaled;
-      }
-    }
-    if (sum_scaled <= 0) {
-      for (Item& item : items) {
-        item.frozen = true;
-      }
-      return;
-    }
-    for (std::size_t i = 0; i < items.size(); ++i) {
-      Item& item = items[i];
-      if (item.frozen) {
-        continue;
-      }
-      const float factor = growing ? item.grow : item.shrink * item.base;
-      item.target = item.base + (remaining * (factor / sum_scaled));
-      unclamped[i] = item.target;
-    }
-    // §9.7-4d: 最小サイズ違反を直す（max は無いので違反は常に 0 以上）
-    float violation = 0;
-    for (std::size_t i = 0; i < items.size(); ++i) {
-      Item& item = items[i];
-      if (item.frozen) {
-        continue;
-      }
-      item.target = std::max(item.target, item.min_main);
-      violation += item.target - unclamped[i];
-    }
-    if (violation <= kEpsilon) {
-      for (Item& item : items) {
-        item.frozen = true;
-      }
-      return;
-    }
-    for (std::size_t i = 0; i < items.size(); ++i) {
-      if (!items[i].frozen && items[i].target > unclamped[i] + kEpsilon) {
-        items[i].frozen = true;
-      }
     }
   }
 }
@@ -415,6 +449,7 @@ Result<void> layout_items(LayoutEngine& engine, std::vector<Item>& items, bool r
       sizing.content_inline_size = item.cross;
       sizing.content_block_size = item.target;
     }
+    // border-box の原点を (0, 0) に置いて組み、あとで最終位置へ平行移動する
     Result<BlockBox> box =
         engine.layout_block(item.input, sizing, item.border + item.padding.inline_start, 0);
     if (!box) {
@@ -423,6 +458,29 @@ Result<void> layout_items(LayoutEngine& engine, std::vector<Item>& items, bool r
     item.box = std::move(*box);
   }
   return {};
+}
+
+// 単一行なので「行の交差サイズ」= コンテナの交差サイズ。row の stretch はここで適用する。
+float resolve_line_cross(std::vector<Item>& items, bool row, bool cross_definite,
+                         float cross_size) {
+  float line_cross = cross_size;
+  if (!cross_definite) {
+    line_cross = 0;
+    for (const Item& item : items) {
+      line_cross = std::max(line_cross, box_cross(item, row) + margin_cross_start(item, row) +
+                                            margin_cross_end(item, row));
+    }
+  }
+  if (!row) {
+    return line_cross;  // column の stretch は幅なので、組む前に反映ずみ
+  }
+  for (Item& item : items) {
+    if (item.stretch) {  // 箱の高さを伸ばすだけ。中身は上詰めのまま（再レイアウト不要）
+      item.box.rect.block_size =
+          std::max(line_cross - margin_cross_start(item, row) - margin_cross_end(item, row), 0.0F);
+    }
+  }
+  return line_cross;
 }
 
 struct MainPlacement {
@@ -442,7 +500,7 @@ MainPlacement place_main(const std::vector<Item>& items, bool row, JustifyConten
     autos += static_cast<std::size_t>(auto_main_start(item, row)) +
              static_cast<std::size_t>(auto_main_end(item, row));
   }
-  float free = container_main - used;
+  const float free = container_main - used;
   if (free <= 0) {
     return out;  // 余りが無い（あふれている）: 先頭詰め
   }
@@ -480,8 +538,8 @@ MainPlacement place_main(const std::vector<Item>& items, bool row, JustifyConten
 // 交差軸の位置（align-items と交差軸の auto マージン）。
 float cross_position(const Item& item, bool row, AlignItems align, float content_cross_start,
                      float line_cross) {
-  const float outer = box_cross(item, row) + margin_cross_start(item, row) +
-                      margin_cross_end(item, row);
+  const float outer =
+      box_cross(item, row) + margin_cross_start(item, row) + margin_cross_end(item, row);
   const float free = line_cross - outer;
   const std::size_t autos = static_cast<std::size_t>(auto_cross_start(item, row)) +
                             static_cast<std::size_t>(auto_cross_end(item, row));
@@ -500,6 +558,42 @@ float cross_position(const Item& item, bool row, AlignItems align, float content
       break;
   }
   return content_cross_start + margin_cross_start(item, row);
+}
+
+// 主軸に沿って並べ、交差軸に寄せてから、各アイテムを最終位置へ平行移動する。
+std::vector<BlockBox> place_items(std::vector<Item>& items, bool row, AlignItems align,
+                                  const MainPlacement& placement, float content_main_start,
+                                  float content_cross_start, float line_cross) {
+  std::vector<BlockBox> boxes;
+  boxes.reserve(items.size());
+  float cursor = content_main_start + placement.offset;
+  for (std::size_t i = 0; i < items.size(); ++i) {
+    Item& item = items[i];
+    if (i > 0) {
+      cursor += placement.between;
+    }
+    cursor +=
+        margin_main_start(item, row) + (auto_main_start(item, row) ? placement.auto_share : 0);
+    const float main_position = cursor;
+    cursor += box_main(item, row) + margin_main_end(item, row) +
+              (auto_main_end(item, row) ? placement.auto_share : 0);
+    const float cross_pos = cross_position(item, row, align, content_cross_start, line_cross);
+    translate(item.box, row ? main_position : cross_pos, row ? cross_pos : main_position);
+    boxes.push_back(std::move(item.box));
+  }
+  return boxes;
+}
+
+// 主軸が不定（高さ auto の column）のときのコンテナの主軸サイズ = 内容の合計。
+float content_main_size(const std::vector<Item>& items, bool row, float gap) {
+  if (items.empty()) {
+    return 0;
+  }
+  float total = gap * static_cast<float>(items.size() - 1);
+  for (const Item& item : items) {
+    total += box_main(item, row) + margin_main_start(item, row) + margin_main_end(item, row);
+  }
+  return total;
 }
 
 }  // namespace
@@ -521,7 +615,7 @@ Result<Intrinsic> flex_intrinsic(LayoutEngine& engine, const BlockInput& input,
       return std::unexpected(inner.error());
     }
     // 固有寸法は inline 方向の話なので、足す余白も inline 方向のもの
-    const float extra = 2 * item.border + item.padding.inline_start + item.padding.inline_end +
+    const float extra = (2 * item.border) + item.padding.inline_start + item.padding.inline_end +
                         item.margin.inline_start + item.margin.inline_end;
     if (row) {
       out.min_content += inner->min_content + extra;
@@ -548,6 +642,7 @@ Result<BlockBox> layout_flex(LayoutEngine& engine, const BlockInput& input, cons
   const float main_size = row ? sizing.content_inline_size : sizing.content_block_size.value_or(0);
   const bool cross_definite = !row || sizing.content_block_size.has_value();
   const float cross_size = row ? sizing.content_block_size.value_or(0) : sizing.content_inline_size;
+  const AlignItems align = input.style->align_items;
 
   Result<std::vector<Item>> built = build_items(engine, input, sizing.content_inline_size);
   if (!built) {
@@ -555,8 +650,10 @@ Result<BlockBox> layout_flex(LayoutEngine& engine, const BlockInput& input, cons
   }
   std::vector<Item> items = std::move(*built);
 
-  if (const Result<void> prepared = prepare_cross(engine, items, input, row, cross_size);
-      !prepared) {
+  const Result<void> prepared =
+      row ? prepare_cross_row(engine, items, align, sizing.content_inline_size)
+          : prepare_cross_column(engine, items, align, cross_size);
+  if (!prepared) {
     return std::unexpected(prepared.error());
   }
   const Result<void> based = row ? prepare_base_row(engine, items, main_size)
@@ -569,58 +666,14 @@ Result<BlockBox> layout_flex(LayoutEngine& engine, const BlockInput& input, cons
     return std::unexpected(laid.error());
   }
 
-  // 交差軸の大きさ（単一行なので「行の交差サイズ」= コンテナの交差サイズ）
-  float line_cross = cross_size;
-  if (!cross_definite) {
-    line_cross = 0;
-    for (const Item& item : items) {
-      line_cross = std::max(line_cross, box_cross(item, row) + margin_cross_start(item, row) +
-                                            margin_cross_end(item, row));
-    }
-  }
-  if (row) {
-    for (Item& item : items) {
-      if (item.stretch) {  // 箱の高さを伸ばすだけ。中身は上詰めのまま（再レイアウト不要）
-        item.box.rect.block_size = std::max(
-            line_cross - margin_cross_start(item, row) - margin_cross_end(item, row), 0.0F);
-      }
-    }
-  }
-
-  // コンテナの主軸サイズ（column で高さ auto なら内容から決まる）
-  float container_main = main_size;
-  if (!main_definite) {
-    container_main = items.empty() ? 0 : gap * static_cast<float>(items.size() - 1);
-    for (const Item& item : items) {
-      container_main += box_main(item, row) + margin_main_start(item, row) +
-                        margin_main_end(item, row);
-    }
-  }
-
-  const float content_main_start = row ? content_inline_start : content_block_start;
-  const float content_cross_start = row ? content_block_start : content_inline_start;
+  const float line_cross = resolve_line_cross(items, row, cross_definite, cross_size);
+  const float container_main = main_definite ? main_size : content_main_size(items, row, gap);
   const MainPlacement placement =
       items.empty() ? MainPlacement{}
                     : place_main(items, row, input.style->justify_content, gap, container_main);
-
-  std::vector<BlockBox> boxes;
-  boxes.reserve(items.size());
-  float cursor = content_main_start + placement.offset;
-  for (std::size_t i = 0; i < items.size(); ++i) {
-    Item& item = items[i];
-    if (i > 0) {
-      cursor += placement.between;
-    }
-    cursor += margin_main_start(item, row) +
-              (auto_main_start(item, row) ? placement.auto_share : 0);
-    const float main_position = cursor;
-    cursor += box_main(item, row) + margin_main_end(item, row) +
-              (auto_main_end(item, row) ? placement.auto_share : 0);
-    const float cross_pos = cross_position(item, row, input.style->align_items,
-                                           content_cross_start, line_cross);
-    translate(item.box, row ? main_position : cross_pos, row ? cross_pos : main_position);
-    boxes.push_back(std::move(item.box));
-  }
+  std::vector<BlockBox> boxes =
+      place_items(items, row, align, placement, row ? content_inline_start : content_block_start,
+                  row ? content_block_start : content_inline_start, line_cross);
 
   const float content_block_size =
       sizing.content_block_size.value_or(row ? line_cross : container_main);

@@ -16,9 +16,7 @@ using style::Dimension;
 using style::Display;
 
 // 固有寸法 80 × 40（縦横比 2:1）の画像 1 枚。
-ImageLookup photos() {
-  return image_table({{.src = "photo", .id = 7, .width = 80, .height = 40}});
-}
+ImageLookup photos() { return image_table({{.src = "photo", .id = 7, .width = 80, .height = 40}}); }
 
 // インライン <img> 1 枚を流して、その content_rect を返す。
 LogicalRect resolved_size(FakeMeasurer& measurer, Tree image, float viewport = 200) {
@@ -44,18 +42,18 @@ TEST(LayoutImage, IntrinsicSize) {
 
 TEST(LayoutImage, CssWidthKeepsTheAspectRatio) {
   FakeMeasurer measurer;
-  const LogicalRect rect = resolved_size(
-      measurer, img("photo", std::nullopt, std::nullopt,
-                    [](ComputedStyle& style) { style.width = Dimension::px(40); }));
+  const LogicalRect rect =
+      resolved_size(measurer, img("photo", std::nullopt, std::nullopt,
+                                  [](ComputedStyle& style) { style.width = Dimension::px(40); }));
   EXPECT_FLOAT_EQ(rect.inline_size, 40);
   EXPECT_FLOAT_EQ(rect.block_size, 20);
 }
 
 TEST(LayoutImage, CssHeightKeepsTheAspectRatio) {
   FakeMeasurer measurer;
-  const LogicalRect rect = resolved_size(
-      measurer, img("photo", std::nullopt, std::nullopt,
-                    [](ComputedStyle& style) { style.height = Dimension::px(80); }));
+  const LogicalRect rect =
+      resolved_size(measurer, img("photo", std::nullopt, std::nullopt,
+                                  [](ComputedStyle& style) { style.height = Dimension::px(80); }));
   EXPECT_FLOAT_EQ(rect.inline_size, 160);
   EXPECT_FLOAT_EQ(rect.block_size, 80);
 }
@@ -87,26 +85,25 @@ TEST(LayoutImage, AttributesAreUsedWhenCssIsAuto) {
 TEST(LayoutImage, CssBeatsAttributes) {
   FakeMeasurer measurer;
   // width だけ CSS で上書き: height は属性が残るので縦横比は崩れる（ブラウザと同じ）
-  const LogicalRect both = resolved_size(
-      measurer, img("photo", 200, 100,
-                    [](ComputedStyle& style) { style.width = Dimension::px(40); }));
+  const LogicalRect both = resolved_size(measurer, img("photo", 200, 100, [](ComputedStyle& style) {
+                                           style.width = Dimension::px(40);
+                                         }));
   EXPECT_FLOAT_EQ(both.inline_size, 40);
   EXPECT_FLOAT_EQ(both.block_size, 100);
   // height 属性が無ければ、CSS の width から縦横比で高さを出す
-  const LogicalRect width_only = resolved_size(
-      measurer, img("photo", 200, std::nullopt,
-                    [](ComputedStyle& style) { style.width = Dimension::px(40); }));
+  const LogicalRect width_only =
+      resolved_size(measurer, img("photo", 200, std::nullopt,
+                                  [](ComputedStyle& style) { style.width = Dimension::px(40); }));
   EXPECT_FLOAT_EQ(width_only.inline_size, 40);
   EXPECT_FLOAT_EQ(width_only.block_size, 20);
 }
 
 TEST(LayoutImage, PercentWidthResolvesAgainstTheContainingBlock) {
   FakeMeasurer measurer;
-  const auto root = build({block({img("photo", std::nullopt, std::nullopt,
-                                      [](ComputedStyle& style) {
-                                        style.width = Dimension::percent(50);
-                                      })},
-                                 [](ComputedStyle& style) { style.width = Dimension::px(200); })});
+  const auto root =
+      build({block({img("photo", std::nullopt, std::nullopt,
+                        [](ComputedStyle& style) { style.width = Dimension::percent(50); })},
+                   [](ComputedStyle& style) { style.width = Dimension::px(200); })});
   const auto tree = run_layout(root, 400, measurer, photos());
   ASSERT_TRUE(tree.has_value());
   const std::vector<const ImageFragment*> images = all_images(*tree);
@@ -141,13 +138,12 @@ TEST(LayoutImage, InlineImageSitsOnTheBaseline) {
 
 TEST(LayoutImage, InlineImageBoxPropertiesShiftTheFragment) {
   FakeMeasurer measurer;
-  const auto root = build({block({img("photo", std::nullopt, std::nullopt,
-                                      [](ComputedStyle& style) {
-                                        style.margin = {Dimension::px(5), Dimension::px(5),
-                                                        Dimension::px(5), Dimension::px(5)};
-                                        style.padding = {3, 3, 3, 3};
-                                        style.border_width = 2;
-                                      })})});
+  const auto root =
+      build({block({img("photo", std::nullopt, std::nullopt, [](ComputedStyle& style) {
+        style.margin = {Dimension::px(5), Dimension::px(5), Dimension::px(5), Dimension::px(5)};
+        style.padding = {3, 3, 3, 3};
+        style.border_width = 2;
+      })})});
   const auto tree = run_layout(root, 400, measurer, photos());
   ASSERT_TRUE(tree.has_value());
   const std::vector<const LineBox*> lines = all_lines(*tree);
@@ -185,9 +181,8 @@ TEST(LayoutImage, ImageWrapsAsAnAtomicItem) {
 // 画像だけの行には支柱を入れない = 画像の下にディセンダぶんのすき間ができない。
 TEST(LayoutImage, BlockImageHasNoDescenderGap) {
   FakeMeasurer measurer;
-  const auto root =
-      build({img("photo", std::nullopt, std::nullopt,
-                 [](ComputedStyle& style) { style.display = Display::Block; })});
+  const auto root = build({img("photo", std::nullopt, std::nullopt,
+                               [](ComputedStyle& style) { style.display = Display::Block; })});
   const auto tree = run_layout(root, 400, measurer, photos());
   ASSERT_TRUE(tree.has_value());
   const BlockBox* box = find_block(*tree, "img");
@@ -219,13 +214,13 @@ TEST(LayoutImage, BlockImageIsCenteredByAutoMargins) {
 
 TEST(LayoutImage, DecorationIsCarriedOnTheFragment) {
   FakeMeasurer measurer;
-  const auto root = build({block({img("photo", std::nullopt, std::nullopt,
-                                      [](ComputedStyle& style) {
-                                        style.background_color = Color{1, 2, 3, 255};
-                                        style.border_width = 2;
-                                        style.border_color = Color{4, 5, 6, 255};
-                                        style.border_radius = 8;
-                                      })})});
+  const auto root =
+      build({block({img("photo", std::nullopt, std::nullopt, [](ComputedStyle& style) {
+        style.background_color = Color{1, 2, 3, 255};
+        style.border_width = 2;
+        style.border_color = Color{4, 5, 6, 255};
+        style.border_radius = 8;
+      })})});
   const auto tree = run_layout(root, 400, measurer, photos());
   ASSERT_TRUE(tree.has_value());
   const std::vector<const ImageFragment*> images = all_images(*tree);

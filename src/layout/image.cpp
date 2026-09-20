@@ -104,7 +104,7 @@ Result<BlockBox> LayoutEngine::layout_image_box(const BlockInput& input, const B
   LineBox line;
   line.rect = border_box;
   line.baseline = border_box.block_end();  // margin-box の下端 = ベースライン
-  line.fragments.emplace_back(std::move(fragment));
+  line.fragments.emplace_back(fragment);   // 自明にコピーできる小さな型
 
   BlockBox box;
   box.tag = input.tag;

@@ -64,6 +64,10 @@ class Generator {
     const std::size_t count = pick(4);
     for (std::size_t i = 0; i < count; ++i) {
       const float inner = content_width(available, extra, percent_width, percent);
+      if (depth > 0 && chance(0.2)) {
+        children.push_back(make_flex(depth - 1, inner));
+        continue;
+      }
       if (depth > 0 && chance(0.35)) {
         children.push_back(make_block(depth - 1, inner));
         continue;
@@ -82,7 +86,64 @@ class Generator {
     });
   }
 
+  // flex コンテナ。検査側が「ブロックの積み上げ」と区別できるよう、タグを "flex" にする
+  // （タグはボックスツリーではデバッグ用の文字列で、レイアウトの挙動には効かない）。
+  Tree make_flex(int depth, float available) {
+    constexpr auto kJustify = std::to_array<style::JustifyContent>({
+        style::JustifyContent::FlexStart,
+        style::JustifyContent::FlexEnd,
+        style::JustifyContent::Center,
+        style::JustifyContent::SpaceBetween,
+        style::JustifyContent::SpaceAround,
+        style::JustifyContent::SpaceEvenly,
+    });
+    constexpr auto kAlign = std::to_array<style::AlignItems>({
+        style::AlignItems::Stretch,
+        style::AlignItems::FlexStart,
+        style::AlignItems::FlexEnd,
+        style::AlignItems::Center,
+    });
+    const bool column = chance(0.4);
+    const float gap = chance(0.5) ? pick_float(0, available / 32) : 0;
+    const auto justify = kJustify[pick(kJustify.size())];
+    const auto align = kAlign[pick(kAlign.size())];
+    const bool fixed_height = chance(0.4);
+    const float height = pick_float(20, 120);
+
+    std::vector<Tree> children;
+    const std::size_t count = 1 + pick(3);
+    for (std::size_t i = 0; i < count; ++i) {
+      if (chance(0.2)) {
+        children.push_back(img("p"));
+        continue;
+      }
+      if (depth > 0 && chance(0.3)) {
+        children.push_back(make_block(depth - 1, available / static_cast<float>(count)));
+        continue;
+      }
+      // flex アイテムは縮められるようにしておく（はみ出しの検査は別のテストで見る）
+      const float grow = chance(0.5) ? 1 : 0;
+      children.push_back(block({make_inline()}, [grow](ComputedStyle& style) {
+        style.flex_grow = grow;
+        style.flex_basis = Dimension::px(0);
+      }));
+    }
+    return element("flex", style::Display::Flex, std::move(children), [=](ComputedStyle& style) {
+      style.flex_direction = column ? style::FlexDirection::Column : style::FlexDirection::Row;
+      style.justify_content = justify;
+      style.align_items = align;
+      style.column_gap = gap;
+      style.row_gap = gap;
+      if (fixed_height) {
+        style.height = Dimension::px(height);
+      }
+    });
+  }
+
   Tree make_inline() {
+    if (chance(0.1)) {
+      return img("p");
+    }
     if (chance(0.15)) {
       return br();
     }
@@ -149,17 +210,26 @@ void check_geometry(const BlockBox& box) {
   if (blocks == nullptr) {
     return;
   }
+  const bool flex = box.tag == "flex";
   const LogicalRect content = box.content_rect();
   const BlockBox* previous = nullptr;
   for (const BlockBox& child : *blocks) {
-    // (3) 子ブロックは親の content 領域の inline 範囲に収まる
-    EXPECT_GE(child.rect.inline_start, content.inline_start - kTolerance) << box.tag;
-    EXPECT_LE(child.rect.inline_end(), content.inline_end() + kTolerance) << box.tag;
+    // (3) ブロックの積み上げでは、子は親の content 領域の inline 範囲に収まる。
+    // flex では収まらないことがあるので検査しない（自動最小サイズによる end 側のあふれと、
+    // align-items: center / flex-end で交差軸がはみ出す「unsafe」な寄せ。どちらも CSS どおり）。
+    if (!flex) {
+      EXPECT_GE(child.rect.inline_start, content.inline_start - kTolerance) << box.tag;
+      EXPECT_LE(child.rect.inline_end(), content.inline_end() + kTolerance) << box.tag;
+    }
     EXPECT_GE(child.rect.inline_size, 0);
     EXPECT_GE(child.rect.block_size, 0);
-    // (4) 兄弟ブロックは block 方向に重ならない（マージンは非負なので相殺しても離れる）
+    // (4) 兄弟は重ならない。ブロックの積み上げと flex column は block 方向に、
+    // flex row は inline 方向に離れる（どちらかの軸で必ず離れている）
     if (previous != nullptr) {
-      EXPECT_LE(previous->rect.block_end(), child.rect.block_start + kTolerance) << box.tag;
+      const bool block_disjoint = previous->rect.block_end() <= child.rect.block_start + kTolerance;
+      const bool inline_disjoint =
+          previous->rect.inline_end() <= child.rect.inline_start + kTolerance;
+      EXPECT_TRUE(block_disjoint || (flex && inline_disjoint)) << box.tag;
     }
     previous = &child;
     check_geometry(child);
@@ -178,7 +248,8 @@ TEST(LayoutProperty, RandomTreesKeepTheInvariants) {
     const style::StyledNode root = build(std::move(children));
 
     FakeMeasurer measurer;
-    const auto tree = run_layout(root, viewport, measurer);
+    const ImageLookup images = image_table({{.src = "p", .id = 1, .width = 24, .height = 12}});
+    const auto tree = run_layout(root, viewport, measurer, images);
     ASSERT_TRUE(tree.has_value()) << "seed " << seed << ": " << to_string(tree.error());
 
     // (2) 入力のクラスタはちょうど 1 回ずつどこかの行に現れる（空白の畳み込みぶんを除く）
@@ -194,7 +265,7 @@ TEST(LayoutProperty, RandomTreesKeepTheInvariants) {
 
     // (5) 同じ入力 → 同じ出力
     FakeMeasurer again;
-    const auto twice = run_layout(root, viewport, again);
+    const auto twice = run_layout(root, viewport, again, images);
     ASSERT_TRUE(twice.has_value());
     EXPECT_EQ(dump_json(*tree), dump_json(*twice)) << "seed " << seed;
   }

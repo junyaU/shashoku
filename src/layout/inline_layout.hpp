@@ -18,8 +18,8 @@ struct InlineInput {
   // 無名ブロックのときは親ブロックのスタイル（CSS の無名ボックスの継承）。
   const style::ComputedStyle* block_style = nullptr;
   float content_inline_start = 0;  // 絶対（論理座標）
-  float content_inline_size = 0;   // 行分割の利用可能幅。<img> の `%` 幅の基準でもある
-  float content_block_start = 0;   // 絶対（論理座標）
+  float content_inline_size = 0;  // 行分割の利用可能幅。<img> の `%` 幅の基準でもある
+  float content_block_start = 0;  // 絶対（論理座標）
 };
 
 // 行ボックスの列を block 方向に積んで返す。内容が空（子なし / 空白だけ）なら空の列。

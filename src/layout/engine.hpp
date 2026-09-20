@@ -106,8 +106,9 @@ class LayoutEngine {
                                                     float percent_basis) const;
 
  private:
-  Result<BlockBox> layout_image_box(const BlockInput& input, const BoxSizing& sizing,
-                                    float content_inline_start, float block_start) const;
+  [[nodiscard]] Result<BlockBox> layout_image_box(const BlockInput& input, const BoxSizing& sizing,
+                                                  float content_inline_start,
+                                                  float block_start) const;
 
   const Options* options_;
   text::TextMeasurer* measurer_;

@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cstddef>
+#include <ranges>
 #include <span>
 #include <string>
 
@@ -22,12 +23,8 @@ using style::StyledNode;
 
 // この BlockInput はインライン整形文脈を持つか（= ブロック級の子がいない）。
 bool has_block_child(const BlockInput& input) {
-  for (const StyledNode& child : input.children) {
-    if (classify(child) == ChildKind::Block) {
-      return true;
-    }
-  }
-  return false;
+  return std::ranges::any_of(
+      input.children, [](const StyledNode& child) { return classify(child) == ChildKind::Block; });
 }
 
 }  // namespace

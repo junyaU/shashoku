@@ -76,7 +76,7 @@ TEST(TextShaper, RecordsEachMissingCodepointOnce) {
   EXPECT_EQ(missing[1].cp, U'\U0001F601');
 }
 
-TEST(TextShaper, MissingGlyphUsesTofuFromFirstFont) {
+TEST(TextShaper, MissingGlyphUsesTheBoxOfTheFirstFontThatHasIt) {
   FontStore store;
   const FontId jp = *store.load(noto_sans_jp_regular());
   Shaper shaper(store);
@@ -86,6 +86,22 @@ TEST(TextShaper, MissingGlyphUsesTofuFromFirstFont) {
   EXPECT_EQ(shaped.glyphs[0].font, jp);
   EXPECT_EQ(shaped.glyphs[0].glyph_id, store.glyph_for(jp, U'□'));
   EXPECT_NE(shaped.glyphs[0].glyph_id, 0);
+}
+
+TEST(TextShaper, MissingGlyphFallsBackToNotdefWhenNoFontHasTheBox) {
+  // Noto Sans（欧文）は □（U+25A1）を持たない。その場合だけ第一フォントの .notdef。
+  FontStore store;
+  const FontId latin = *store.load(noto_sans());
+  ASSERT_FALSE(store.has_glyph(latin, U'□'));
+  Shaper shaper(store);
+
+  const ShapedText shaped = shaper.shape(U"あ", japanese_style());
+  ASSERT_EQ(shaped.glyphs.size(), 1U);
+  EXPECT_EQ(shaped.glyphs[0].font, latin);
+  EXPECT_EQ(shaped.glyphs[0].glyph_id, 0);
+  EXPECT_NEAR(shaped.glyphs[0].advance, 32.0F, 0.02F);
+  ASSERT_EQ(shaped.clusters.size(), 1U);
+  EXPECT_TRUE(shaped.clusters[0].missing);
 }
 
 TEST(TextShaper, EmptyTextProducesNothing) {

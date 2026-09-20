@@ -238,8 +238,11 @@ struct MissingGlyph { char32_t cp; };   // 豆腐の記録。Shaper が溜め、
 - run 分割: コードポイントごとにフォールバック列を cmap 引きし、最初にグリフを持つフォントを採用。
   同じフォントが続く区間をまとめて HarfBuzz に渡す。結合文字・異体字セレクタ・ZWJ は直前の
   文字と同じ run に入れる（別フォントに割らない）
-- 豆腐: どのフォントにもないコードポイントは `MissingGlyph` に記録し、第一フォントの
-  `□`（U+25A1）、なければ `.notdef` を 1em の送りで出す。`ShapedCluster::missing = true`
+- 豆腐: どのフォントにもないコードポイントは `MissingGlyph` に記録し、`□`（U+25A1）を
+  **フォールバック列の順に全フォントから探して**、最初に見つかったフォントのグリフを
+  1em の送りで出す（第一フォントだけを見ると、欧文フォントが先頭のときに幅の狭い `.notdef` が
+  1em の枠の左端に出て不揃いになる）。どのフォントにも `□` が無ければ第一フォントの `.notdef`。
+  縦書きでも同じグリフを立てる。`ShapedCluster::missing = true`
 - 縦書き（`Direction::Vertical`）: UAX #50 の Vertical_Orientation が U / Tu の文字は
   `HB_DIRECTION_TTB` でシェーピング（HarfBuzz が `vert` を自動適用）、R の文字（欧文・数字）は
   横組みでシェーピングして `sideways = true`。**Tr（「」（）ー：； など）は UAX #50 の定義どおり、

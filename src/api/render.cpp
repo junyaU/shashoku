@@ -129,14 +129,17 @@ Result<Resources> load_resources(const FontSet& fonts, const ImageSet& images) {
       return fail(ErrorKind::FontLoad, std::format("font #{}: {}", i, id.error().message));
     }
   }
+  // 名前の重複はバイト列を見る前に弾く（ImageSet の形の問題で、中身の問題ではない）。
   for (std::size_t i = 0; i < images.size(); ++i) {
-    const std::string_view name = images.name(i);
     for (std::size_t seen = 0; seen < i; ++seen) {
-      if (images.name(seen) == name) {
+      if (images.name(seen) == images.name(i)) {
         return fail(ErrorKind::InvalidOption,
-                    std::format("image \"{}\" was added to the ImageSet twice", name));
+                    std::format("image \"{}\" was added to the ImageSet twice", images.name(i)));
       }
     }
+  }
+  for (std::size_t i = 0; i < images.size(); ++i) {
+    const std::string_view name = images.name(i);
     Result<Bitmap> bitmap = png::decode(images.bytes(i));
     if (!bitmap) {
       return fail(ErrorKind::ImageDecode,

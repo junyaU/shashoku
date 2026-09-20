@@ -462,6 +462,52 @@ TEST(LayoutFlex, ContainerPaddingOffsetsTheContentBox) {
   EXPECT_FLOAT_EQ(container_of(*tree).rect.block_size, 40);
 }
 
+// ---- 固有寸法 ---------------------------------------------------------------------
+// column の shrink-to-fit を通して min-content / max-content を確かめる。
+
+TEST(LayoutFlex, IntrinsicSizesOfLatinText) {
+  FakeMeasurer measurer;
+  const auto make = []() {
+    return build({flex({block({text("ab cdef")})}, [](ComputedStyle& style) {
+      style.flex_direction = FlexDirection::Column;
+      style.align_items = AlignItems::FlexStart;
+    })});
+  };
+  // 利用可能幅が広ければ max-content（7 文字 × 0.5em = 56）
+  const auto wide = run_layout(make(), 400, measurer);
+  ASSERT_TRUE(wide.has_value());
+  EXPECT_FLOAT_EQ(item_rects(*wide)[0].inline_size, 56);
+  // 狭ければ min-content（最長の語 "cdef" = 32）までしか下がらない
+  const auto narrow = run_layout(make(), 20, measurer);
+  ASSERT_TRUE(narrow.has_value());
+  EXPECT_FLOAT_EQ(item_rects(*narrow)[0].inline_size, 32);
+}
+
+TEST(LayoutFlex, IntrinsicSizeOfNestedBlocksIsTheMaximum) {
+  FakeMeasurer measurer;
+  const auto root = build({flex({block({block({text("あいうえお")}), block({text("あい")})})},
+                                [](ComputedStyle& style) {
+                                  style.flex_direction = FlexDirection::Column;
+                                  style.align_items = AlignItems::FlexStart;
+                                })});
+  const auto tree = run_layout(root, 400, measurer);
+  ASSERT_TRUE(tree.has_value());
+  EXPECT_FLOAT_EQ(item_rects(*tree)[0].inline_size, 80);  // 深い方の max-content
+}
+
+// 強制改行があると max-content は「もっとも長い行」になる。
+TEST(LayoutFlex, IntrinsicSizeSplitsAtForcedBreaks) {
+  FakeMeasurer measurer;
+  const auto root =
+      build({flex({block({text("あいうえお"), br(), text("あい")})}, [](ComputedStyle& style) {
+        style.flex_direction = FlexDirection::Column;
+        style.align_items = AlignItems::FlexStart;
+      })});
+  const auto tree = run_layout(root, 400, measurer);
+  ASSERT_TRUE(tree.has_value());
+  EXPECT_FLOAT_EQ(item_rects(*tree)[0].inline_size, 80);
+}
+
 // ---- DESIGN.md Phase 6 の受け入れ条件 ------------------------------------------------
 // 「アイコン + タイトル + フッター」の典型的な OG 画像レイアウトが組める。
 

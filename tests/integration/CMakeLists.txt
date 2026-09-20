@@ -6,6 +6,7 @@ shashoku_add_test(integration_test
     golden_test.cpp
     error_test.cpp
     pipeline_test.cpp
+    fuzz_test.cpp
   LIBS shashoku::shashoku shashoku_test_support)
 
 shashoku_use_test_fonts(integration_test)

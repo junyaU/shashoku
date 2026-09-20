@@ -146,8 +146,7 @@ TEST(OutputSize, NothingToRender) {
 
 // 縦書きでは内容が伸びる向きが横なので、高さを推定できない（ARCHITECTURE.md §3.8 / A1）。
 TEST(OutputSize, VerticalNeedsExplicitHeight) {
-  constexpr std::string_view kVertical =
-      R"(<div style="writing-mode: vertical-rl">縦書き</div>)";
+  constexpr std::string_view kVertical = R"(<div style="writing-mode: vertical-rl">縦書き</div>)";
   const auto without = render(kVertical, japanese_fonts(), options_for(320));
   ASSERT_FALSE(without.has_value());
   EXPECT_EQ(without.error().kind, ErrorKind::InvalidOption) << to_string(without.error());

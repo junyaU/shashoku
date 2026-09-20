@@ -110,6 +110,132 @@ TEST(TextFallback, AllUnknownFamiliesFallBackToLoadOrder) {
   EXPECT_EQ(cluster_font(shaped, 0), latin);
 }
 
+// font-family は family の優先順を変えるだけで、太さの照合は常に全 family に効く。
+// font-family を書かない普通の HTML でも font-weight: 700 の見出しが Bold になること。
+TEST(TextFallback, WeightAppliesWithoutAnyFontFamily) {
+  FontStore store;
+  const FontId regular = *store.load(noto_sans_jp_regular());
+  const FontId bold = *store.load(noto_sans_jp_bold());
+  ASSERT_TRUE(store.load(noto_sans()).has_value());
+  Shaper shaper(store);
+
+  TextStyle style = style_at();  // font_family は空のまま
+  ASSERT_TRUE(style.font_family.empty());
+
+  struct Case {
+    int weight;
+    FontId expected;
+  };
+  for (const Case& testcase : {Case{100, regular}, Case{400, regular}, Case{500, regular},
+                               Case{600, bold}, Case{700, bold}, Case{900, bold}}) {
+    style.font_weight = testcase.weight;
+    EXPECT_EQ(cluster_font(shaper.shape(U"あ", style), 0), testcase.expected)
+        << "font-weight " << testcase.weight;
+    // 欧文も同じ列から引かれる（Noto Sans JP グループが先なので Bold が 'A' を持つ）
+    EXPECT_EQ(cluster_font(shaper.shape(U"A", style), 0), testcase.expected)
+        << "font-weight " << testcase.weight;
+  }
+}
+
+// 別の family を font-family で指定しても、そこに無い文字が落ちた先の family では
+// 指定した太さの face が選ばれる。
+TEST(TextFallback, WeightAppliesInsideFamiliesThatFontFamilyDidNotName) {
+  FontStore store;
+  ASSERT_TRUE(store.load(noto_sans_jp_regular()).has_value());
+  const FontId bold = *store.load(noto_sans_jp_bold());
+  const FontId latin = *store.load(noto_sans());
+  Shaper shaper(store);
+
+  TextStyle style = style_at();
+  style.font_family = {"Noto Sans"};  // 欧文だけを名指しする
+  style.font_weight = 700;
+
+  EXPECT_EQ(cluster_font(shaper.shape(U"A", style), 0), latin) << "名指しした family が先";
+  EXPECT_EQ(cluster_font(shaper.shape(U"あ", style), 0), bold)
+      << "落ちた先の family でも font-weight は効く";
+}
+
+TEST(TextFallback, WeightAppliesInVerticalTextToo) {
+  FontStore store;
+  const FontId regular = *store.load(noto_sans_jp_regular());
+  const FontId bold = *store.load(noto_sans_jp_bold());
+  Shaper shaper(store);
+
+  TextStyle style = style_at();
+  style.direction = Direction::Vertical;
+  style.font_weight = 700;
+  EXPECT_EQ(cluster_font(shaper.shape(U"あ", style), 0), bold);
+  style.font_weight = 400;
+  EXPECT_EQ(cluster_font(shaper.shape(U"あ", style), 0), regular);
+}
+
+// family に face が 1 つしかなければ、font-weight が何であってもそれが使われる。
+TEST(TextFallback, SingleFaceFamilyIsUsedWhateverTheWeight) {
+  FontStore store;
+  const FontId latin = *store.load(noto_sans());
+  const FontId japanese = *store.load(noto_sans_jp_regular());
+  Shaper shaper(store);
+
+  TextStyle style = style_at();
+  for (const int weight : {100, 400, 700, 900}) {
+    style.font_weight = weight;
+    EXPECT_EQ(cluster_font(shaper.shape(U"A", style), 0), latin) << "font-weight " << weight;
+    EXPECT_EQ(cluster_font(shaper.shape(U"あ", style), 0), japanese) << "font-weight " << weight;
+  }
+}
+
+// グループの順序は「その family の最初のフォントが追加された順」。
+// 同じ family の 2 つ目以降の face を足しても、family の並びは動かない。
+TEST(TextFallback, FamilyOrderFollowsTheFirstFaceOfEachFamily) {
+  FontStore store;
+  const FontId latin = *store.load(noto_sans());
+  const FontId regular = *store.load(noto_sans_jp_regular());
+  const FontId bold = *store.load(noto_sans_jp_bold());
+  Shaper shaper(store);
+
+  TextStyle style = style_at();
+  style.font_weight = 700;
+  // Noto Sans が先に追加されているので、'A' は Bold ではなく Noto Sans で描かれる
+  EXPECT_EQ(cluster_font(shaper.shape(U"A", style), 0), latin);
+  EXPECT_EQ(cluster_font(shaper.shape(U"あ", style), 0), bold);
+
+  style.font_family = {"Noto Sans JP"};
+  EXPECT_EQ(cluster_font(shaper.shape(U"A", style), 0), bold) << "名指しで family の順が変わる";
+
+  style.font_weight = 400;
+  EXPECT_EQ(cluster_font(shaper.shape(U"A", style), 0), regular);
+}
+
+TEST(TextFallback, MetricsComeFromTheWeightMatchedFace) {
+  FontStore store;
+  const FontId regular = *store.load(noto_sans_jp_regular());
+  const FontId bold = *store.load(noto_sans_jp_bold());
+  Shaper shaper(store);
+  EXPECT_NE(regular, bold);
+
+  TextStyle style = style_at();
+  style.font_weight = 700;
+  const FontMetrics bold_metrics = shaper.metrics(style);
+  EXPECT_GT(bold_metrics.ascent, 0.0F);
+  EXPECT_GT(bold_metrics.descent, 0.0F);
+  // 先頭が Bold になっているので、Bold のグリフが選ばれることで裏づける
+  EXPECT_EQ(cluster_font(shaper.shape(U"あ", style), 0), bold);
+}
+
+TEST(TextFallback, TofuBoxComesFromTheWeightMatchedFace) {
+  FontStore store;
+  ASSERT_TRUE(store.load(noto_sans_jp_regular()).has_value());
+  const FontId bold = *store.load(noto_sans_jp_bold());
+  Shaper shaper(store);
+
+  TextStyle style = style_at();  // font_family なし
+  style.font_weight = 700;
+  const ShapedText shaped = shaper.shape(U"😀", style);
+  ASSERT_EQ(shaped.glyphs.size(), 1U);
+  EXPECT_EQ(shaped.glyphs[0].font, bold);
+  EXPECT_EQ(shaped.glyphs[0].glyph_id, store.glyph_for(bold, U'□'));
+}
+
 // CSS Fonts 4 §5.2: 同じ family に複数 weight があれば font-weight に最も近いものを選ぶ。
 TEST(TextFallback, PicksTheClosestWeightWithinAFamily) {
   FontStore store;

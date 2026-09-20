@@ -69,6 +69,7 @@ TEST(LayoutDumpJson, FixedFormat) {
                 "inline_start": 2,
                 "inline_size": 32,
                 "baseline": 14,
+                "location": "1:1",
                 "glyphs": [
                   [
                     12354,
@@ -183,6 +184,7 @@ TEST(LayoutDumpJson, BorderAndInlineBackground) {
                 "inline_start": 1,
                 "inline_size": 16,
                 "baseline": 13,
+                "location": "1:1",
                 "glyphs": [
                   [
                     12354,

@@ -52,7 +52,7 @@ TEST(TextCluster, CombiningVoicedSoundMarkStaysWithItsBase) {
 
   const std::u32string text = std::u32string(U"か") + kCombiningVoicedMark;  // か + 濁点 = が
   ASSERT_EQ(text.size(), 2U);
-  const ShapedText shaped = shaper.shape(text, style_at());
+  const ShapedText shaped = shape_ok(shaper, text, style_at());
   expect_valid_clusters(shaped, text.size());
 
   ASSERT_EQ(shaped.clusters.size(), 1U);
@@ -69,7 +69,7 @@ TEST(TextCluster, VariationSelectorStaysWithItsBase) {
   // 葛 + 異体字セレクタ、そのあと別の漢字
   const std::u32string text = std::u32string(U"葛") + kVariationSelector17 + U"城";
   ASSERT_EQ(text.size(), 3U);
-  const ShapedText shaped = shaper.shape(text, style_at());
+  const ShapedText shaped = shape_ok(shaper, text, style_at());
   expect_valid_clusters(shaped, text.size());
 
   ASSERT_EQ(shaped.clusters.size(), 2U);
@@ -89,7 +89,7 @@ TEST(TextCluster, ZeroWidthJoinerKeepsBothSidesInOneCluster) {
 
   const std::u32string text = std::u32string(U"A") + kZeroWidthJoiner + U"B";
   ASSERT_EQ(text.size(), 3U);
-  const ShapedText shaped = shaper.shape(text, style_at());
+  const ShapedText shaped = shape_ok(shaper, text, style_at());
   expect_valid_clusters(shaped, text.size());
 
   ASSERT_EQ(shaped.clusters.size(), 1U);
@@ -103,7 +103,7 @@ TEST(TextCluster, LatinLigatureIsOneCluster) {
   Shaper shaper(store);
 
   const std::u32string text = U"fi";
-  const ShapedText shaped = shaper.shape(text, style_at());
+  const ShapedText shaped = shape_ok(shaper, text, style_at());
   expect_valid_clusters(shaped, text.size());
 
   // Noto Sans は liga で fi を 1 グリフにする。合字を持たないフォントに差し替えても
@@ -125,7 +125,7 @@ TEST(TextCluster, EmojiZwjSequenceIsOneCluster) {
   // 男 + ZWJ + 女。どちらのコードポイントも和文フォントには無いので豆腐になるが、
   // ZWJ で繋がった列は 1 クラスタにまとまる（途中で行を割らない）。
   const std::u32string text = std::u32string(1, kManEmoji) + kZeroWidthJoiner + kWomanEmoji;
-  const ShapedText shaped = shaper.shape(text, style_at());
+  const ShapedText shaped = shape_ok(shaper, text, style_at());
   expect_valid_clusters(shaped, text.size());
 
   ASSERT_EQ(shaped.clusters.size(), 1U);
@@ -139,7 +139,7 @@ TEST(TextCluster, CombiningMarkOnLatinStaysWithItsBase) {
   Shaper shaper(store);
 
   const std::u32string text = std::u32string(U"e") + kCombiningAcute + U"a";
-  const ShapedText shaped = shaper.shape(text, style_at());
+  const ShapedText shaped = shape_ok(shaper, text, style_at());
   expect_valid_clusters(shaped, text.size());
 
   ASSERT_EQ(shaped.clusters.size(), 2U);
@@ -153,7 +153,7 @@ TEST(TextCluster, LeadingCombiningMarkDoesNotCrash) {
   Shaper shaper(store);
 
   const std::u32string text = std::u32string(1, kCombiningVoicedMark) + U"あ";
-  const ShapedText shaped = shaper.shape(text, style_at());
+  const ShapedText shaped = shape_ok(shaper, text, style_at());
   expect_valid_clusters(shaped, text.size());
 }
 
@@ -163,7 +163,7 @@ TEST(TextCluster, DefaultIgnorableOnlyTextIsStillCovered) {
   Shaper shaper(store);
 
   const std::u32string text(1, kZeroWidthJoiner);
-  const ShapedText shaped = shaper.shape(text, style_at());
+  const ShapedText shaped = shape_ok(shaper, text, style_at());
   expect_valid_clusters(shaped, text.size());
 }
 

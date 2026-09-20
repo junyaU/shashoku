@@ -86,6 +86,8 @@ class FragmentWriter {
                             .sideways = glyph.sideways};
       if (open_ == kNone || key != key_) {
         key_ = key;
+        // 位置は**断片の先頭のグリフ**のもの（A31）。位置では断片を切らないので、
+        // 1 つの断片が複数のノードにまたがることがある
         content_->emplace_back(TextFragment{.font = glyph.font,
                                             .font_size = paragraph_->font_size(style_id),
                                             .color = paragraph_->color(style_id),
@@ -94,7 +96,8 @@ class FragmentWriter {
                                             .inline_start = pen,
                                             .inline_size = 0,
                                             .glyphs = {},
-                                            .text = {}});
+                                            .text = {},
+                                            .location = paragraph_->location_of(style_id)});
         open_ = content_->size() - 1;
       }
       auto& fragment = std::get<TextFragment>((*content_)[open_]);

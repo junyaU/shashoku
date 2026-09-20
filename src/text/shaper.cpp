@@ -6,9 +6,9 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <format>
 #include <map>
 #include <memory>
-#include <set>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -17,6 +17,8 @@
 #include <hb-ot.h>
 
 #include "core/ids.hpp"
+#include "core/result.hpp"
+#include "shashoku/error.hpp"
 #include "text/char_properties.hpp"
 #include "text/font_store.hpp"
 #include "text/font_store_impl.hpp"
@@ -28,6 +30,11 @@ namespace {
 // HarfBuzz / FreeType と同じ 26.6 固定小数。font unit ⇄ px の換算はこの 2 関数に集約する。
 constexpr int kFixedOne = 64;
 constexpr char32_t kTofu = 0x25A1;  // □
+
+// エラーメッセージに必ず「どのフォントの何が原因か」を入れる（DESIGN.md §3-6 fail loudly）。
+[[nodiscard]] std::string where(FontId font, float font_size) {
+  return std::format("FontId {}, {} px", font, font_size);
+}
 
 [[nodiscard]] float to_px(hb_position_t value) {
   return static_cast<float>(value) / static_cast<float>(kFixedOne);
@@ -126,8 +133,6 @@ struct ShaperImpl {
   hb_buffer_t* probe_buffer = nullptr;
   hb_language_t language = nullptr;
   std::vector<hb_font_t*> shaping_fonts;  // FontId → シェーピング用 hb_font（遅延生成）
-  std::vector<MissingGlyph> missing;
-  std::set<char32_t> missing_seen;
   std::map<std::pair<FontId, char32_t>, bool> vertical_form_cache;
 
   explicit ShaperImpl(const FontStore& store)
@@ -156,16 +161,28 @@ struct ShaperImpl {
 
   // スケールを設定したシェーピング用フォント。FontStore が持つ hb_font は
   // font unit スケールのまま使いたいので、Shaper 側で別に作る。
-  hb_font_t* shaping_font(FontId font, int scale) {
+  // 失敗は 2 つ: 不正な FontId（呼び出し側のバグ = Internal）と HarfBuzz の確保失敗
+  // （hb_font_create は失敗すると空のフォントを返す = OutOfMemory。A26 / A30）。
+  Result<hb_font_t*> shaping_font(FontId font, int scale) {
     const FontEntry* font_entry = entry(font);
     if (font_entry == nullptr) {
-      return nullptr;
+      return fail(ErrorKind::Internal,
+                  std::format("シェーピングできません (FontId {}): FontStore にその FontId が"
+                              "ありません",
+                              font));
     }
     if (shaping_fonts.size() <= font) {
       shaping_fonts.resize(std::size_t{font} + 1, nullptr);
     }
     if (shaping_fonts[font] == nullptr) {
       hb_font_t* created = hb_font_create(font_entry->hb_face);
+      if (created == hb_font_get_empty()) {
+        // hb_font_create は確保に失敗すると空のフォント（不変の共有オブジェクト）を返す。
+        return fail(ErrorKind::OutOfMemory,
+                    std::format("シェーピングできません (FontId {}): HarfBuzz のフォントを"
+                                "作れませんでした",
+                                font));
+      }
       hb_ot_font_set_funcs(created);  // メトリクスは hb-ot から読む（A7）
       shaping_fonts[font] = created;
     }
@@ -175,26 +192,22 @@ struct ShaperImpl {
 
   [[nodiscard]] std::vector<FamilyGroup> build_family_groups(int font_weight) const;
   [[nodiscard]] std::vector<FontId> resolve_stack(const TextStyle& style) const;
-  [[nodiscard]] FontMetrics font_metrics(FontId font, float font_size);
-  [[nodiscard]] std::vector<hb_codepoint_t> probe_glyphs(hb_font_t* font, char32_t cp,
-                                                         hb_direction_t direction) const;
-  [[nodiscard]] bool has_vertical_form(FontId font, char32_t cp);
-  [[nodiscard]] CharPlan resolve_char(const std::vector<FontId>& stack, char32_t cp, bool vertical);
-  [[nodiscard]] std::vector<CharPlan> build_plan(std::u32string_view text,
-                                                 const std::vector<FontId>& stack, bool vertical);
+  [[nodiscard]] Result<FontMetrics> font_metrics(FontId font, float font_size);
+  [[nodiscard]] Result<std::vector<hb_codepoint_t>> probe_glyphs(hb_font_t* font, char32_t cp,
+                                                                 hb_direction_t direction) const;
+  [[nodiscard]] Result<bool> has_vertical_form(FontId font, char32_t cp);
+  [[nodiscard]] Result<CharPlan> resolve_char(const std::vector<FontId>& stack, char32_t cp,
+                                              bool vertical);
+  [[nodiscard]] Result<std::vector<CharPlan>> build_plan(std::u32string_view text,
+                                                         const std::vector<FontId>& stack,
+                                                         bool vertical);
 
-  void record_missing(char32_t cp) {
-    if (missing_seen.insert(cp).second) {
-      missing.push_back(MissingGlyph{cp});
-    }
-  }
-
-  void shape_run(std::u32string_view text, std::size_t begin, std::size_t end, const CharPlan& plan,
-                 const TextStyle& style, int scale, ShapedText& out);
-  void emit_missing_run(std::u32string_view text, std::size_t begin, std::size_t end,
-                        const std::vector<CharPlan>& plan, const std::vector<FontId>& stack,
-                        const TextStyle& style, ShapedText& out);
-  ShapedText shape(std::u32string_view text, const TextStyle& style);
+  Result<void> shape_run(std::u32string_view text, std::size_t begin, std::size_t end,
+                         const CharPlan& plan, const TextStyle& style, int scale, ShapedText& out);
+  Result<void> emit_missing_run(std::size_t begin, std::size_t end,
+                                const std::vector<CharPlan>& plan, const std::vector<FontId>& stack,
+                                const TextStyle& style, ShapedText& out);
+  Result<ShapedText> shape(std::u32string_view text, const TextStyle& style);
 };
 
 // FontStore の全フォントを family 名でグループ化し、各グループの中を font_weight の
@@ -266,24 +279,27 @@ std::vector<FontId> ShaperImpl::resolve_stack(const TextStyle& style) const {
   return stack;
 }
 
-FontMetrics ShaperImpl::font_metrics(FontId font, float font_size) {
-  FontMetrics result;
-  hb_font_t* hb_font = shaping_font(font, to_fixed(font_size));
-  if (hb_font == nullptr) {
-    return result;
+Result<FontMetrics> ShaperImpl::font_metrics(FontId font, float font_size) {
+  Result<hb_font_t*> hb_font = shaping_font(font, to_fixed(font_size));
+  if (!hb_font) {
+    return std::unexpected(hb_font.error());
   }
   hb_font_extents_t extents{};
-  if (hb_font_get_h_extents(hb_font, &extents) == 0) {
-    return result;
+  if (hb_font_get_h_extents(*hb_font, &extents) == 0) {
+    return fail(ErrorKind::FontLoad,
+                std::format("メトリクスを読めません ({}): フォントに水平方向の寸法"
+                            "（hhea / OS/2）がありません",
+                            where(font, font_size)));
   }
+  FontMetrics result;
   result.ascent = std::max(0.0F, to_px(extents.ascender));
   result.descent = std::max(0.0F, -to_px(extents.descender));
   result.line_gap = std::max(0.0F, to_px(extents.line_gap));
   return result;
 }
 
-std::vector<hb_codepoint_t> ShaperImpl::probe_glyphs(hb_font_t* font, char32_t cp,
-                                                     hb_direction_t direction) const {
+Result<std::vector<hb_codepoint_t>> ShaperImpl::probe_glyphs(hb_font_t* font, char32_t cp,
+                                                             hb_direction_t direction) const {
   const auto value = static_cast<std::uint32_t>(cp);
   hb_buffer_clear_contents(probe_buffer);
   hb_buffer_add_utf32(probe_buffer, &value, 1, 0, 1);
@@ -291,9 +307,21 @@ std::vector<hb_codepoint_t> ShaperImpl::probe_glyphs(hb_font_t* font, char32_t c
   hb_buffer_set_script(probe_buffer, hb_unicode_script(hb_unicode_funcs_get_default(), cp));
   hb_buffer_set_language(probe_buffer, language);
   hb_shape(font, probe_buffer, nullptr, 0);
+  if (hb_buffer_allocation_successful(probe_buffer) == 0) {
+    return fail(ErrorKind::OutOfMemory,
+                std::format("縦組み用グリフを調べられません (U+{:04X}): HarfBuzz が作業領域を"
+                            "確保できませんでした",
+                            static_cast<std::uint32_t>(cp)));
+  }
 
   unsigned int count = 0;
   const hb_glyph_info_t* infos = hb_buffer_get_glyph_infos(probe_buffer, &count);
+  if (count > 0 && infos == nullptr) {
+    return fail(ErrorKind::Internal,
+                std::format("縦組み用グリフを調べられません (U+{:04X}): HarfBuzz がグリフ情報を"
+                            "返しませんでした",
+                            static_cast<std::uint32_t>(cp)));
+  }
   std::vector<hb_codepoint_t> ids;
   ids.reserve(count);
   for (unsigned int i = 0; i < count; ++i) {
@@ -304,24 +332,37 @@ std::vector<hb_codepoint_t> ShaperImpl::probe_glyphs(hb_font_t* font, char32_t c
 
 // UAX #50 の Tr（transformed, fallback rotated）用。フォントが縦書き用グリフ（vert）を
 // 持つなら立てて差し替え、持たないなら横倒しにする、というのが UAX #50 の規定。
-bool ShaperImpl::has_vertical_form(FontId font, char32_t cp) {
+Result<bool> ShaperImpl::has_vertical_form(FontId font, char32_t cp) {
   const std::pair<FontId, char32_t> key{font, cp};
   if (const auto it = vertical_form_cache.find(key); it != vertical_form_cache.end()) {
     return it->second;
   }
-  bool result = false;
   const FontEntry* font_entry = entry(font);
-  if (font_entry != nullptr) {
-    result = probe_glyphs(font_entry->hb_font, cp, HB_DIRECTION_LTR) !=
-             probe_glyphs(font_entry->hb_font, cp, HB_DIRECTION_TTB);
+  if (font_entry == nullptr) {
+    return fail(ErrorKind::Internal,
+                std::format("縦組み用グリフを調べられません (FontId {}): FontStore にその "
+                            "FontId がありません",
+                            font));
   }
+  const Result<std::vector<hb_codepoint_t>> horizontal =
+      probe_glyphs(font_entry->hb_font, cp, HB_DIRECTION_LTR);
+  if (!horizontal) {
+    return std::unexpected(horizontal.error());
+  }
+  const Result<std::vector<hb_codepoint_t>> vertical =
+      probe_glyphs(font_entry->hb_font, cp, HB_DIRECTION_TTB);
+  if (!vertical) {
+    return std::unexpected(vertical.error());
+  }
+  const bool result = *horizontal != *vertical;
   vertical_form_cache.emplace(key, result);
   return result;
 }
 
-CharPlan ShaperImpl::resolve_char(const std::vector<FontId>& stack, char32_t cp, bool vertical) {
+Result<CharPlan> ShaperImpl::resolve_char(const std::vector<FontId>& stack, char32_t cp,
+                                          bool vertical) {
   CharPlan plan;
-  plan.font = stack.empty() ? FontId{0} : stack.front();
+  plan.font = stack.front();
   plan.missing = true;
   for (const FontId font : stack) {
     if (fonts->has_glyph(font, cp)) {
@@ -344,10 +385,14 @@ CharPlan ShaperImpl::resolve_char(const std::vector<FontId>& stack, char32_t cp,
     case VerticalOrientation::TransformedUpright:
       plan.orientation = Orientation::Upright;
       break;
-    case VerticalOrientation::TransformedRotated:
-      plan.orientation =
-          has_vertical_form(plan.font, cp) ? Orientation::Upright : Orientation::Sideways;
+    case VerticalOrientation::TransformedRotated: {
+      const Result<bool> upright = has_vertical_form(plan.font, cp);
+      if (!upright) {
+        return std::unexpected(upright.error());
+      }
+      plan.orientation = *upright ? Orientation::Upright : Orientation::Sideways;
       break;
+    }
     case VerticalOrientation::Rotated:
       plan.orientation = Orientation::Sideways;
       break;
@@ -355,9 +400,9 @@ CharPlan ShaperImpl::resolve_char(const std::vector<FontId>& stack, char32_t cp,
   return plan;
 }
 
-void ShaperImpl::shape_run(std::u32string_view text, std::size_t begin, std::size_t end,
-                           const CharPlan& plan, const TextStyle& style, int scale,
-                           ShapedText& out) {
+Result<void> ShaperImpl::shape_run(std::u32string_view text, std::size_t begin, std::size_t end,
+                                   const CharPlan& plan, const TextStyle& style, int scale,
+                                   ShapedText& out) {
   const auto text_begin = static_cast<std::uint32_t>(begin);
   const auto text_end = static_cast<std::uint32_t>(end);
   const auto glyph_base = static_cast<std::uint32_t>(out.glyphs.size());
@@ -366,32 +411,45 @@ void ShaperImpl::shape_run(std::u32string_view text, std::size_t begin, std::siz
   // （ascent 側が軸の右、descent 側が軸の左に出るので、その差の半分だけ戻す）
   float baseline_shift = 0.0F;
   if (plan.orientation == Orientation::Sideways) {
-    const FontMetrics run_metrics = font_metrics(plan.font, style.font_size);
-    baseline_shift = (run_metrics.descent - run_metrics.ascent) / 2.0F;
+    const Result<FontMetrics> run_metrics = font_metrics(plan.font, style.font_size);
+    if (!run_metrics) {
+      return std::unexpected(run_metrics.error());
+    }
+    baseline_shift = (run_metrics->descent - run_metrics->ascent) / 2.0F;
   }
 
-  hb_font_t* hb_font = shaping_font(plan.font, scale);
-  if (hb_font != nullptr) {
-    hb_buffer_clear_contents(buffer);
-    // run の前後も文脈として渡す（hb はクラスタ値を text 全体の添字で返す）。
-    hb_buffer_add_utf32(buffer, reinterpret_cast<const std::uint32_t*>(text.data()),
-                        static_cast<int>(text.size()), static_cast<unsigned int>(begin),
-                        static_cast<int>(end - begin));
-    hb_buffer_set_direction(
-        buffer, plan.orientation == Orientation::Upright ? HB_DIRECTION_TTB : HB_DIRECTION_LTR);
-    hb_buffer_set_script(buffer, plan.script);
-    hb_buffer_set_language(buffer, language);  // ロケールを読ませない（決定性）
-    hb_buffer_set_cluster_level(buffer, HB_BUFFER_CLUSTER_LEVEL_MONOTONE_GRAPHEMES);
-    hb_shape(hb_font, buffer, nullptr, 0);
+  const Result<hb_font_t*> hb_font = shaping_font(plan.font, scale);
+  if (!hb_font) {
+    return std::unexpected(hb_font.error());
+  }
+  hb_buffer_clear_contents(buffer);
+  // run の前後も文脈として渡す（hb はクラスタ値を text 全体の添字で返す）。
+  hb_buffer_add_utf32(buffer, reinterpret_cast<const std::uint32_t*>(text.data()),
+                      static_cast<int>(text.size()), static_cast<unsigned int>(begin),
+                      static_cast<int>(end - begin));
+  hb_buffer_set_direction(
+      buffer, plan.orientation == Orientation::Upright ? HB_DIRECTION_TTB : HB_DIRECTION_LTR);
+  hb_buffer_set_script(buffer, plan.script);
+  hb_buffer_set_language(buffer, language);  // ロケールを読ませない（決定性）
+  hb_buffer_set_cluster_level(buffer, HB_BUFFER_CLUSTER_LEVEL_MONOTONE_GRAPHEMES);
+  hb_shape(*hb_font, buffer, nullptr, 0);
+  // hb_buffer_create 自体の失敗もここで捕まる（確保に失敗すると successful = false の
+  // 空のバッファが返るため、コンストラクタが Result を返せなくても握りつぶさずに済む）。
+  if (hb_buffer_allocation_successful(buffer) == 0) {
+    return fail(ErrorKind::OutOfMemory,
+                std::format("シェーピングできません ({}): HarfBuzz が作業領域を確保できません"
+                            "でした（{} 文字）",
+                            where(plan.font, style.font_size), end - begin));
   }
 
   unsigned int count = 0;
-  const hb_glyph_info_t* infos =
-      hb_font != nullptr ? hb_buffer_get_glyph_infos(buffer, &count) : nullptr;
-  const hb_glyph_position_t* positions =
-      hb_font != nullptr ? hb_buffer_get_glyph_positions(buffer, &count) : nullptr;
-  if (infos == nullptr || positions == nullptr) {
-    count = 0;
+  const hb_glyph_info_t* infos = hb_buffer_get_glyph_infos(buffer, &count);
+  const hb_glyph_position_t* positions = hb_buffer_get_glyph_positions(buffer, &count);
+  if (count > 0 && (infos == nullptr || positions == nullptr)) {
+    return fail(ErrorKind::Internal,
+                std::format("シェーピングできません ({}): HarfBuzz がグリフ情報を返しません"
+                            "でした（{} グリフ）",
+                            where(plan.font, style.font_size), count));
   }
 
   for (unsigned int i = 0; i < count; ++i) {
@@ -443,7 +501,7 @@ void ShaperImpl::shape_run(std::u32string_view text, std::size_t begin, std::siz
     // シェーピングで全グリフが消えた（既定無視文字だけの run など）。
     out.clusters.push_back(
         ShapedCluster{text_begin, text_end, glyph_base, glyph_base, 0.0F, false});
-    return;
+    return {};
   }
 
   for (std::size_t k = 0; k < groups.size(); ++k) {
@@ -457,16 +515,19 @@ void ShaperImpl::shape_run(std::u32string_view text, std::size_t begin, std::siz
     }
     out.clusters.push_back(cluster);
   }
+  return {};
 }
 
-void ShaperImpl::emit_missing_run(std::u32string_view text, std::size_t begin, std::size_t end,
-                                  const std::vector<CharPlan>& plan,
-                                  const std::vector<FontId>& stack, const TextStyle& style,
-                                  ShapedText& out) {
+// 豆腐の run。どの文字が豆腐だったかは ShapedCluster::missing で返すだけで、
+// Shaper 自身は何も溜めない（A31。警告を組み立てるのは ③ レイアウトの仕事）。
+Result<void> ShaperImpl::emit_missing_run(std::size_t begin, std::size_t end,
+                                          const std::vector<CharPlan>& plan,
+                                          const std::vector<FontId>& stack, const TextStyle& style,
+                                          ShapedText& out) {
   // 豆腐は □（U+25A1）をフォールバック列の順に探し、最初に見つかったフォントのグリフで描く。
   // 第一フォントだけを見ると、欧文フォントが先頭のときに幅の狭い .notdef が 1em の枠の
   // 左端に出て不揃いになる。どのフォントにも □ が無いときだけ第一フォントの .notdef。
-  FontId font = stack.empty() ? FontId{0} : stack.front();
+  FontId font = stack.front();
   GlyphId tofu_glyph = 0;
   for (const FontId candidate : stack) {
     const GlyphId glyph = fonts->glyph_for(candidate, kTofu);
@@ -477,15 +538,20 @@ void ShaperImpl::emit_missing_run(std::u32string_view text, std::size_t begin, s
     }
   }
   const bool vertical = style.direction == Direction::Vertical;
-  const float ascent = vertical ? font_metrics(font, style.font_size).ascent : 0.0F;
+  float ascent = 0.0F;
+  if (vertical) {
+    const Result<FontMetrics> tofu_metrics = font_metrics(font, style.font_size);
+    if (!tofu_metrics) {
+      return std::unexpected(tofu_metrics.error());
+    }
+    ascent = tofu_metrics->ascent;
+  }
 
   for (std::size_t i = begin; i < end; ++i) {
     if (i > begin && plan[i].attached) {
       out.clusters.back().text_end = static_cast<std::uint32_t>(i + 1);
       continue;
     }
-    record_missing(text[i]);
-
     ShapedGlyph glyph;
     glyph.font = font;
     glyph.glyph_id = tofu_glyph;
@@ -507,11 +573,13 @@ void ShaperImpl::emit_missing_run(std::u32string_view text, std::size_t begin, s
     out.glyphs.push_back(glyph);
     out.clusters.push_back(cluster);
   }
+  return {};
 }
 
 // コードポイントごとにフォント・向き・スクリプトを決める。
-std::vector<CharPlan> ShaperImpl::build_plan(std::u32string_view text,
-                                             const std::vector<FontId>& stack, bool vertical) {
+Result<std::vector<CharPlan>> ShaperImpl::build_plan(std::u32string_view text,
+                                                     const std::vector<FontId>& stack,
+                                                     bool vertical) {
   hb_unicode_funcs_t* unicode = hb_unicode_funcs_get_default();
   std::vector<CharPlan> plan(text.size());
   hb_script_t running_script = HB_SCRIPT_COMMON;
@@ -529,7 +597,11 @@ std::vector<CharPlan> ShaperImpl::build_plan(std::u32string_view text,
     if (!weak) {
       running_script = script;
     }
-    plan[i] = resolve_char(stack, cp, vertical);
+    Result<CharPlan> resolved = resolve_char(stack, cp, vertical);
+    if (!resolved) {
+      return std::unexpected(resolved.error());
+    }
+    plan[i] = *resolved;
     plan[i].script = running_script;  // 約物や数字は直前のスクリプトを継ぐ
   }
   return plan;
@@ -593,35 +665,57 @@ void normalize_clusters(ShapedText& out, std::size_t text_length) {
   out.clusters = std::move(fixed);
 }
 
+// 呼び出し側の契約（text_measurer.hpp）を確かめる。破られていたら黙って空を返さずに
+// Internal で落とす（フォントが 1 つも無い FontStore は api が NoFonts で弾いている）。
+Result<void> check_contract(const std::vector<FontId>& stack, const TextStyle& style) {
+  if (stack.empty()) {
+    return fail(ErrorKind::Internal,
+                "シェーピングできません: FontStore にフォントが 1 つも読み込まれていません");
+  }
+  if (!std::isfinite(style.font_size)) {
+    return fail(ErrorKind::Internal,
+                std::format("シェーピングできません: font_size は有限であること (got {})",
+                            style.font_size));
+  }
+  return {};
+}
+
 }  // namespace
 
-ShapedText ShaperImpl::shape(std::u32string_view text, const TextStyle& style) {
+Result<ShapedText> ShaperImpl::shape(std::u32string_view text, const TextStyle& style) {
+  const std::vector<FontId> stack = resolve_stack(style);
+  if (const Result<void> ok = check_contract(stack, style); !ok) {
+    return std::unexpected(ok.error());
+  }
   ShapedText out;
   if (text.empty()) {
-    return out;
+    return out;  // 「正常に 0 グリフ」。失敗と区別する（text_measurer.hpp）
   }
 
-  const std::vector<FontId> stack = resolve_stack(style);
   const int scale = to_fixed(style.font_size);
-  const std::vector<CharPlan> plan =
+  const Result<std::vector<CharPlan>> plan =
       build_plan(text, stack, style.direction == Direction::Vertical);
+  if (!plan) {
+    return std::unexpected(plan.error());
+  }
 
   // 同じ run が続く区間ごとにシェーピングする。
   std::size_t begin = 0;
   while (begin < text.size()) {
     std::size_t end = begin + 1;
-    while (end < text.size() && plan[end].same_run_as(plan[begin])) {
+    while (end < text.size() && (*plan)[end].same_run_as((*plan)[begin])) {
       ++end;
     }
-    if (plan[begin].missing) {
-      emit_missing_run(text, begin, end, plan, stack, style, out);
-    } else {
-      shape_run(text, begin, end, plan[begin], style, scale, out);
+    const Result<void> done = (*plan)[begin].missing
+                                  ? emit_missing_run(begin, end, *plan, stack, style, out)
+                                  : shape_run(text, begin, end, (*plan)[begin], style, scale, out);
+    if (!done) {
+      return std::unexpected(done.error());
     }
     begin = end;
   }
 
-  out.clusters = join_attached_clusters(text, plan, out.clusters);
+  out.clusters = join_attached_clusters(text, *plan, out.clusters);
   normalize_clusters(out, text.size());
   return out;
 }
@@ -631,23 +725,16 @@ ShapedText ShaperImpl::shape(std::u32string_view text, const TextStyle& style) {
 Shaper::Shaper(const FontStore& fonts) : impl_(std::make_unique<detail::ShaperImpl>(fonts)) {}
 Shaper::~Shaper() = default;
 
-ShapedText Shaper::shape(std::u32string_view text, const TextStyle& style) {
+Result<ShapedText> Shaper::shape(std::u32string_view text, const TextStyle& style) {
   return impl_->shape(text, style);
 }
 
-FontMetrics Shaper::metrics(const TextStyle& style) {
+Result<FontMetrics> Shaper::metrics(const TextStyle& style) {
   const std::vector<FontId> stack = impl_->resolve_stack(style);
-  if (stack.empty()) {
-    return {};
+  if (const Result<void> ok = detail::check_contract(stack, style); !ok) {
+    return std::unexpected(ok.error());
   }
   return impl_->font_metrics(stack.front(), style.font_size);
-}
-
-std::vector<MissingGlyph> Shaper::take_missing_glyphs() {
-  std::vector<MissingGlyph> taken = std::move(impl_->missing);
-  impl_->missing.clear();
-  impl_->missing_seen.clear();
-  return taken;
 }
 
 }  // namespace shashoku::text

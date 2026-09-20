@@ -430,6 +430,8 @@ int run(const Arguments& arguments) {
     std::cerr << shashoku::to_string(result.error()) << '\n';
     return kExitError;
   }
+  // 警告は stderr（PNG は stdout / ファイル）。detail には入力位置が入っている
+  // （"… at L:C"。to_string(RenderError) と同じ書式。ARCHITECTURE.md A31）
   for (const shashoku::Warning& warning : result->warnings) {
     std::cerr << "warning[" << shashoku::to_string(warning.kind) << "]: " << warning.detail << '\n';
   }

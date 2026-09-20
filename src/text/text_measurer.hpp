@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "core/ids.hpp"
+#include "core/result.hpp"
 
 namespace shashoku::text {
 
@@ -80,10 +81,21 @@ class TextMeasurer {
 
   // text は改行を含まない 1 区間。フォールバックによるフォント切り替えは実装の中で処理する
   // （呼び出し側は「同一フォントの run」を意識しない）。
-  virtual ShapedText shape(std::u32string_view text, const TextStyle& style) = 0;
+  //
+  // **失敗は必ずエラーで返す**（issue #3 / A30。値返しの契約では「測れなかった」を
+  // 空の結果としてしか表せず、文字の欠けた PNG が「成功」として出てしまう）。
+  // 成功して空の ShapedText を返してよいのは **本当にグリフが 0 個のとき**だけ
+  // （空文字列。入力が空でなければ clusters は必ず入力全体を覆う）。
+  //   Internal     … 呼び出し側の契約違反（フォントを 1 つも持たない、非有限の font_size）
+  //   FontLoad     … フォントからメトリクス / グリフを読めない
+  //   OutOfMemory  … シェーピングエンジンが作業領域を確保できなかった
+  // 豆腐（どのフォントにもグリフがない文字）はエラーではない。□ を返し、
+  // `ShapedCluster::missing` を立てる（警告にするのは呼び出し側の仕事。DESIGN.md §6-6）。
+  virtual Result<ShapedText> shape(std::u32string_view text, const TextStyle& style) = 0;
 
-  // スタックの先頭で解決されるフォント（＝その要素の第一フォント）のメトリクス
-  virtual FontMetrics metrics(const TextStyle& style) = 0;
+  // スタックの先頭で解決されるフォント（＝その要素の第一フォント）のメトリクス。
+  // エラーの種類は shape() と同じ。
+  virtual Result<FontMetrics> metrics(const TextStyle& style) = 0;
 };
 
 }  // namespace shashoku::text

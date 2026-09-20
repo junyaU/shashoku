@@ -358,17 +358,20 @@ Result<float> output_height(const layout::BoxTree& tree, const RenderOptions& op
   return height;
 }
 
-std::vector<Warning> to_warnings(std::vector<text::MissingGlyph> missing) {
-  // 報告順を入力の出現順でなくコードポイント昇順に固定する（DESIGN.md §3-5 の決定性）。
-  std::sort(missing.begin(), missing.end(),
-            [](const text::MissingGlyph& a, const text::MissingGlyph& b) { return a.cp < b.cp; });
+// 豆腐の記録（③ レイアウトが集める。A31）→ 公開 API の Warning。
+// 並びは layout が決めている（入力位置の昇順 → コードポイントの昇順。決定的）ので、
+// ここでは並べ替えない。detail には RenderError と同じ書式で位置を添える。
+std::vector<Warning> to_warnings(const std::vector<layout::MissingGlyph>& missing) {
   std::vector<Warning> warnings;
   warnings.reserve(missing.size());
-  for (const text::MissingGlyph& glyph : missing) {
-    warnings.push_back(Warning{
-        WarningKind::MissingGlyph,
-        std::format("no font has a glyph for U+{:04X}", static_cast<std::uint32_t>(glyph.cp)),
-        glyph.cp});
+  for (const layout::MissingGlyph& glyph : missing) {
+    std::string detail = std::format("no font has a glyph for U+{:04X}",
+                                     static_cast<std::uint32_t>(glyph.codepoint));
+    detail += std::format(" at {}:{}", glyph.location.line, glyph.location.column);
+    warnings.push_back(Warning{.kind = WarningKind::MissingGlyph,
+                               .detail = std::move(detail),
+                               .codepoint = glyph.codepoint,
+                               .location = glyph.location});
   }
   return warnings;
 }
@@ -433,7 +436,7 @@ Result<RenderResult> render_impl(std::string_view html, const FontSet& fonts,
 
   RenderResult result;
   result.png = std::move(*encoded);
-  result.warnings = to_warnings(shaper.take_missing_glyphs());
+  result.warnings = to_warnings(tree->missing_glyphs);
   result.width = static_cast<int>(bitmap->width);
   result.height = static_cast<int>(bitmap->height);
   return result;

@@ -14,6 +14,7 @@
 #include "shashoku/error.hpp"
 #include "text/font_store.hpp"
 #include "text/freetype_glyph_source.hpp"
+#include "text/shaped_text_checks.hpp"
 #include "text/shaper.hpp"
 #include "text/test_fonts.hpp"
 #include "text/text_measurer.hpp"
@@ -98,7 +99,7 @@ TEST(TextDebugOutput, WritesAHorizontalLine) {
 
   TextStyle style;
   style.font_size = 24.0F;
-  const ShapedText shaped = shaper.shape(U"こんにちは、世界のみんな。ABC😀", style);
+  const ShapedText shaped = shape_ok(shaper, U"こんにちは、世界のみんな。ABC😀", style);
 
   GrayImage image{520, 40, std::vector<std::uint8_t>(520UL * 40)};
   draw(image, shaped, glyphs, 4.0F, 28.0F, style.font_size, false);
@@ -116,7 +117,7 @@ TEST(TextDebugOutput, WritesAVerticalLine) {
   TextStyle style;
   style.font_size = 24.0F;
   style.direction = Direction::Vertical;
-  const ShapedText shaped = shaper.shape(U"「縦書き」のテスト（ABC）ー。", style);
+  const ShapedText shaped = shape_ok(shaper, U"「縦書き」のテスト（ABC）ー。", style);
 
   GrayImage image{40, 420, std::vector<std::uint8_t>(40UL * 420)};
   draw(image, shaped, glyphs, 20.0F, 6.0F, style.font_size, true);

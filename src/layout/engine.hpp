@@ -3,9 +3,11 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <set>
 #include <span>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "core/result.hpp"
 #include "layout/box_tree.hpp"
@@ -100,15 +102,27 @@ class LayoutEngine {
   [[nodiscard]] bool memo_enabled() const { return memo_; }
 
   // 計測器の呼び出しは必ずここを通す（回数と文字数を数えるため。TextMeasurer 自体は公開しない）。
-  [[nodiscard]] text::ShapedText shape(std::u32string_view text,
-                                       const text::TextStyle& style) const {
+  // 失敗はそのまま伝播する（A30 / issue #3）。数えるのは「実際に行った仕事」なので、
+  // 失敗した呼び出しも数える。
+  [[nodiscard]] Result<text::ShapedText> shape(std::u32string_view text,
+                                               const text::TextStyle& style) const {
     ++counters_->shape_calls;
     counters_->shaped_chars += text.size();
     return measurer_->shape(text, style);
   }
-  [[nodiscard]] text::FontMetrics metrics(const text::TextStyle& style) const {
+  [[nodiscard]] Result<text::FontMetrics> metrics(const text::TextStyle& style) const {
     ++counters_->metrics_calls;
     return measurer_->metrics(style);
+  }
+
+  // 豆腐（A31 / issue #9）。同じ段落は計測と配置で何度も組まれうる（<img> を含む段落や
+  // メモ無効のとき）ので、**(位置, コードポイント) をキーに重複を除いて**溜める。
+  // 集合の順序がそのまま報告順（入力位置の昇順 → コードポイントの昇順）になる。
+  void record_missing_glyph(char32_t codepoint, const SourceLocation& location) {
+    missing_glyphs_.insert(MissingGlyph{.codepoint = codepoint, .location = location});
+  }
+  [[nodiscard]] std::vector<MissingGlyph> missing_glyphs() const {
+    return {missing_glyphs_.begin(), missing_glyphs_.end()};
   }
 
   // CSS 2.1 §10.3.3（inline 方向）と §10.5（block 方向）の使用値。
@@ -157,6 +171,9 @@ class LayoutEngine {
   WritingMode mode_;
   Counters* counters_;
   std::unique_ptr<LayoutCache> cache_;
+  // 溜まった豆腐。std::set の順序がそのまま出力の順序になる（MissingGlyph::operator<）ので、
+  // ポインタ値も unordered の反復順もここには入らない（DESIGN.md §3-5）。
+  std::set<MissingGlyph> missing_glyphs_;
   bool memo_ = true;
 };
 

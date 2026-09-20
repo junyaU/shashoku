@@ -31,7 +31,8 @@ bool resolve_break_anywhere(style::OverflowWrap value) {
   return value != style::OverflowWrap::Normal;
 }
 
-std::size_t CharStyleTable::intern(const style::ComputedStyle& style, text::Direction direction) {
+std::size_t CharStyleTable::intern(const style::ComputedStyle& style, text::Direction direction,
+                                   const SourceLocation& location) {
   text::TextStyle shaping = shaping_style_of(style, direction);
   const auto [shaping_slot, shaping_added] = shaping_index_.try_emplace(shaping, shaping_.size());
   if (shaping_added) {
@@ -55,11 +56,19 @@ std::size_t CharStyleTable::intern(const style::ComputedStyle& style, text::Dire
     breaking_.push_back(breaking);
   }
 
+  const auto [location_slot, location_added] =
+      location_index_.try_emplace(location, location_.size());
+  if (location_added) {
+    location_.push_back(location);
+  }
+
   const CharStyle layers{.shaping = shaping_slot->second,
                          .decoration = decoration_slot->second,
-                         .breaking = breaking_slot->second};
+                         .breaking = breaking_slot->second,
+                         .location = location_slot->second};
   const auto [style_slot, style_added] = style_index_.try_emplace(
-      std::tuple{layers.shaping, layers.decoration, layers.breaking}, styles_.size());
+      std::tuple{layers.shaping, layers.decoration, layers.breaking, layers.location},
+      styles_.size());
   if (style_added) {
     styles_.push_back(layers);
   }

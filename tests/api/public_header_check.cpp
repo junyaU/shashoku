@@ -39,6 +39,23 @@ int use_public_api() {
   if (result) {
     return static_cast<int>(result->png.size() + result->warnings.size());
   }
+
+  // 共有資源の型も同じく公開ヘッダだけで完結すること（ARCHITECTURE.md A33 / §3.10）。
+  // FreeType / HarfBuzz / src/ の型がこの 2 つのヘッダから漏れていたら、ここで落ちる。
+  const std::expected<LoadedFonts, RenderError> loaded_fonts = LoadedFonts::prepare(fonts);
+  const std::expected<LoadedImages, RenderError> loaded_images =
+      LoadedImages::prepare(images, RenderLimits{});
+  if (loaded_fonts && loaded_images) {
+    const std::expected<RenderResult, RenderError> reused =
+        render("<p>あ</p>", *loaded_fonts, *loaded_images, options);
+    const std::expected<RenderResult, RenderError> reused_without_images =
+        render("<p>あ</p>", *loaded_fonts, options);
+    const std::expected<std::string, RenderError> dumped =
+        dump("<p>あ</p>", *loaded_fonts, *loaded_images, options, DumpStage::Box);
+    return static_cast<int>(loaded_fonts->size() + loaded_images->size() +
+                            (reused ? reused->png.size() : 0) + (reused_without_images ? 1 : 0) +
+                            (dumped ? dumped->size() : 0));
+  }
   const std::string message = to_string(result.error());
   const std::string_view kind = to_string(result.error().kind);
   const std::string_view stage = to_string(DumpStage::DisplayList);

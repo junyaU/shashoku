@@ -18,6 +18,8 @@
 #include "shashoku/font_set.hpp"
 #include "shashoku/image_set.hpp"
 #include "shashoku/limits.hpp"
+#include "shashoku/loaded_fonts.hpp"
+#include "shashoku/loaded_images.hpp"
 #include "shashoku/options.hpp"
 #include "shashoku/render.hpp"
 #include "shashoku/version.hpp"

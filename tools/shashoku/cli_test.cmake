@@ -249,26 +249,39 @@ elseif(CASE STREQUAL "default_font")
   endif()
 
 elseif(CASE STREQUAL "examples")
-  # examples/*.html の先頭コメントに書いた「そのまま貼れる 1 行」を、**その行のまま**実行する
-  # （README の約束が腐らないようにするための検査。#20）。--font を要求していないことも見る。
+  # examples/*.html の先頭コメントに書いた「そのまま貼れる 1 行」を、**文字どおりそのまま**
+  # シェルに渡して実行する（#20）。
+  #
+  # 以前はこの検査が引数だけを取り出し、実行ファイルは ${CLI} に差し替えていたので、
+  # **コマンド名そのもの（`shashoku` か `./shashoku` か）を一度も実行していなかった**。
+  # そのため「アーカイブを展開した場所で貼ると `command not found`」を素通りさせた。
+  # いまは配布物と同じ形（`shashoku` と `examples/` が並ぶディレクトリ）を作り、
+  # そこを作業ディレクトリにして行を丸ごと `sh -c` に渡す。
+  set(stage "${WORK_DIR}/stage")
+  file(REMOVE_RECURSE "${stage}")
+  file(MAKE_DIRECTORY "${stage}")
+  file(CREATE_LINK "${CLI}" "${stage}/shashoku" SYMBOLIC)
+  file(CREATE_LINK "${SOURCE_DIR}/examples" "${stage}/examples" SYMBOLIC)
+
   foreach(name hello og_card ruby vertical kinsoku)
     set(path "${SOURCE_DIR}/examples/${name}.html")
     file(READ "${path}" content)
-    if(NOT content MATCHES "[\r\n][ \t]*(shashoku examples/[^\r\n]*)")
-      message(FATAL_ERROR "examples/${name}.html に「そのまま貼れる 1 行」がありません")
+    # 配布物の README と同じ `./shashoku …` で始まること自体を検査する。
+    if(NOT content MATCHES "[\r\n][ \t]*(\\./shashoku examples/[^\r\n]*)")
+      message(FATAL_ERROR
+        "examples/${name}.html に「そのまま貼れる 1 行」がありません"
+        "（`./shashoku examples/…` で始まる行が要ります）")
     endif()
     set(line "${CMAKE_MATCH_1}")
     if(line MATCHES "--font")
       message(FATAL_ERROR "examples/${name}.html の 1 行が --font を要求しています: ${line}")
     endif()
-    separate_arguments(args UNIX_COMMAND "${line}")
-    list(POP_FRONT args)  # 先頭の "shashoku"（実行ファイルは ${CLI}）
     set(output "${WORK_DIR}/example_${name}.png")
     file(REMOVE "${output}")
-    # 末尾の -o が勝つ（リポジトリを汚さずに、書かれているとおりの引数で動かす）。
+    # 末尾に足した -o が勝つ（書かれているとおりの行を動かしつつ、出力先だけを移す）。
     execute_process(
-      COMMAND "${CLI}" ${args} -o "${output}"
-      WORKING_DIRECTORY "${SOURCE_DIR}"
+      COMMAND sh -c "${line} -o '${output}'"
+      WORKING_DIRECTORY "${stage}"
       RESULT_VARIABLE status ERROR_VARIABLE stderr_text)
     expect_equal("${status}" "0" "examples/${name}.html: exit code (stderr: ${stderr_text})")
     if(NOT EXISTS "${output}")

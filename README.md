@@ -52,8 +52,8 @@ flexbox で「アイコン + タイトル + フッター」を組み、行頭に
 `<rp>` は解釈されますが描画されません。
 
 ```bash
-# 縦書きは block 方向が横なので --height が必須
-shashoku examples/vertical.html -o v.png --width 520 --height 560
+# 展開したディレクトリで。縦書きは block 方向が横なので --height が必須
+./shashoku examples/vertical.html -o v.png --width 520 --height 560
 ```
 
 ## 使い方
@@ -118,14 +118,18 @@ const auto result = shashoku::render(html, *fonts, *images, options);
 
 ### CLI
 
+以下は**アーカイブを展開したディレクトリ**（`shashoku` と `examples/` が並んでいる場所）で
+実行する形です。自分でビルドした場合は `./shashoku` を
+`build/dev/tools/shashoku/shashoku` のようなパスに読み替えてください。
+
 ```bash
-shashoku examples/hello.html -o out.png --width 600
-shashoku examples/og_card.html --image icon=examples/icon.png -o og.png --width 1200 --height 630
-shashoku input.html --overflow burasage -o out.png      # あふれ処理を選ぶ
-shashoku input.html --scale 2 -o out@2x.png             # Retina 向け 2 倍
-shashoku input.html --trim-line-start -o out.png        # 行頭の括弧を天付きに
-shashoku input.html --dump-stage box                    # 中間表現を見る
-shashoku input.html --font A.otf --font B.otf -o out.png  # フォントを自分で指定する
+./shashoku examples/hello.html -o out.png --width 600
+./shashoku examples/og_card.html --image icon=examples/icon.png -o og.png --width 1200 --height 630
+./shashoku input.html --overflow burasage -o out.png      # あふれ処理を選ぶ
+./shashoku input.html --scale 2 -o out@2x.png             # Retina 向け 2 倍
+./shashoku input.html --trim-line-start -o out.png        # 行頭の括弧を天付きに
+./shashoku input.html --dump-stage box                    # 中間表現を見る
+./shashoku input.html --font A.otf --font B.otf -o out.png  # フォントを自分で指定する
 ```
 
 主なオプション:

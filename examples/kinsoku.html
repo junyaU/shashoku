@@ -1,8 +1,9 @@
 <!-- 禁則処理（DESIGN.md Phase 4、JLREQ 3.1）の見本。幅 520px で組むことを想定している。
      狭い段に流し込んでも、句読点・終わり括弧が行頭に落ちず、始め括弧が行末に残らない。
-     このまま貼れば PNG になる（--font は要らない。埋め込みの既定フォントを使う）:
+     アーカイブを展開したディレクトリ（`shashoku` と `examples/` が並んでいる場所）で、
+     次の 1 行をそのまま貼れば PNG になる（--font は要らない。埋め込みの既定フォントを使う）:
 
-     shashoku examples/kinsoku.html -o kinsoku.png --width 520
+     ./shashoku examples/kinsoku.html -o kinsoku.png --width 520
 
      あふれ処理は 3 方式から選べる。上の 1 行に足して見比べられる:
        --overflow oidashi   禁則にかかった文字を次の行へ送る（既定。追い出し）

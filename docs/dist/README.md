@@ -2,9 +2,12 @@
 
 **日本語の文章を絶対に破綻させずに、HTML から PNG を一発で生成する組版エンジン。**
 
-この配布物は linux-x86_64 用です。実行ファイルは 1 つだけで、依存ライブラリも
-**既定フォント**（Noto Sans JP Regular / Bold）も中に入っています。
-展開したその場で動きます（ビルドもフォントの用意も要りません）。
+実行ファイルは 1 つだけで、依存ライブラリも**既定フォント**（Noto Sans JP Regular / Bold）も
+中に入っています。展開したその場で動きます（ビルドもフォントの用意も要りません）。
+
+**対応環境: linux-x86_64 / glibc 2.35 以降**（Ubuntu 22.04 以降、Debian 12 以降など）。
+C++ ランタイム（libc++ など）は静的リンク済みで、動的に要るのは libc と libm だけです
+（`ldd shashoku` で確かめられます）。musl の環境（Alpine など）では動きません。
 
 ```bash
 ./shashoku examples/og_card.html --image icon=examples/icon.png -o og.png --width 1200 --height 630
@@ -16,7 +19,7 @@
 
 | | |
 |---|---|
-| `shashoku` | 実行ファイル（linux-x86_64、完全静的リンク） |
+| `shashoku` | 実行ファイル（linux-x86_64。C++ ランタイムは静的リンク済み） |
 | `examples/` | サンプル 5 本。先頭コメントに**そのまま貼れる 1 行**が書いてあります |
 | `LICENSE` | shashoku 本体（MIT License） |
 | `THIRD_PARTY_LICENSES` | zlib / FreeType / HarfBuzz / Noto Sans JP（SIL OFL 1.1） |
@@ -50,6 +53,7 @@
 - 縦書きでは内容が横に伸びるので `--height` が要ります
 - `--font A.otf --font B.otf` で自分のフォントを使えます（**指定順がフォールバック順**）
 - 同じ入力からは常にバイト単位で同じ PNG が出ます（純粋関数。時刻も乱数もネットワークも使いません）
+- 依存ライブラリと既定フォントの版で絵は変わります。`./shashoku --version` で全部出ます
 
 すべてのオプションは `./shashoku --help` で出ます。
 

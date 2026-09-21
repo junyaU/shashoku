@@ -16,11 +16,17 @@ tar xf shashoku-linux-x86_64.tar.gz && cd shashoku-linux-x86_64
 > ⚠️ **最初のリリース（v0.1.0）はまだ公開していません。** 上の URL は公開後に有効になります
 > （公開したものは [Releases](https://github.com/junyaU/shashoku/releases) に並びます）。
 > それまでは[ビルド](#ビルド)してください。
+> リリースは `v*` のタグを push すると **ドラフト**として作られ、中身を確かめてから
+> GitHub の Releases で "Publish release" を押して公開します。
 
 実行ファイルは 1 つだけで、依存ライブラリも**既定フォント**（Noto Sans JP Regular / Bold）も
-中に入っています（linux-x86_64・完全静的リンク）。`--font` を書けばそちらが優先されます。
+中に入っています。`--font` を書けばそちらが優先されます。
 版は `./shashoku --version`、ライセンスは `./shashoku --license` で出ます。
 [examples/](examples/) の HTML には**そのまま貼れる 1 行**が先頭コメントに書いてあります。
+
+**対応環境は linux-x86_64 / glibc 2.35 以降**（Ubuntu 22.04 以降、Debian 12 以降など）。
+C++ ランタイム（libc++ など）は静的リンク済みで、動的に要るのは libc と libm だけです。
+musl の環境（Alpine など）と、macOS / Windows / aarch64 では動きません。
 
 > 🚧 **Phase 8 まで実装済み**。HTML → PNG が一気通貫で動きます。
 > block / inline / flexbox レイアウト、禁則処理（追い出し・追い込み・ぶら下げ）、
@@ -310,8 +316,8 @@ ctest --preset dev
 GCC を使う場合は 13 以上: `CXX=g++-14 cmake --preset gcc`
 
 プリセットは `dev`（Debug）/ `asan`（ASan + UBSan）/ `tsan`（ThreadSanitizer。共有資源を複数の
-スレッドから使うテスト用）/ `release` / `dist`（配布物と同じ設定。Release + CLI の完全静的リンク）/
-`gcc`。`asan` と `tsan` は併用できません。
+スレッドから使うテスト用）/ `release` / `dist`（配布物と同じ設定。Release + CLI の C++ ランタイムを
+静的リンク）/ `gcc`。`asan` と `tsan` は併用できません。
 
 主な CMake オプション:
 
@@ -319,7 +325,7 @@ GCC を使う場合は 13 以上: `CXX=g++-14 cmake --preset gcc`
 |---|---|---|
 | `SHASHOKU_BUILD_TESTS` / `SHASHOKU_BUILD_TOOLS` | ON | テスト / CLI をビルドする |
 | `SHASHOKU_EMBED_DEFAULT_FONT` | ON | CLI に既定フォントを埋め込む（OFF なら `--font` が必須） |
-| `SHASHOKU_STATIC_CLI` | OFF | CLI を `-static` で完全静的リンクする（配布用） |
+| `SHASHOKU_STATIC_RUNTIME` | OFF | CLI に C++ ランタイム（libc++ / libc++abi / libunwind / libgcc）を静的リンクする（配布用。glibc は動的のまま） |
 
 ## ライセンス
 

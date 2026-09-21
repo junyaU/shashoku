@@ -773,24 +773,38 @@ layout の加算で `inf` になる。そこで `RenderLimits` に**長さ・座
   shashoku・zlib・FreeType・HarfBuzz・既定フォントの版を出し、README の「保証しないもの」にも書いた（A32）
 - 埋め込みは `SHASHOKU_EMBED_DEFAULT_FONT`（既定 ON）で切れる。OFF のときは `--font` が必須に戻る
 
-**A-new-2. 配布物は完全静的リンク（`-static`）。リンク方法は出力を変えない。**（issue #20）
+**A-new-2. 配布物は「C++ ランタイムだけ静的、glibc は動的」。完全静的リンクは却下した。
+リンク方法は出力を変えない。**（issue #20。2026-09-21 にユーザーが決定）
 release ビルドの動的依存は `libc++.so.1` / `libc++abi.so.1` / `libunwind.so.1` / `libm` /
-`libgcc_s` / `libc` で、**前 3 つは素の Ubuntu に無い**。`-static-libstdc++ -static-libgcc` でも
-glibc の版が前提に残り（ビルド機より新しい glibc では動かない）、ランナーの選択に縛られる。
-`-static` なら NEEDED が消えてその問題ごと無くなる。shashoku は dlopen / NSS / ロケールを
-使わないので実害は無い。musl は libm が別物になるので採らない（画素の検査をやり直すことになる）。
+`libgcc_s` / `libc` で、**素の Ubuntu に無いのは前の 3 つ（と `libgcc_s` の版）だけ**。
+`-static-libstdc++ -static-libgcc` で C++ ランタイムを取り込めば、残る動的依存は glibc だけになる。
+実測で NEEDED は `libm.so.6` と `libc.so.6` の 2 つになり、libc++abi と libunwind は
+追加の指定なしで静的に入った（clang-18 + libc++ 18）。
 
+- **完全静的（`-static`）は却下した。** NEEDED が消えてどの Linux でも動くのは魅力だが、
+  glibc（LGPL-2.1+）を実行ファイルに取り込むことになり、LGPL が再配布に求める
+  「受け取った人が別版の glibc と再リンクできる手段の提供」に触れうる。配布物のための
+  法務上の負担を、試用版の段階で背負う価値は無いと判断した
+- 代わりに**前提が 1 つ増えた**: 動的に要る glibc の版は「ビルド機の版以上」なので、
+  **ubuntu:22.04 のコンテナでビルドする**（= glibc 2.35 以降が前提。Ubuntu 22.04 /
+  Debian 12 以降）。**musl の環境（Alpine など）では動かない**。「どの Linux でも動く」とは
+  言えなくなったので、README と配布物の README に前提を明記する
 - **`cmake/CompilerOptions.cmake`（`-ffp-contract=off` など決定性のフラグ）は変えない。**
-  変えるのは CLI のリンク方法だけで、浮動小数点の丸めには触れない。実測でも、静的と動的の
-  CLI で examples 5 本 + 禁則 3 方式の PNG がバイト単位で一致した
+  変えるのは CLI のリンク方法だけで、浮動小数点の丸めには触れない。実測でも、`dist` と
+  通常の release の CLI で examples 5 本 + 禁則 3 方式の PNG がバイト単位で一致した
 - 保証範囲（A32）は「同じ版・同じ依存」で語っているので、**配布するのと同じ設定でビルドした
-  バイナリでゴールデン 16 枚を通す**。`dist` プリセット（Release + `SHASHOKU_STATIC_CLI`）を
-  用意し、CI の `dist` ジョブと release.yml の両方で `ctest --preset dist` を回す
+  バイナリでゴールデン 16 枚を通す**。`dist` プリセット（Release + `SHASHOKU_STATIC_RUNTIME`）を
+  用意し、CI の `dist` ジョブと release.yml の両方で `ctest --preset dist` を回す。
+  どちらのジョブも `readelf -d` の NEEDED が libc / libm / ld-linux 以外なら失敗する
 - 対応環境は **linux-x86_64 だけ**。決定性を CI で検査しているのが x86-64 Linux の 2 つの
   ツールチェーンだけで、aarch64 では**ゴールデン 16 枚を検査していない**（= 絵を保証しない
   成果物になる）。macOS / Windows / aarch64 は Phase 9c
-- サイズ（strip 前）: 動的・フォント無し 3.1 MiB / 静的・フォント無し 5.3 MiB /
-  静的・フォント埋め込み 14.0 MiB（strip 後 13.2 MiB）
+- **ライセンス表示**: 静的に取り込む libc++ / libc++abi / libunwind は
+  Apache-2.0 WITH LLVM-exception なので `THIRD_PARTY_LICENSES` の 5 節に全文を転載した。
+  glibc は取り込まないので転載しない
+- サイズ（strip 前）: 通常の release（動的・フォント無し）3.1 MiB /
+  `dist`（C++ ランタイム静的・フォント埋め込み）13.0 MiB（strip 後 12.3 MiB）。
+  参考: 完全静的だと 14.0 MiB だった
 
 ---
 
@@ -1234,7 +1248,7 @@ CLI は `tools/shashoku/`: `shashoku input.html [--font A.otf [--font B.ttf …]
 | 既定フォント | `--font` を省いたら `tools/shashoku/embedded.cpp` が `.incbin` で焼き込んだ Noto Sans JP を Regular → Bold の順に `FontSet` へ入れる。`--font` を書けばそちらだけを使う |
 | `--version` | shashoku（公開 API の `version()`）・zlib / FreeType / HarfBuzz（`cmake/Dependencies.cmake` の版をコンパイル定義で渡す）・既定フォント（コミット SHA） |
 | `--license` | 焼き込んだ `LICENSE` と `THIRD_PARTY_LICENSES`。SIL OFL 1.1 が求める「ライセンス文の同梱」を、バイナリ 1 つでも満たすため |
-| 配布のビルド | `dist` プリセット = Release + `SHASHOKU_STATIC_CLI`（`-static`）+ `SHASHOKU_EMBED_DEFAULT_FONT` |
+| 配布のビルド | `dist` プリセット = Release + `SHASHOKU_STATIC_RUNTIME`（`-static-libstdc++ -static-libgcc`。glibc は動的のまま。A-new-2）+ `SHASHOKU_EMBED_DEFAULT_FONT` |
 
 CLI が zlib / FreeType / HarfBuzz のヘッダを見ることはない（版は文字列で受け取る）。
 検査は `tools/shashoku/cli_test.cmake`（`ctest -R Cli`）。`default_font` が「既定フォントの PNG と

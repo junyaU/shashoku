@@ -72,7 +72,10 @@ WSL から Windows の `chrome.exe` を呼ぶと `--window-size` が当てにな
 （幅は 500 px 未満にならず、`--dump-dom` のときは `window.innerWidth` が 0 になる）。
 そこで紙面は CSS で決めている: `#shk-root` を `position: absolute; left: 0; top: 0` で
 物理的な左上に固定し、幅（縦書きは高さも）を指定する。スクリーンショットは 1:1 の CSS px で
-撮れるので、左上が shashoku の PNG と同じ範囲になる。
+撮れるので、大きめのウィンドウで撮ってから左上を切り出せば、shashoku の PNG と同じ範囲になる。
+
+Chrome の方が背が高くなるケース（行高の丸めの違いや、折り返しが増えたとき）では、
+Chrome 自身のルートが入る高さまで切り出す。並べた画像の高さが違うのはそのため。
 
 ### 3-4. 縦書き
 
@@ -121,7 +124,7 @@ Chrome 153.0.8010.52（Windows 側にインストールされているものを 
 | 22 | `examples/hello.html` | OK | ?? | **差** 全角の間の改行 | OK | 意図した差（A14） |
 | 23 | `examples/ruby.html` | OK | ?? | **差** 全角の間の改行 | OK | 意図した差（A14 / A-new-2） |
 | 24 | `examples/vertical.html` | OK | ?? | **差** 全角の間の改行 | OK | 意図した差（A14） |
-| 25 | `examples/og_card.html` | OK | ?? | OK（6 行） | OK | — |
+| 25 | `examples/og_card.html` | OK（両側とも行外 3.1 px） | ?? | OK（6 行） | OK | — |
 
 ### 4-1. shashoku の誤り（すでに issue がある 4 件）
 
@@ -198,7 +201,8 @@ Chrome 153.0.8010.52（Windows 側にインストールされているものを 
   block 方向の絶対座標を比べてはいけない理由がこれ
 - **合字があるとクラスタ単位で比べられない**。Noto Sans JP には `fl` の合字があり、
   `flex` という単語を含めるとグリフ数とクラスタ数が合わなくなる。比較ケースの欧文は
-  合字にならない綴りにしてある（`report.txt` に注として出る）
+  合字にならない綴りにしてある（`report.txt` に注として出る）。
+  `examples/vertical.html` の `——`（ダッシュ 2 つ）も 1 グリフに合成される
 - **Chrome は `<rt>` のインラインボックスを親ブロックの箱から 4 px はみ出させる**。
   ルビの帯の作りが違うだけで欠落ではないので、判定からは外してある
 - **WSL から呼ぶ `chrome.exe` は `--window-size` が当てにならない**。幅は 500 px 未満にならず、

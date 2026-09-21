@@ -9,9 +9,11 @@ shashoku_add_test(integration_test
     golden_test.cpp
     error_test.cpp
     limits_test.cpp
+    nonfinite_test.cpp
     pipeline_test.cpp
     shaping_test.cpp
     line_policy_test.cpp
+    overflow_wrap_test.cpp
     scale_property_test.cpp
     determinism_test.cpp
     reuse_test.cpp

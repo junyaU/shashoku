@@ -14,5 +14,6 @@ shashoku_add_module(layout
     inline_layout.cpp
     flex_layout.cpp
     layout.cpp
+    check_geometry.cpp
     dump_json.cpp
   DEPS shashoku::core shashoku::linebreak)

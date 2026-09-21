@@ -79,7 +79,7 @@ TEST(LineBreakComplexity, BreakAnywhereIsLinear) {
   // 緊急分割の経路は、行ごとに「次の候補」を段落の末尾まで探しに行きやすい。
   const std::vector<Item> items = long_text(U'A', 0.5F * kEm);
   Config config;
-  config.break_anywhere = true;
+  config.wrap = Wrap::Anywhere;
   Counters counters;
   const Breaks breaks = LineBreaker(config).break_lines(items, 0.5F * kEm, &counters);
 
@@ -129,6 +129,25 @@ TEST(LineBreakComplexity, IntrinsicWidthsAreLinear) {
   }
 }
 
+TEST(LineBreakComplexity, IntrinsicWidthWithAnywhereIsLinear) {
+  // overflow-wrap: anywhere は min_content_width() で位置ごとに区間を切る（A35）。
+  // 区間が細かくなるだけで段落を 1 回走査するのは変わらないので、N に線形のまま。
+  const std::vector<Item> items = long_text(U'A', 0.5F * kEm);
+  Config config;
+  config.wrap = Wrap::Anywhere;
+  Counters counters;
+  EXPECT_FLOAT_EQ(LineBreaker(config).min_content_width(items, &counters), 0.5F * kEm);
+  expect_linear(counters, kItems);
+
+  // break-word は min-content を変えない（= 分割不能な 1 区間のまま）。
+  Config break_word;
+  break_word.wrap = Wrap::BreakWord;
+  Counters break_word_counters;
+  EXPECT_FLOAT_EQ(LineBreaker(break_word).min_content_width(items, &break_word_counters),
+                  0.5F * kEm * static_cast<float>(kItems));
+  expect_linear(break_word_counters, kItems);
+}
+
 TEST(LineBreakComplexity, RegionalIndicatorRunIsLinear) {
   // LB30a は「直前に並ぶ RI の個数」を見る。位置ごとに遡ると、国旗が並んだだけで二乗になる。
   const std::vector<Item> items = long_text(U'\U0001F1EF', kEm);
@@ -156,7 +175,7 @@ TEST(LineBreakComplexity, SpaceRunIsLinear) {
 TEST(LineBreakComplexity, CountersDoNotChangeOutput) {
   // 計測の約束（A21）: カウンタを渡しても渡さなくても出力は同じ。
   std::vector<Item> items = test::items_of("あいう「えお」。ABCDEFGH……￥1,200 かきくけこ\nさし");
-  items[3].break_anywhere = true;
+  items[3].wrap = Wrap::Anywhere;
   items[4].strictness = Strictness::Loose;
   for (const OverflowPolicy policy :
        {OverflowPolicy::Oidashi, OverflowPolicy::Oikomi, OverflowPolicy::Burasage}) {

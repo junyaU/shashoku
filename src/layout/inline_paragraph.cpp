@@ -42,7 +42,7 @@ class ParagraphBuilder {
   [[nodiscard]] linebreak::Item policy_of(linebreak::Item item, std::size_t style) const {
     const BreakingStyle& breaking = out_->styles.breaking(style);
     item.strictness = resolve_strictness(breaking.line_break, default_strictness_);
-    item.break_anywhere = resolve_break_anywhere(breaking.overflow_wrap);
+    item.wrap = resolve_wrap(breaking.overflow_wrap);
     return item;
   }
 
@@ -101,6 +101,7 @@ Result<void> ParagraphBuilder::build_ruby_item(std::size_t group_index) {
   RubyPiece piece;
   piece.base_style = out_->chars[group.base_begin].style;
 
+  piece.base_begin = out_->ruby_clusters.size();
   std::size_t i = group.base_begin;
   while (i < group.base_end) {
     // 親文字も普通のテキストと同じで、シェーピングはシェーピング属性が同じ連続で 1 回（A27）
@@ -114,31 +115,31 @@ Result<void> ParagraphBuilder::build_ruby_item(std::size_t group_index) {
       return std::unexpected(shaped.error());
     }
     const std::size_t run = *shaped;
-    // 1 回のシェーピング結果を、装飾が変わる位置（クラスタ境界）で区間に切る
-    const std::vector<text::ShapedCluster>& clusters = out_->runs[run].shaped.clusters;
-    std::size_t first = 0;
-    while (first < clusters.size()) {
-      const std::size_t style_id = out_->chars[i + clusters[first].text_begin].style;
-      const std::size_t visual = out_->visual_key(style_id);
-      float advance = 0;
-      std::size_t last = first;
-      while (last < clusters.size() &&
-             out_->visual_key(out_->chars[i + clusters[last].text_begin].style) == visual) {
-        advance += clusters[last].advance + out_->letter_spacing(style_id);
-        ++last;
-      }
-      piece.base.push_back(BaseSegment{.run = run,
-                                       .glyph_begin = clusters[first].glyph_begin,
-                                       .glyph_end = clusters[last - 1].glyph_end,
-                                       .style = style_id,
-                                       .char_begin = i + clusters[first].text_begin,
-                                       .char_end = i + clusters[last - 1].text_end,
-                                       .advance = advance});
+    // 親文字は**クラスタごと**に記録する（#16）。通常テキストのアイテムと同じ中身なので、
+    // 配置も同じ道を通り、letter-spacing が計測と配置で食い違わない。装飾の境界で
+    // 区間にまとめないのは、断片を切るのは FragmentWriter の仕事だから（A27）
+    for (const text::ShapedCluster& cluster : out_->runs[run].shaped.clusters) {
+      const std::size_t at = i + cluster.text_begin;
+      const std::size_t style_id = at < end ? out_->chars[at].style : out_->chars[i].style;
+      const float advance = cluster.advance + out_->letter_spacing(style_id);
+      out_->ruby_clusters.push_back(
+          RubyCluster{.source = ItemSource{.run = run,
+                                           .glyph_begin = cluster.glyph_begin,
+                                           .glyph_end = cluster.glyph_end,
+                                           .char_begin = at,
+                                           .char_end = i + cluster.text_end,
+                                           .style = style_id,
+                                           .image = kNone,
+                                           .ruby = kNone},
+                      .advance = advance});
       piece.base_width += advance;
-      first = last;
+      // 幾何は全クラスタの最大から（#17）。代表の文字 1 つでは 2 文字目以降が落ちる
+      piece.max_base_ascent = std::max(piece.max_base_ascent, out_->metrics_of(style_id).ascent);
+      piece.max_base_font_size = std::max(piece.max_base_font_size, out_->font_size(style_id));
     }
     i = end;
   }
+  piece.base_end = out_->ruby_clusters.size();
 
   // ルビ文字。letter-spacing はルビには掛けない
   const std::size_t rt_style = group.rt_style;
@@ -156,14 +157,17 @@ Result<void> ParagraphBuilder::build_ruby_item(std::size_t group_index) {
     piece.rt_width += cluster.advance;
   }
   piece.rt_text = encode_utf8(group.rt_text);
-  piece.base_ascent = out_->metrics_of(piece.base_style).ascent;
-  piece.base_font_size = out_->font_size(piece.base_style);
+  // クラスタが 1 つも無い（すべて送り 0 に吸収された）ときの下限として代表の文字も見る
+  piece.max_base_ascent =
+      std::max(piece.max_base_ascent, out_->metrics_of(piece.base_style).ascent);
+  piece.max_base_font_size = std::max(piece.max_base_font_size, out_->font_size(piece.base_style));
   piece.rt_ascent = out_->metrics_of(rt_style).ascent;
   piece.rt_descent = out_->metrics_of(rt_style).descent;
   piece.rt_font_size = out_->font_size(rt_style);
 
   const float advance = std::max(piece.base_width, piece.rt_width);
-  const float em = piece.base_font_size;
+  // em は行分割器の約物のアキに使う値（幾何ではない）なので、代表の文字のまま（A28）
+  const float em = out_->font_size(piece.base_style);
   // ルビ組は Atomic 1 個（組の内部には分割可能位置がない）。ポリシーは親文字の先頭の文字の
   // ものを使う（A28）。親文字の途中や <rt> の中の指定は、割る場所がないので効かない
   out_->items.push_back(policy_of(linebreak::Item{.kind = linebreak::ItemKind::Atomic,

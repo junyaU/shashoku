@@ -17,6 +17,7 @@
 #include <hb-ot.h>
 
 #include "core/ids.hpp"
+#include "core/number_text.hpp"
 #include "core/result.hpp"
 #include "shashoku/error.hpp"
 #include "text/char_properties.hpp"
@@ -32,8 +33,10 @@ constexpr int kFixedOne = 64;
 constexpr char32_t kTofu = 0x25A1;  // □
 
 // エラーメッセージに必ず「どのフォントの何が原因か」を入れる（DESIGN.md §3-6 fail loudly）。
+// 値は number_text() を通す: NaN の符号ビットは CPU によって違うので、そのまま出すと
+// 同じ入力でも文面が環境で変わる（core/number_text.hpp）。
 [[nodiscard]] std::string where(FontId font, float font_size) {
-  return std::format("FontId {}, {} px", font, font_size);
+  return std::format("FontId {}, {} px", font, number_text(font_size));
 }
 
 [[nodiscard]] float to_px(hb_position_t value) {
@@ -672,8 +675,9 @@ Result<void> check_contract(const std::vector<FontId>& stack, const TextStyle& s
     return fail(ErrorKind::Internal, "cannot shape: no fonts are loaded in the FontStore");
   }
   if (!std::isfinite(style.font_size)) {
-    return fail(ErrorKind::Internal,
-                std::format("cannot shape: font_size must be finite (got {})", style.font_size));
+    // 値の表記は number_text() を通す（NaN の符号は CPU で変わる。core/number_text.hpp）。
+    return fail(ErrorKind::Internal, std::format("cannot shape: font_size must be finite (got {})",
+                                                 number_text(style.font_size)));
   }
   return {};
 }

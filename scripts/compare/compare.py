@@ -244,6 +244,22 @@ def png_write(path, w, h, rgba):
         f.write(chunk(b"IEND", b""))
 
 
+def png_crop(path, width, height):
+    """PNG の左上 width×height を切り出して上書きする。
+
+    Chrome のスクリーンショットは `--window-size` そのままの大きさで、1:1 の CSS px で撮れる。
+    ただし WSL から呼ぶと幅 500 px 未満のウィンドウを作れず、小さすぎるウィンドウでは
+    内容が描かれないことがある（実測: 300x117 では親文字が出ず、600x300 では出る）。
+    そこで大きめに撮ってから、shashoku の PNG と同じ範囲に切り出す。
+    """
+    w, h, rgba = png_read(path)
+    width, height = min(width, w), min(height, h)
+    out = bytearray(width * height * 4)
+    for y in range(height):
+        out[y * width * 4:(y + 1) * width * 4] = rgba[y * w * 4:y * w * 4 + width * 4]
+    png_write(path, width, height, out)
+
+
 def png_size(path):
     with open(path, "rb") as f:
         head = f.read(26)
@@ -665,7 +681,18 @@ document.fonts.ready.then(function () {
     }
 
 
+def window_size(width, height):
+    """chrome.exe に渡すウィンドウの大きさ。
+
+    WSL から呼ぶと幅 500 px 未満のウィンドウを作れず、小さすぎるウィンドウでは内容が
+    描かれないことがある。紙面は CSS 側（`#shk-root`）で決めているので、ウィンドウは
+    常に大きめにして、スクリーンショットは後から切り出す。
+    """
+    return max(int(width) + 60, 560), max(int(height) + 200, 400)
+
+
 def chrome_args(chrome, profile_dir, width, height):
+    width, height = window_size(width, height)
     return [
         chrome,
         "--headless",
@@ -686,15 +713,13 @@ def launch_chrome(args, timeout):
     return subprocess.run(args, capture_output=True, timeout=timeout)
 
 
-def run_chrome(chrome, page_path, profile_dir, width, height, screenshot_path, timeout=180):
-    """測定（--dump-dom）と、ついでにスクリーンショットを撮る。
+def run_chrome(chrome, page_path, profile_dir, width, height, timeout=180):
+    """ページ内の measure.js が書き出した測定値を取り出す（--dump-dom）。
 
-    `--screenshot` は `--dump-dom` より**前**に置く（後ろだと PNG が書かれない）。
-    それでも書かれないことがあるので、呼び出し側は `screenshot_only()` で撮り直せる。
+    スクリーンショットは別の起動にする（`--screenshot` と `--dump-dom` を同時に渡すと
+    PNG が書かれないことがあり、切り出しのためにウィンドウの大きさも変えたいので）。
     """
     args = chrome_args(chrome, profile_dir, width, height)
-    if screenshot_path:
-        args.append("--screenshot=%s" % to_windows_path(screenshot_path))
     args.append("--dump-dom")
     args.append(to_file_url(page_path))
     proc = launch_chrome(args, timeout)
@@ -710,13 +735,14 @@ def run_chrome(chrome, page_path, profile_dir, width, height, screenshot_path, t
     return json.loads(base64.b64decode(match).decode("utf-8"))
 
 
-def screenshot_only(chrome, page_path, profile_dir, width, height, screenshot_path, timeout=180):
-    """スクリーンショットだけを撮り直す。撮れたかどうかを返す。"""
+def screenshot(chrome, page_path, profile_dir, width, height, screenshot_path, timeout=180):
+    """大きめに撮ってから width×height に切り出す。撮れたかどうかを返す。"""
     args = chrome_args(chrome, profile_dir, width, height)
     args.append("--screenshot=%s" % to_windows_path(screenshot_path))
     args.append(to_file_url(page_path))
     proc = launch_chrome(args, timeout)
     if os.path.exists(screenshot_path):
+        png_crop(screenshot_path, int(width), int(height))
         return True, ""
     tail = proc.stderr.decode("utf-8", "replace").strip().splitlines()[-3:]
     return False, "exit %d: %s" % (proc.returncode, " / ".join(tail))
@@ -745,7 +771,7 @@ def verify_font(ctx):
     page = os.path.join(probe_dir, "chrome.html")
     with open(page, "w", encoding="utf-8") as f:
         f.write(build_chrome_page(PROBE_FRAGMENT, ctx.fonts, 400, None, False, ctx.measure_js, {}))
-    chrome = run_chrome(ctx.chrome, page, ctx.profile, 400, 200, None)
+    chrome = run_chrome(ctx.chrome, page, ctx.profile, 400, 200)
 
     shk_lines = [(line_text(ln), ln) for _, ln in all_lines(shk)]
     ch_lines = [(line_text(ln), ln) for _, ln in all_lines(chrome)]
@@ -938,7 +964,7 @@ def main():
                 f.write(build_chrome_page(fragment, font_infos, width, height,
                                           vertical, ctx.measure_js, images or {}))
             shot = os.path.join(case_dir, "chrome.png")
-            chrome_raw = run_chrome(ctx.chrome, page, ctx.profile, png_w, png_h, shot)
+            chrome_raw = run_chrome(ctx.chrome, page, ctx.profile, png_w, png_h)
             with open(os.path.join(case_dir, "chrome.json"), "w", encoding="utf-8") as f:
                 json.dump(chrome_raw, f, ensure_ascii=False, indent=1)
             chrome = {"vertical": chrome_raw["vertical"],
@@ -971,12 +997,15 @@ def main():
                        for n in JUDGMENTS])
         results.append(entry)
 
-        if not os.path.exists(shot):
-            # 測定と同じ起動で撮れないことがある（原因は不明。--dump-dom と一緒に撮ると
-            # 書かれないことがある）。スクリーンショットだけでもう 1 回起動する。
-            ok, why = screenshot_only(ctx.chrome, page, ctx.profile, png_w, png_h, shot)
-            if not ok:
-                entry["errors"].append("chrome: スクリーンショットが書かれなかった（%s）" % why)
+        # Chrome の方が背が高くなるケース（行高の丸めの違いや、折り返しが増えたとき）では、
+        # shashoku の PNG の高さで撮ると内容が切れて絵が読めない。Chrome 自身のルートが
+        # 入る高さで撮り直す（並べたときの左上の範囲は shashoku の PNG と同じまま）。
+        chrome_root = chrome_raw.get("root_rect", {})
+        chrome_h = chrome_root.get("inline_end" if chrome_raw["vertical"] else "block_end", 0)
+        shot_h = max(png_h, int(chrome_h) + 1)
+        ok, why = screenshot(ctx.chrome, page, ctx.profile, png_w, shot_h, shot)
+        if not ok:
+            entry["errors"].append("chrome: スクリーンショットが書かれなかった（%s）" % why)
         if os.path.exists(shot) and not args.no_images and os.path.exists(shk_png):
             try:
                 png_side_by_side(shk_png, shot, os.path.join(case_dir, "side-by-side.png"))

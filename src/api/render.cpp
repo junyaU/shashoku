@@ -17,6 +17,7 @@
 #include "core/bitmap.hpp"
 #include "core/color.hpp"
 #include "core/ids.hpp"
+#include "core/number_text.hpp"
 #include "core/result.hpp"
 #include "html/dom.hpp"
 #include "html/parser.hpp"
@@ -120,8 +121,9 @@ Result<void> validate(const RenderOptions& options) {
                 std::format("viewport height must be positive (got {})", *options.viewport_height));
   }
   if (!std::isfinite(options.scale) || options.scale <= 0) {
-    return fail(ErrorKind::InvalidOption,
-                std::format("scale must be a positive finite number (got {})", options.scale));
+    return fail(
+        ErrorKind::InvalidOption,
+        std::format("scale must be a positive finite number (got {})", number_text(options.scale)));
   }
   if (options.scale > options.limits.scale) {
     return fail(ErrorKind::LimitExceeded, std::format("scale is {}, which exceeds the limit of {} "
@@ -262,7 +264,8 @@ Result<void> check_computed_limits(const style::StyledNode& root, float scale,
         return fail(ErrorKind::LimitExceeded,
                     std::format("font-size {} px x scale {} = {} device px, which exceeds the "
                                 "limit of {} (raise RenderLimits::font_size_device_px to allow it)",
-                                node.style.font_size, scale, device_px, limits.font_size_device_px),
+                                number_text(node.style.font_size), number_text(scale),
+                                number_text(device_px), number_text(limits.font_size_device_px)),
                     node.location);
       }
     }
@@ -457,7 +460,7 @@ Result<float> output_height(const layout::BoxTree& tree, const RenderOptions& op
     return fail(ErrorKind::Internal,
                 std::format("the laid out content height is {}, which is not a finite number "
                             "(layout should have rejected it; please report this input)",
-                            height));
+                            number_text(height)));
   }
   if (!(height > 0)) {
     return fail(ErrorKind::InvalidOption,

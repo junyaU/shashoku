@@ -148,14 +148,23 @@ class InlineFormatter {
   [[nodiscard]] Alignment align_line(const linebreak::Line& line, bool is_last) const;
   void place_image(const ImagePiece& image, float item_start, float baseline,
                    std::vector<InlineFragment>& content) const;
+  // 1 クラスタぶんの配置。通常テキストのアイテムとルビ組の親文字で共有する（#16）。
+  Placement place_cluster(const ItemSource& source, float advance, float baseline,
+                          FragmentWriter& writer, float& pen) const;
   void place_ruby(const RubyPiece& piece, float item_start, float advance, float baseline,
-                  FragmentWriter& writer) const;
+                  FragmentWriter& writer);
   void place_line(const linebreak::Line& line, const linebreak::Breaks& breaks,
                   const Alignment& alignment, float baseline, std::vector<InlineFragment>& content);
   // 行 [line.begin, line.content_end) の中で、文字位置 char_index 以降から始まる最初のアイテム。
   // アイテムの char_begin は狭義単調増加なので二分探索できる。
   [[nodiscard]] std::size_t first_item_at(const linebreak::Line& line,
                                           std::size_t char_index) const;
+  // ルビ組（アイテム item）の内部で、文字位置 char_index を含む / その手前のクラスタの
+  // inline 位置。組は 1 アイテムなので、アイテム単位の二分探索では組の内部で始まる /
+  // 終わる背景スコープを取りこぼす（#16）。クラスタの char_begin / char_end も
+  // 狭義単調増加なので、組の中でも二分探索できる。
+  [[nodiscard]] float ruby_cluster_start(std::size_t item, std::size_t char_index) const;
+  [[nodiscard]] float ruby_cluster_end(std::size_t item, std::size_t char_index) const;
   [[nodiscard]] std::vector<InlineBackground> build_backgrounds(const linebreak::Line& line,
                                                                 float baseline);
   [[nodiscard]] LineBox build_line(const linebreak::Line& line, const linebreak::Breaks& breaks,
@@ -171,8 +180,10 @@ class InlineFormatter {
   // 行の構築で使い回す作業バッファ。行ごとに確保すると段落全体で O(N×L) になる（#4）ので、
   // run() で 1 回だけ確保する。行をまたいで残る値は読まない（下の約束を守ること。A22）。
   //   placement_  : place_line() が書いた [line.begin, line.content_end) だけを読む
+  //   ruby_placement_: place_ruby() が書いた「この行にあるルビ組」のクラスタだけを読む
   //   style_stamp_: measure_line() の「この行でもう見たスタイル」。世代印なので消さなくてよい
   std::vector<Placement> placement_;
+  std::vector<Placement> ruby_placement_;
   std::vector<std::uint64_t> style_stamp_;
   std::uint64_t stamp_ = 0;
   // 背景スコープは begin の昇順（collect_element が外側から push する）。行が進むのに
@@ -211,11 +222,13 @@ void InlineFormatter::extend_line_height(std::size_t style_id, Extent& extent) c
 }
 
 // ルビ組がベースライン（中心軸）より block-start 側に広がる量。
+// 親文字の寸法は**全クラスタの最大**（#17）。代表の文字（A28）は行分割ポリシー専用で、
+// そこから幾何を取ると 2 文字目以降の font-size が絵から落ちる。
 float InlineFormatter::ruby_above(const RubyPiece& piece) const {
   if (vertical_) {
-    return (piece.base_font_size / 2) + piece.rt_font_size;
+    return (piece.max_base_font_size / 2) + piece.rt_font_size;
   }
-  return piece.base_ascent + piece.rt_ascent + piece.rt_descent;
+  return piece.max_base_ascent + piece.rt_ascent + piece.rt_descent;
 }
 
 // ルビ文字のベースライン（縦書きでは中心軸）の block 位置。
@@ -226,10 +239,10 @@ float InlineFormatter::ruby_above(const RubyPiece& piece) const {
 float InlineFormatter::ruby_baseline(const RubyPiece& piece, float baseline) const {
   if (vertical_) {
     // 中心軸から、親文字の内容領域の半分 + ルビの半分ぶん block-start 側へ
-    return baseline - (piece.base_font_size / 2) - (piece.rt_font_size / 2);
+    return baseline - (piece.max_base_font_size / 2) - (piece.rt_font_size / 2);
   }
   // 親文字の内容領域の上端から、さらにルビの descent ぶん上
-  return baseline - piece.base_ascent - piece.rt_descent;
+  return baseline - piece.max_base_ascent - piece.rt_descent;
 }
 
 Extent InlineFormatter::measure_line(const linebreak::Line& line) {
@@ -324,21 +337,36 @@ void InlineFormatter::place_image(const ImagePiece& image, float item_start, flo
       .decoration = image.decoration});
 }
 
+// (e) 1 クラスタぶんの配置。手順は line_breaker.hpp の「描画側の手順」どおり:
+// グリフを順に置き、pen は「開始位置 + 送り」に進める。送りは letter-spacing 込みなので、
+// 字間は文字と文字の**間**に入る（区間の末尾にまとめて入れない。#16）。
+Placement InlineFormatter::place_cluster(const ItemSource& source, float advance, float baseline,
+                                         FragmentWriter& writer, float& pen) const {
+  const float start = pen;
+  if (source.run != kNone) {
+    float glyph_pen = start;
+    writer.add(paragraph_->runs[source.run].shaped, source.glyph_begin, source.glyph_end,
+               source.style, baseline, paragraph_->text_of(source.char_begin, source.char_end),
+               glyph_pen);
+  }
+  pen = start + advance;
+  writer.extend_to(pen);
+  return Placement{.inline_start = start, .inline_end = pen};
+}
+
 // ルビ組: 親文字とルビの短い方を中央に置く（JLREQ の 1:2:1 の配分まではやらない）。
+// 組の内部の親文字は、通常のインライン内容と同じ規則で配置する（CSS Ruby 1 §2。#16）。
 void InlineFormatter::place_ruby(const RubyPiece& piece, float item_start, float advance,
-                                 float baseline, FragmentWriter& writer) const {
+                                 float baseline, FragmentWriter& writer) {
   writer.close();
   float pen = item_start + ((advance - piece.base_width) / 2);
-  for (const BaseSegment& segment : piece.base) {
-    const float start = pen;
-    writer.add(paragraph_->runs[segment.run].shaped, segment.glyph_begin, segment.glyph_end,
-               segment.style, baseline, paragraph_->text_of(segment.char_begin, segment.char_end),
-               pen);
-    pen = start + segment.advance;  // letter-spacing ぶんを足す
-    writer.extend_to(pen);
+  for (std::size_t i = piece.base_begin; i < piece.base_end; ++i) {
+    const RubyCluster& cluster = paragraph_->ruby_clusters[i];
+    ruby_placement_[i] = place_cluster(cluster.source, cluster.advance, baseline, writer, pen);
   }
   writer.close();
 
+  // ルビ文字に letter-spacing は掛けない（A-new / §3.8 のルビ）
   float ruby_pen = item_start + ((advance - piece.rt_width) / 2);
   const text::ShapedText& ruby = paragraph_->runs[piece.rt_run].shaped;
   writer.add(ruby, 0, ruby.glyphs.size(), piece.rt_style, ruby_baseline(piece, baseline),
@@ -368,11 +396,9 @@ void InlineFormatter::place_line(const linebreak::Line& line, const linebreak::B
     } else if (source.ruby != kNone) {
       place_ruby(paragraph_->rubies[source.ruby], item_start, paragraph_->items[i].advance,
                  baseline, writer);
-    } else if (source.run != kNone) {
+    } else {
       float glyph_pen = item_start;
-      writer.add(paragraph_->runs[source.run].shaped, source.glyph_begin, source.glyph_end,
-                 source.style, baseline, paragraph_->text_of(source.char_begin, source.char_end),
-                 glyph_pen);
+      place_cluster(source, paragraph_->items[i].advance, baseline, writer, glyph_pen);
     }
 
     pen = item_start + paragraph_->items[i].advance + breaks.spacing[i].after;
@@ -387,6 +413,39 @@ std::size_t InlineFormatter::first_item_at(const linebreak::Line& line,
   const auto end = paragraph_->sources.begin() + static_cast<std::ptrdiff_t>(line.content_end);
   const auto found = std::ranges::lower_bound(begin, end, char_index, {}, &ItemSource::char_begin);
   return static_cast<std::size_t>(found - paragraph_->sources.begin());
+}
+
+float InlineFormatter::ruby_cluster_start(std::size_t item, std::size_t char_index) const {
+  const RubyPiece& piece = paragraph_->rubies[paragraph_->sources[item].ruby];
+  const auto first =
+      paragraph_->ruby_clusters.begin() + static_cast<std::ptrdiff_t>(piece.base_begin);
+  const auto last = paragraph_->ruby_clusters.begin() + static_cast<std::ptrdiff_t>(piece.base_end);
+  // char_index を含む（= char_end がそれより後ろの）最初のクラスタ。クラスタの途中から
+  // 始まるスコープはクラスタの頭から塗る（A27 の「クラスタ先頭の文字を採る」と同じ）
+  const auto found =
+      std::ranges::upper_bound(first, last, char_index, {},
+                               [](const RubyCluster& cluster) { return cluster.source.char_end; });
+  if (found == last) {
+    return placement_[item].inline_start;  // 起きないはずだが、組の箱に丸める
+  }
+  return ruby_placement_[static_cast<std::size_t>(found - paragraph_->ruby_clusters.begin())]
+      .inline_start;
+}
+
+float InlineFormatter::ruby_cluster_end(std::size_t item, std::size_t char_index) const {
+  const RubyPiece& piece = paragraph_->rubies[paragraph_->sources[item].ruby];
+  const auto first =
+      paragraph_->ruby_clusters.begin() + static_cast<std::ptrdiff_t>(piece.base_begin);
+  const auto last = paragraph_->ruby_clusters.begin() + static_cast<std::ptrdiff_t>(piece.base_end);
+  // char_index の手前から始まる最後のクラスタ
+  const auto found = std::ranges::lower_bound(
+      first, last, char_index, {},
+      [](const RubyCluster& cluster) { return cluster.source.char_begin; });
+  if (found == first) {
+    return placement_[item].inline_end;  // 起きないはずだが、組の箱に丸める
+  }
+  return ruby_placement_[static_cast<std::size_t>(found - 1 - paragraph_->ruby_clusters.begin())]
+      .inline_end;
 }
 
 // 行と交差する背景スコープだけを見る（#4）。スコープは begin の昇順なので、行が進むのに
@@ -413,19 +472,35 @@ std::vector<InlineBackground> InlineFormatter::build_backgrounds(const linebreak
 
   for (const std::size_t index : active_scopes_) {  // 外側の span が先（描画順）
     const BackgroundScope& scope = scopes[index];
-    const std::size_t first = first_item_at(line, scope.begin);
+    if (scope.begin >= scope.end) {
+      continue;  // 文字を 1 つも含まない span（背景も出ない）
+    }
+    std::size_t first = first_item_at(line, scope.begin);
     const std::size_t after = first_item_at(line, scope.end);
+    // ルビ組は 1 アイテムなので、組の**内部**から始まるスコープは上の探索が組を飛び越す。
+    // 親文字は通常のインライン内容と同じ矩形を出す（#16）ので、組まで戻ってクラスタを見る
+    const bool starts_inside_ruby = first > line.begin &&
+                                    paragraph_->sources[first - 1].ruby != kNone &&
+                                    paragraph_->sources[first - 1].char_end > scope.begin;
+    if (starts_inside_ruby) {
+      --first;
+    }
     if (first >= after) {
       continue;  // 交差はしているが、この行にはこのスコープの文字がない
     }
     const std::size_t last = after - 1;
-    backgrounds.push_back(InlineBackground{
-        .rect =
-            LogicalRect{.inline_start = placement_[first].inline_start,
-                        .block_start = baseline - scope.start_extent,
-                        .inline_size = placement_[last].inline_end - placement_[first].inline_start,
-                        .block_size = scope.size},
-        .color = scope.color});
+    const float inline_start = starts_inside_ruby ? ruby_cluster_start(first, scope.begin)
+                                                  : placement_[first].inline_start;
+    const bool ends_inside_ruby =
+        paragraph_->sources[last].ruby != kNone && scope.end < paragraph_->sources[last].char_end;
+    const float inline_end =
+        ends_inside_ruby ? ruby_cluster_end(last, scope.end) : placement_[last].inline_end;
+    backgrounds.push_back(
+        InlineBackground{.rect = LogicalRect{.inline_start = inline_start,
+                                             .block_start = baseline - scope.start_extent,
+                                             .inline_size = inline_end - inline_start,
+                                             .block_size = scope.size},
+                         .color = scope.color});
   }
   return backgrounds;
 }
@@ -473,8 +548,10 @@ std::vector<LineBox> InlineFormatter::run() {
   }
   // 行の構築の作業バッファは、行ごとではなく段落で 1 回だけ確保する（#4）
   placement_.assign(items.size(), Placement{});
+  ruby_placement_.assign(paragraph_->ruby_clusters.size(), Placement{});
   style_stamp_.assign(paragraph_->styles.size(), 0);
-  engine_->counters().line_scratch += items.size() + paragraph_->styles.size();
+  engine_->counters().line_scratch +=
+      items.size() + paragraph_->ruby_clusters.size() + paragraph_->styles.size();
 
   std::vector<LineBox> lines;
   lines.reserve(breaks.lines.size());

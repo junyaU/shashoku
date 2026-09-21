@@ -26,35 +26,6 @@ struct ShapedRun {
   text::ShapedText shaped;
 };
 
-// ルビ組の親文字の 1 区間。装飾（色など）が変わる位置で切る。グリフは 1 回の
-// シェーピング結果の部分範囲なので、切っても位置は変わらない。
-struct BaseSegment {
-  std::size_t run = kNone;
-  std::size_t glyph_begin = 0;
-  std::size_t glyph_end = 0;
-  std::size_t style = 0;  // CharStyleTable の添字（区間の先頭の文字のもの）
-  std::size_t char_begin = 0;
-  std::size_t char_end = 0;
-  float advance = 0;  // クラスタの送りの合計（letter-spacing 込み）
-};
-
-// ルビ 1 組。行分割器から見れば Atomic 1 個で、組の内部では改行しない。
-struct RubyPiece {
-  std::vector<BaseSegment> base;
-  float base_width = 0;
-  std::size_t base_style = 0;
-  float base_ascent = 0;
-  float base_font_size = 0;
-
-  std::size_t rt_run = kNone;
-  std::size_t rt_style = 0;
-  float rt_width = 0;
-  float rt_ascent = 0;
-  float rt_descent = 0;
-  float rt_font_size = 0;
-  std::string rt_text;
-};
-
 // (c) linebreak::Item 1 個の出どころ。
 struct ItemSource {
   std::size_t run = kNone;  // ForcedBreak・<img>・ルビ組は kNone
@@ -69,6 +40,35 @@ struct ItemSource {
   std::size_t ruby = kNone;
 };
 
+// ルビ組の親文字の 1 クラスタ。中身は通常テキストのアイテム（出どころ + letter-spacing 込みの
+// 送り）と同じで、(e) も同じ関数を通る（#16）。組の内部には分割可能位置がないので
+// linebreak::Item にはしない。
+struct RubyCluster {
+  ItemSource source;
+  float advance = 0;  // クラスタの送り（letter-spacing 込み。linebreak::Item::advance と同じ）
+};
+
+// ルビ 1 組。行分割器から見れば Atomic 1 個で、組の内部では改行しない。
+struct RubyPiece {
+  // 親文字のクラスタ（PreparedParagraph::ruby_clusters の範囲 [base_begin, base_end)）。
+  std::size_t base_begin = 0;
+  std::size_t base_end = 0;
+  float base_width = 0;  // クラスタの送りの合計（= 行分割器に渡す親文字側の送り）
+  // **行分割ポリシーの代表の文字**（A28）。幾何の寸法をここから取ってはいけない（#17）。
+  std::size_t base_style = 0;
+  // 親文字の全クラスタの最大。行の高さとルビの位置はここから出す（#17）。
+  float max_base_ascent = 0;
+  float max_base_font_size = 0;
+
+  std::size_t rt_run = kNone;
+  std::size_t rt_style = 0;
+  float rt_width = 0;
+  float rt_ascent = 0;
+  float rt_descent = 0;
+  float rt_font_size = 0;
+  std::string rt_text;
+};
+
 // (a)〜(c) まで済ませた段落。行の幅に依らないので、固有寸法の計測と配置で共有できる。
 struct PreparedParagraph {
   std::vector<FlatChar> chars;
@@ -80,6 +80,8 @@ struct PreparedParagraph {
 
   std::vector<ShapedRun> runs;
   std::vector<RubyPiece> rubies;
+  // 全ルビ組の親文字のクラスタを 1 本に並べたもの（RubyPiece が範囲で指す）。
+  std::vector<RubyCluster> ruby_clusters;
   std::vector<linebreak::Item> items;
   std::vector<ItemSource> sources;
 

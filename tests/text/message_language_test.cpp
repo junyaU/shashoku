@@ -7,6 +7,7 @@
 // 実行時に踏めない経路（輪郭を持たないグリフ、未対応の pixel_mode、HarfBuzz の確保失敗など）は
 // このテストでは踏めないので、`src/text/` 全体を grep して日本語が残っていないことも確かめてある。
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <limits>
 #include <string>
@@ -106,6 +107,53 @@ TEST(TextMessageLanguage, ShaperErrorsAreAscii) {
     ASSERT_FALSE(shaped.has_value());
     expect_ascii(shaped.error(), "shape() with an infinite font_size");
   }
+}
+
+// 非有限の値を文面に入れるときは number_text() を通す（core/number_text.hpp）。
+// NaN の符号ビットは CPU によって違う（x86 の SSE は inf/inf で負の NaN、ARM は正の NaN）
+// ので、そのまま出すと同じ入力でも文面が `-nan` になったり `nan` になったりする。
+TEST(TextMessageLanguage, NonFiniteValuesAreWrittenTheSameWayWhateverTheirSignBit) {
+  const float quiet = std::numeric_limits<float>::quiet_NaN();
+  const float positive = std::copysign(quiet, 1.0F);
+  const float negative = std::copysign(quiet, -1.0F);
+  ASSERT_FALSE(std::signbit(positive));
+  ASSERT_TRUE(std::signbit(negative));
+
+  FontStore store;
+  const FontId jp = *store.load(noto_sans_jp_regular());
+  const GlyphId glyph = store.glyph_for(jp, U'あ');
+  FreeTypeGlyphSource glyphs(store);
+  Shaper shaper(store);
+
+  // (1) シェーピング: font_size が有限でない（text_measurer.hpp の契約違反）
+  const auto shape_message = [&shaper](float size) {
+    TextStyle style;
+    style.font_size = size;
+    const Result<ShapedText> shaped = shaper.shape(U"あ", style);
+    EXPECT_FALSE(shaped.has_value());
+    return shaped.has_value() ? std::string{} : shaped.error().message;
+  };
+  // (2) グリフのラスタライズ: pixel_size が有限でない（glyph_source.hpp の契約違反）
+  const auto rasterize_message = [&glyphs, jp, glyph](float size) {
+    const Result<raster::GlyphBitmap> result = glyphs.rasterize(jp, glyph, size, false);
+    EXPECT_FALSE(result.has_value());
+    return result.has_value() ? std::string{} : result.error().message;
+  };
+
+  const auto expect_same_text = [](const std::string& from_positive,
+                                   const std::string& from_negative) {
+    EXPECT_EQ(from_positive, from_negative) << from_positive << " / " << from_negative;
+    EXPECT_NE(from_positive.find("NaN"), std::string::npos) << from_positive;
+    // 環境で変わる表記（`nan` / `-nan`）が残っていないこと
+    EXPECT_EQ(from_positive.find("nan"), std::string::npos) << from_positive;
+  };
+  expect_same_text(shape_message(positive), shape_message(negative));
+  expect_same_text(rasterize_message(positive), rasterize_message(negative));
+
+  // 無限大の符号は入力で決まる（環境に依らない）のでそのまま出す。
+  constexpr float kInf = std::numeric_limits<float>::infinity();
+  EXPECT_NE(shape_message(kInf).find("inf"), std::string::npos);
+  EXPECT_NE(rasterize_message(-kInf).find("-inf"), std::string::npos);
 }
 
 }  // namespace

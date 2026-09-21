@@ -20,6 +20,7 @@
 #include <freetype/ftoutln.h>
 
 #include "core/ids.hpp"
+#include "core/number_text.hpp"
 #include "core/result.hpp"
 #include "raster/glyph_source.hpp"
 #include "shashoku/error.hpp"
@@ -47,7 +48,9 @@ constexpr std::size_t kGlyphCacheBytes = std::size_t{16} * 1024 * 1024;
 
 // どのグリフで何が起きたかを必ず message に入れる（DESIGN.md §3-6 fail loudly）。
 std::string where(FontId font, GlyphId glyph_id, float pixel_size) {
-  return std::format("FontId {}, glyph {}, {} px", font, glyph_id, pixel_size);
+  // 値は number_text() を通す: NaN の符号ビットは CPU によって違うので、そのまま出すと
+  // 同じ入力でも文面が環境で変わる（core/number_text.hpp）。
+  return std::format("FontId {}, glyph {}, {} px", font, glyph_id, number_text(pixel_size));
 }
 
 std::string ft_failure(std::string_view function, FT_Error error, FontId font, GlyphId glyph_id,

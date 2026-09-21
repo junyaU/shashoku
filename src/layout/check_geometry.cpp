@@ -10,6 +10,7 @@
 #include <variant>
 #include <vector>
 
+#include "core/number_text.hpp"
 #include "core/result.hpp"
 #include "layout/box_tree.hpp"
 #include "shashoku/error.hpp"
@@ -32,11 +33,13 @@ struct Scan {
 std::unexpected<Error> violation(const Scan& scan, std::string_view what, float value) {
   // 「どの上限を・いくつに対して・いくつだったか」を出す（A25 の流儀）。上限は
   // `length_px x dom_nodes` で導いた値なので、緩め方が分かるようにその式も書く。
+  // 値の表記は number_text() を通す: NaN の符号ビットは CPU によって違うので、
+  // そのまま出すと同じ入力でも文面が環境で変わる（core/number_text.hpp）。
   const std::string detail =
-      std::isfinite(value)
-          ? std::format("{} px, which exceeds the limit of {} px", value, scan.max_px)
-          : std::format("{}, which a float cannot represent; the limit is {} px", value,
-                        scan.max_px);
+      std::isfinite(value) ? std::format("{} px, which exceeds the limit of {} px",
+                                         number_text(value), number_text(scan.max_px))
+                           : std::format("{}, which a float cannot represent; the limit is {} px",
+                                         number_text(value), number_text(scan.max_px));
   return fail(ErrorKind::LimitExceeded,
               std::format("the laid out `{}` has {} = {} (RenderLimits::length_px x dom_nodes); "
                           "`%` and flex factors are resolved in layout, so a value that was "

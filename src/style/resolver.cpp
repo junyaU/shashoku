@@ -14,6 +14,7 @@
 #include <variant>
 #include <vector>
 
+#include "core/number_text.hpp"
 #include "core/result.hpp"
 #include "html/dom.hpp"
 #include "shashoku/error.hpp"
@@ -86,19 +87,20 @@ std::unexpected<Error> length_error(float value, const SpecLength& spec, const L
   if (!std::isfinite(value)) {
     // float で表せない値。どう掛けてそうなったかを添える（`1e+38em x 16 px`）。
     std::string computation = spec.em
-                                  ? std::format("{}em x font-size {} px", spec.value, guard.em_base)
-                                  : std::format("{}px", spec.value);
+                                  ? std::format("{}em x font-size {} px", number_text(spec.value),
+                                                number_text(guard.em_base))
+                                  : std::format("{}px", number_text(spec.value));
     return fail(ErrorKind::LimitExceeded,
                 std::format("`{}` computes to {} ({}), which a float cannot represent; lengths "
                             "must be finite and at most {} px "
                             "(raise RenderLimits::length_px to allow larger ones)",
-                            name, value, computation, guard.max_px),
+                            name, number_text(value), computation, number_text(guard.max_px)),
                 guard.location);
   }
   return fail(ErrorKind::LimitExceeded,
               std::format("`{}` computes to {} px, which exceeds the limit of {} px "
                           "(raise RenderLimits::length_px to allow it)",
-                          name, value, guard.max_px),
+                          name, number_text(value), number_text(guard.max_px)),
               guard.location);
 }
 
@@ -819,7 +821,7 @@ Result<StyleState> Resolver::cascade(const html::Node& node, const StyleState& p
                 std::format("font-size computes to {} px, which a float cannot represent; check "
                             "the `em` factors on this element and its ancestors "
                             "(the font-size limit is RenderLimits::font_size_device_px)",
-                            state.computed.font_size),
+                            number_text(state.computed.font_size)),
                 node.location);
   }
   for (const MatchedDeclaration& entry : matched) {
@@ -854,7 +856,7 @@ Result<void> check_computed_lengths(const ComputedStyle& s, float max_px, Source
     return fail(ErrorKind::LimitExceeded,
                 std::format("the computed `{}` is {} px, which is not a finite length within the "
                             "limit of {} px (raise RenderLimits::length_px to allow it)",
-                            what, value, max_px),
+                            what, number_text(value), number_text(max_px)),
                 location);
   };
   const std::array<std::pair<std::string_view, float>, 9> lengths = {{
@@ -898,7 +900,8 @@ Result<void> check_computed_lengths(const ComputedStyle& s, float max_px, Source
                   std::format("`line-height: {}` x font-size {} px computes to {} px, which is not "
                               "a finite length within the limit of {} px "
                               "(raise RenderLimits::length_px to allow it)",
-                              s.line_height.value, s.font_size, px, max_px),
+                              number_text(s.line_height.value), number_text(s.font_size),
+                              number_text(px), number_text(max_px)),
                   location);
     }
   }

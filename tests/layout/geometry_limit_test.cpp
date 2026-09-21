@@ -75,6 +75,24 @@ TEST(GeometryLimit, FlexRatioNanIsRejected) {
   EXPECT_EQ(error.location.value_or(SourceLocation{}).column, 21U) << error.message;
 }
 
+// NaN の符号ビットは CPU によって違う（x86 の SSE は inf/inf で負の NaN、ARM は正の NaN）。
+// そのまま文面に出すと、同じ入力でもメッセージが `-nan` になったり `nan` になったりする。
+// 符号に依らず `NaN` と書く（core/number_text.hpp）。
+TEST(GeometryLimit, NanIsReportedWithoutASign) {
+  FakeMeasurer measurer;
+  const style::StyledNode root =
+      build({flex({block({text("あ")},
+                         [](style::ComputedStyle& s) {
+                           s.flex_shrink = 1e38F;
+                           s.width = Dimension::px(1e7F);
+                         })},
+                  [](style::ComputedStyle& s) { s.width = Dimension::px(10); })});
+  const Error error = layout_failure(root, make_options(1000), measurer);
+  EXPECT_NE(error.message.find("NaN"), std::string::npos) << error.message;
+  // `nan` / `-nan`（環境によって変わる表記）が残っていないこと
+  EXPECT_EQ(error.message.find("nan"), std::string::npos) << error.message;
+}
+
 // ---- 上限そのもの ------------------------------------------------------------------
 
 TEST(GeometryLimit, Boundary) {

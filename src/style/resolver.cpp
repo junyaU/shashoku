@@ -68,31 +68,88 @@ void inherit_text(ComputedStyle& child, const ComputedStyle& parent) {
 
 // ---- 計算値化 ----------------------------------------------------------------
 
-float resolve_length(const SpecLength& length, float em_base) {
-  return length.em ? length.value * em_base : length.value;
+// 計算値の長さを検査するための文脈（ARCHITECTURE.md A-new）。
+// style の出口では「font-size を除くすべての長さが有限で、絶対値が max_px 以内」。
+//
+// `em` の乗算（`1e38em x 16px`）でも、px で直接書いた値（`3e38px`）でも、同じ上限で止める。
+// 検査に使うのは比較と isfinite だけなので A9（浮動小数点の決定性）の許可リスト内。
+struct LengthGuard {
+  float max_px = kMaxLengthPx;
+  PropertyId property = PropertyId::Width;
+  SourceLocation location;
+  float em_base = 0;
+};
+
+// 失敗したときだけ文字列を作る（長さの解決は要素ごとに十数回通る）。
+std::unexpected<Error> length_error(float value, const SpecLength& spec, const LengthGuard& guard) {
+  const std::string_view name = to_css(guard.property);
+  if (!std::isfinite(value)) {
+    // float で表せない値。どう掛けてそうなったかを添える（`1e+38em x 16 px`）。
+    std::string computation =
+        spec.em ? std::format("{}em x font-size {} px", spec.value, guard.em_base)
+                : std::format("{}px", spec.value);
+    return fail(ErrorKind::LimitExceeded,
+                std::format("`{}` computes to {} ({}), which a float cannot represent; lengths "
+                            "must be finite and at most {} px "
+                            "(raise RenderLimits::length_px to allow larger ones)",
+                            name, value, computation, guard.max_px),
+                guard.location);
+  }
+  return fail(ErrorKind::LimitExceeded,
+              std::format("`{}` computes to {} px, which exceeds the limit of {} px "
+                          "(raise RenderLimits::length_px to allow it)",
+                          name, value, guard.max_px),
+              guard.location);
 }
 
-Dimension resolve_dimension(const SpecDimension& dimension, float em_base) {
+// 上限の判定は 1 つの比較で済ませる: NaN も inf も範囲外もまとめて false になる。
+bool within(float value, float max_px) { return value >= -max_px && value <= max_px; }
+
+Result<float> resolve_length(const SpecLength& length, float em_base, const LengthGuard& guard) {
+  const float value = length.em ? length.value * em_base : length.value;
+  if (!within(value, guard.max_px)) {
+    return length_error(value, length, guard);
+  }
+  return value;
+}
+
+Result<Dimension> resolve_dimension(const SpecDimension& dimension, float em_base,
+                                    const LengthGuard& guard) {
   switch (dimension.kind) {
     case SpecDimension::Kind::Auto:
       return Dimension::auto_();
-    case SpecDimension::Kind::Length:
-      return Dimension::px(resolve_length(dimension.length, em_base));
+    case SpecDimension::Kind::Length: {
+      Result<float> value = resolve_length(dimension.length, em_base, guard);
+      if (!value) {
+        return std::unexpected(value.error());
+      }
+      return Dimension::px(*value);
+    }
     case SpecDimension::Kind::Percent:
+      // `%` は包含ブロックが要るので layout まで解決できない（A5）。
+      // 上限の検査も layout の出口で行う（#19 の第 2 段階）。
       return Dimension::percent(dimension.percent);
   }
   return Dimension::auto_();
 }
 
-LineHeight resolve_line_height(const SpecLineHeight& value, float em_base) {
+Result<LineHeight> resolve_line_height(const SpecLineHeight& value, float em_base,
+                                       const LengthGuard& guard) {
   switch (value.kind) {
     case SpecLineHeight::Kind::Normal:
       return LineHeight{.kind = LineHeight::Kind::Normal};
     case SpecLineHeight::Kind::Number:
+      // 倍率は倍率のまま継承するので、ここでは値をそのまま持つ。
+      // 「倍率 x 自分の font-size」が上限以内かは、カスケードが終わってから見る
+      // （継承した倍率 x 子の大きい font-size も捕まえるため）。
       return LineHeight{.kind = LineHeight::Kind::Number, .value = value.number};
-    case SpecLineHeight::Kind::Length:
-      return LineHeight{.kind = LineHeight::Kind::Px,
-                        .value = resolve_length(value.length, em_base)};
+    case SpecLineHeight::Kind::Length: {
+      Result<float> px = resolve_length(value.length, em_base, guard);
+      if (!px) {
+        return std::unexpected(px.error());
+      }
+      return LineHeight{.kind = LineHeight::Kind::Px, .value = *px};
+    }
   }
   return LineHeight{};
 }
@@ -327,116 +384,137 @@ void apply_initial(PropertyId property, StyleState& state) {
   }
 }
 
-void apply_value(PropertyId property, const SpecifiedValue& value, StyleState& state,
-                 float em_base) {
+// 長さを含むプロパティの適用は失敗しうる（上限の検査。A-new）。
+Result<void> apply_value(PropertyId property, const SpecifiedValue& value, StyleState& state,
+                         float em_base, const LengthGuard& base_guard) {
   ComputedStyle& s = state.computed;
+  // このプロパティの宣言に紐づく検査の文脈（メッセージと位置に使う）。
+  LengthGuard guard = base_guard;
+  guard.property = property;
+  guard.em_base = em_base;
+
+  // 長さ 1 つを解決して代入する。失敗したらそのままエラーを返す。
+  const auto length = [&](float& out) -> Result<void> {
+    Result<float> resolved = resolve_length(take<SpecLength>(value), em_base, guard);
+    if (!resolved) {
+      return std::unexpected(resolved.error());
+    }
+    out = *resolved;
+    return {};
+  };
+  const auto dimension = [&](Dimension& out) -> Result<void> {
+    Result<Dimension> resolved = resolve_dimension(take<SpecDimension>(value), em_base, guard);
+    if (!resolved) {
+      return std::unexpected(resolved.error());
+    }
+    out = *resolved;
+    return {};
+  };
+
   switch (property) {
     case PropertyId::Display:
       s.display = take<Display>(value);
-      return;
+      return {};
     case PropertyId::Width:
-      s.width = resolve_dimension(take<SpecDimension>(value), em_base);
-      return;
+      return dimension(s.width);
     case PropertyId::Height:
-      s.height = resolve_dimension(take<SpecDimension>(value), em_base);
-      return;
+      return dimension(s.height);
     case PropertyId::MarginTop:
-      s.margin.top = resolve_dimension(take<SpecDimension>(value), em_base);
-      return;
+      return dimension(s.margin.top);
     case PropertyId::MarginRight:
-      s.margin.right = resolve_dimension(take<SpecDimension>(value), em_base);
-      return;
+      return dimension(s.margin.right);
     case PropertyId::MarginBottom:
-      s.margin.bottom = resolve_dimension(take<SpecDimension>(value), em_base);
-      return;
+      return dimension(s.margin.bottom);
     case PropertyId::MarginLeft:
-      s.margin.left = resolve_dimension(take<SpecDimension>(value), em_base);
-      return;
+      return dimension(s.margin.left);
     case PropertyId::PaddingTop:
-      s.padding.top = resolve_length(take<SpecLength>(value), em_base);
-      return;
+      return length(s.padding.top);
     case PropertyId::PaddingRight:
-      s.padding.right = resolve_length(take<SpecLength>(value), em_base);
-      return;
+      return length(s.padding.right);
     case PropertyId::PaddingBottom:
-      s.padding.bottom = resolve_length(take<SpecLength>(value), em_base);
-      return;
+      return length(s.padding.bottom);
     case PropertyId::PaddingLeft:
-      s.padding.left = resolve_length(take<SpecLength>(value), em_base);
-      return;
+      return length(s.padding.left);
     case PropertyId::BorderWidth:
-      state.border_width_length = resolve_length(take<SpecLength>(value), em_base);
-      return;
+      return length(state.border_width_length);
     case PropertyId::BorderStyle:
       state.border_style = take<BorderStyle>(value);
-      return;
+      return {};
     case PropertyId::BorderColor: {
       const auto color = take<SpecColor>(value);
       state.border_color_is_current = color.current_color;
       s.border_color = color.color;
-      return;
+      return {};
     }
     case PropertyId::BorderRadius:
-      s.border_radius = resolve_length(take<SpecLength>(value), em_base);
-      return;
+      return length(s.border_radius);
     case PropertyId::BackgroundColor:
       s.background_color = take<SpecColor>(value).color;
-      return;
+      return {};
     case PropertyId::FlexDirection:
       s.flex_direction = take<FlexDirection>(value);
-      return;
+      return {};
     case PropertyId::JustifyContent:
       s.justify_content = take<JustifyContent>(value);
-      return;
+      return {};
     case PropertyId::AlignItems:
       s.align_items = take<AlignItems>(value);
-      return;
+      return {};
     case PropertyId::RowGap:
-      s.row_gap = resolve_length(take<SpecLength>(value), em_base);
-      return;
+      return length(s.row_gap);
     case PropertyId::ColumnGap:
-      s.column_gap = resolve_length(take<SpecLength>(value), em_base);
-      return;
+      return length(s.column_gap);
     case PropertyId::FlexGrow:
       s.flex_grow = take<SpecNumber>(value).value;
-      return;
+      return {};
     case PropertyId::FlexShrink:
       s.flex_shrink = take<SpecNumber>(value).value;
-      return;
+      return {};
     case PropertyId::FlexBasis:
-      s.flex_basis = resolve_dimension(take<SpecDimension>(value), em_base);
-      return;
+      return dimension(s.flex_basis);
     case PropertyId::Color:
       s.color = take<SpecColor>(value).color;
-      return;
-    case PropertyId::FontSize:
-      s.font_size = resolve_length(take<SpecLength>(value), em_base);
-      return;
+      return {};
+    case PropertyId::FontSize: {
+      // font-size だけは length_px で縛らない（A-new）。A25 の font_size_device_px が
+      // scale 込みでより厳しく見ており、そちらは要素の位置つきで報告する。ここで二重に
+      // 検査すると、同じ入力のエラーの位置が宣言の側に移ってしまう。非有限になった場合は
+      // cascade() が要素の位置で止める（em の基準が壊れたまま先へ進めないため）。
+      const SpecLength spec = take<SpecLength>(value);
+      s.font_size = spec.em ? spec.value * em_base : spec.value;
+      return {};
+    }
     case PropertyId::FontFamily:
       s.font_family = take<SpecFontFamily>(value).names;
-      return;
+      return {};
     case PropertyId::FontWeight:
       s.font_weight = take<SpecWeight>(value).value;
-      return;
-    case PropertyId::LineHeight:
-      s.line_height = resolve_line_height(take<SpecLineHeight>(value), em_base);
-      return;
+      return {};
+    case PropertyId::LineHeight: {
+      Result<LineHeight> resolved =
+          resolve_line_height(take<SpecLineHeight>(value), em_base, guard);
+      if (!resolved) {
+        return std::unexpected(resolved.error());
+      }
+      s.line_height = *resolved;
+      return {};
+    }
     case PropertyId::LetterSpacing:
-      s.letter_spacing = resolve_length(take<SpecLength>(value), em_base);
-      return;
+      return length(s.letter_spacing);
     case PropertyId::TextAlign:
       s.text_align = take<TextAlign>(value);
-      return;
+      return {};
     case PropertyId::LineBreak:
       s.line_break = take<LineBreak>(value);
-      return;
+      return {};
     case PropertyId::OverflowWrap:
       s.overflow_wrap = take<OverflowWrap>(value);
-      return;
+      return {};
     case PropertyId::WritingMode:
       s.writing_mode = take<WritingMode>(value);
-      return;
+      return {};
   }
+  return {};
 }
 
 // `display: inline` に指定してはいけない箱のプロパティ（ARCHITECTURE.md §3.7 の最後）。
@@ -479,20 +557,26 @@ void record_author_declaration(const Declaration& declaration, Origin origin, St
   }
 }
 
-void apply_one(const Declaration& declaration, Origin origin, const StyleState& parent,
-               StyleState& state, float em_base) {
+Result<void> apply_one(const Declaration& declaration, Origin origin, const StyleState& parent,
+                       StyleState& state, float em_base, float max_length_px) {
   record_author_declaration(declaration, origin, state);
   switch (declaration.global) {
     case GlobalKeyword::Inherit:
+      // 親の計算値はすでに検査済みなので、そのまま引き継いでよい。
       apply_inherit(declaration.property, parent, state);
-      return;
+      return {};
     case GlobalKeyword::Initial:
       apply_initial(declaration.property, state);
-      return;
-    case GlobalKeyword::None:
-      apply_value(declaration.property, declaration.value, state, em_base);
-      return;
+      return {};
+    case GlobalKeyword::None: {
+      const LengthGuard guard{.max_px = max_length_px,
+                              .property = declaration.property,
+                              .location = declaration.location,
+                              .em_base = em_base};
+      return apply_value(declaration.property, declaration.value, state, em_base, guard);
+    }
   }
+  return {};
 }
 
 // ---- カスケードの並べ替え -----------------------------------------------------
@@ -588,7 +672,7 @@ std::optional<float> parse_attribute_number(std::string_view text) {
   return static_cast<float>(token.number);
 }
 
-Result<void> read_image_attributes(const html::Node& node, StyledNode& styled) {
+Result<void> read_image_attributes(const html::Node& node, StyledNode& styled, float max_length_px) {
   const html::Attribute* src = node.find_attr("src");
   if (src == nullptr) {
     return fail(ErrorKind::UnsupportedValue, "`<img>` requires a `src` attribute", node.location);
@@ -605,6 +689,14 @@ Result<void> read_image_attributes(const html::Node& node, StyledNode& styled) {
                   std::format("`<img {}=\"{}\">` is not supported (the attribute must be a "
                               "non-negative number of px, without a unit)",
                               name, attr->value),
+                  attr->location);
+    }
+    // 属性も layout に渡る長さなので、CSS の長さと同じ上限で見る（A-new）。
+    if (!within(*value, max_length_px)) {
+      return fail(ErrorKind::LimitExceeded,
+                  std::format("`<img {}=\"{}\">` is {} px, which exceeds the limit of {} px "
+                              "(raise RenderLimits::length_px to allow it)",
+                              name, attr->value, *value, max_length_px),
                   attr->location);
     }
     if (name == "width") {
@@ -636,7 +728,7 @@ class Resolver {
                                                                 const StyleState& parent) const;
 
   std::size_t max_style_rules_ = kMaxStyleRules;
-  [[maybe_unused]] float max_length_px_ = kMaxLengthPx;
+  float max_length_px_ = kMaxLengthPx;
   Stylesheet ua_;
   Stylesheet author_;
 };
@@ -711,12 +803,31 @@ Result<StyleState> Resolver::cascade(const html::Node& node, const StyleState& p
   // 親の font-size で解決する（ARCHITECTURE.md §3.7）。
   for (const MatchedDeclaration& entry : matched) {
     if (entry.declaration->property == PropertyId::FontSize) {
-      apply_one(*entry.declaration, entry.origin, parent, state, parent.computed.font_size);
+      if (Result<void> applied = apply_one(*entry.declaration, entry.origin, parent, state,
+                                           parent.computed.font_size, max_length_px_);
+          !applied) {
+        return std::unexpected(applied.error());
+      }
     }
+  }
+  // font-size が非有限なら、他の em はすべて inf / NaN になる。原因は font-size なので、
+  // 残りを解決する前にここで止める（A-new）。種類と位置は、これまで api の
+  // font_size_device_px（A25）が返していたものと同じ = LimitExceeded + 要素の位置。
+  if (!std::isfinite(state.computed.font_size)) {
+    return fail(ErrorKind::LimitExceeded,
+                std::format("font-size computes to {} px, which a float cannot represent; check "
+                            "the `em` factors on this element and its ancestors "
+                            "(the font-size limit is RenderLimits::font_size_device_px)",
+                            state.computed.font_size),
+                node.location);
   }
   for (const MatchedDeclaration& entry : matched) {
     if (entry.declaration->property != PropertyId::FontSize) {
-      apply_one(*entry.declaration, entry.origin, parent, state, state.computed.font_size);
+      if (Result<void> applied = apply_one(*entry.declaration, entry.origin, parent, state,
+                                           state.computed.font_size, max_length_px_);
+          !applied) {
+        return std::unexpected(applied.error());
+      }
     }
   }
 
@@ -729,7 +840,76 @@ Result<StyleState> Resolver::cascade(const html::Node& node, const StyleState& p
   return state;
 }
 
-Result<void> validate(const html::Node& node, const StyleState& state, const StyleState& parent) {
+// ---- 出力の不変条件（ARCHITECTURE.md A-new）----------------------------------
+//
+// 宣言を適用する時点の検査（宣言の位置つき）に加えて、カスケードが終わった計算値を
+// もう一度まとめて見る。継承で入ってきた値と、プロパティを足したときの掛け忘れを
+// ここで捕まえる（検査が「引数の渡し方」ではなく「段の出口の性質」になる）。
+//
+// ここだけが知っている検査が 1 つある: `line-height` の倍率は倍率のまま継承するので、
+// 「倍率 x その要素自身の font-size」は子で初めて上限を超えうる。
+Result<void> check_computed_lengths(const ComputedStyle& s, float max_px, SourceLocation location) {
+  const auto bad = [&](std::string_view what, float value) -> std::unexpected<Error> {
+    return fail(ErrorKind::LimitExceeded,
+                std::format("the computed `{}` is {} px, which is not a finite length within the "
+                            "limit of {} px (raise RenderLimits::length_px to allow it)",
+                            what, value, max_px),
+                location);
+  };
+  const std::array<std::pair<std::string_view, float>, 9> kLengths = {{
+      {"padding-top", s.padding.top},
+      {"padding-right", s.padding.right},
+      {"padding-bottom", s.padding.bottom},
+      {"padding-left", s.padding.left},
+      {"border-width", s.border_width},
+      {"border-radius", s.border_radius},
+      {"row-gap", s.row_gap},
+      {"column-gap", s.column_gap},
+      {"letter-spacing", s.letter_spacing},
+  }};
+  for (const auto& [name, value] : kLengths) {
+    if (!within(value, max_px)) {
+      return bad(name, value);
+    }
+  }
+  const std::array<std::pair<std::string_view, const Dimension*>, 7> kDimensions = {{
+      {"width", &s.width},
+      {"height", &s.height},
+      {"margin-top", &s.margin.top},
+      {"margin-right", &s.margin.right},
+      {"margin-bottom", &s.margin.bottom},
+      {"margin-left", &s.margin.left},
+      {"flex-basis", &s.flex_basis},
+  }};
+  for (const auto& [name, dimension] : kDimensions) {
+    // `%` は layout が解決するので、ここでは見られない（#19 の第 2 段階）。
+    if (dimension->kind == Dimension::Kind::Px && !within(dimension->value, max_px)) {
+      return bad(name, dimension->value);
+    }
+  }
+  if (s.line_height.kind == LineHeight::Kind::Px && !within(s.line_height.value, max_px)) {
+    return bad("line-height", s.line_height.value);
+  }
+  if (s.line_height.kind == LineHeight::Kind::Number) {
+    const float px = s.line_height.value * s.font_size;
+    if (!within(px, max_px)) {
+      return fail(ErrorKind::LimitExceeded,
+                  std::format("`line-height: {}` x font-size {} px computes to {} px, which is not "
+                              "a finite length within the limit of {} px "
+                              "(raise RenderLimits::length_px to allow it)",
+                              s.line_height.value, s.font_size, px, max_px),
+                  location);
+    }
+  }
+  return {};
+}
+
+Result<void> validate(const html::Node& node, const StyleState& state, const StyleState& parent,
+                      float max_length_px) {
+  if (Result<void> lengths = check_computed_lengths(state.computed, max_length_px, node.location);
+      !lengths) {
+    return lengths;
+  }
   if (state.writing_mode_declared && state.computed.writing_mode != parent.computed.writing_mode) {
     return fail(
         ErrorKind::UnsupportedLayout,
@@ -817,7 +997,7 @@ Result<std::optional<StyledNode>> Resolver::build_element(const html::Node& node
   if (!state) {
     return std::unexpected(state.error());
   }
-  if (Result<void> checked = validate(node, *state, parent); !checked) {
+  if (Result<void> checked = validate(node, *state, parent, max_length_px_); !checked) {
     return std::unexpected(checked.error());
   }
 
@@ -827,7 +1007,7 @@ Result<std::optional<StyledNode>> Resolver::build_element(const html::Node& node
   styled.style = state->computed;
   styled.location = node.location;
   if (node.tag == "img") {
-    if (Result<void> attrs = read_image_attributes(node, styled); !attrs) {
+    if (Result<void> attrs = read_image_attributes(node, styled, max_length_px_); !attrs) {
       return std::unexpected(attrs.error());
     }
   }

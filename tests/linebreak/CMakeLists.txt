@@ -7,6 +7,7 @@ shashoku_add_test(linebreak_test
     break_lines_test.cpp
     complexity_test.cpp
     item_policy_test.cpp
+    min_content_test.cpp
     spacing_test.cpp
     overflow_test.cpp
     property_test.cpp

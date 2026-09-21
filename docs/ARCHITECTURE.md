@@ -176,8 +176,8 @@ O(N×L) になる（issue #4）。`InlineFormatter` は placement をメンバ�
 テキスト（インラインボックス）に適用される継承プロパティなので、段落の途中の `<span>` で値が
 変わりうる。`linebreak::Config` を 1 組だけ持つ形では、その指定が段の境界（layout → linebreak）で
 黙って落ちていた（issue #2）。`linebreak::Item` に `std::optional<Strictness> strictness` と
-`std::optional<bool> break_anywhere` を持たせ、nullopt なら `Config` の値を使う
-（すべて nullopt なら出力は従来と完全に同じ）。
+`std::optional<Wrap> wrap`（当初は `std::optional<bool> break_anywhere`。A-new で 3 値にした）を
+持たせ、nullopt なら `Config` の値を使う（すべて nullopt なら出力は従来と完全に同じ）。
 CSS Text Level 3 の「Line Breaking Details」（2026-09 時点の TR では §5.5。本書の他の引用が使っている
 版とは節番号がずれている）は *「which elements' line-break, word-break, and overflow-wrap properties
 control the determination of soft wrap opportunities at such boundaries is undefined in this level」*
@@ -189,18 +189,22 @@ control the determination of soft wrap opportunities at such boundaries is undef
   解決済みのクラスに対して従来どおり働く。例外は loose の「直前が ID ならハイフン ‐ – の前で
   割ってよい」だけで、これは 2 アイテムにまたがる。**行頭に来る側（= 後ろのアイテム = ハイフン
   自身）の値で決める**
-- **`break_anywhere` の緊急分割は、位置の両側のアイテムがともに true のときだけ許す。**
-  つまり anywhere を指定した要素の内部でだけ割れ、要素の境界では割れない。指定していない語が
-  隣接のせいで割れるより、指定した範囲だけが割れる方が説明しやすい。発動条件（分割可能位置が
-  1 つもない行でだけ。§3.4 (5)）と優先順（分離禁則 > 行頭・行末禁則、クラスタ内部では割らない）は
-  `Config` のときと同じ。両側が true の位置が 1 つもなければ、A4「禁則 > 幅」で割らずにはみ出す
-- `break_anywhere` は `min_content_width()` に影響しない（`Config` のときからの挙動。CSS の
+- **`wrap` の緊急分割は、位置の両側のアイテムがともに `Normal` 以外のときだけ許す。**
+  つまり anywhere / break-word を指定した要素の内部でだけ割れ、要素の境界では割れない。
+  指定していない語が隣接のせいで割れるより、指定した範囲だけが割れる方が説明しやすい。
+  発動条件（分割可能位置が 1 つもない行でだけ。§3.4 (5)）と優先順（分離禁則 >
+  行頭・行末禁則、クラスタ内部では割らない）は `Config` のときと同じ。両側が `Normal` 以外の
+  位置が 1 つもなければ、A4「禁則 > 幅」で割らずにはみ出す
+- ~~`break_anywhere` は `min_content_width()` に影響しない（`Config` のときからの挙動。CSS の
   `break-word` 相当）。CSS Text 3 §5.4 は `anywhere` を min-content に効かせると定めているが、
   現行の `Config::break_anywhere` は `anywhere` と `break-word` を 1 つのフラグにまとめているので
-  区別しない。区別が要るようになったら `Config` の意味論の問題として別に決める
+  区別しない。区別が要るようになったら `Config` の意味論の問題として別に決める~~
+  → **A-new で撤回**（issue #18）。この割り切りのせいで `overflow-wrap: anywhere` を指定した
+  flex アイテムが親からはみ出していた。いまは `Wrap` の 3 値を持ち、`Anywhere` だけが
+  `min_content_width()` に効く
 
 layout 側がこの口に何を入れるかは A28。`Config` は**段落の既定値**として残っていて、値を持たない
-`Item` にだけ効く（約物のアキ・あふれ処理など、`strictness` / `break_anywhere` 以外の設定は
+`Item` にだけ効く（約物のアキ・あふれ処理など、`strictness` / `wrap` 以外の設定は
 `Config` にしかない）。
 
 **A24. 行分割の仕事は N に線形。「行ごとに段落の残りを舐める」を作らない。** 狭い版面では
@@ -340,13 +344,14 @@ issue #6）。上限は**入力の一部**なので純粋関数の性質は壊�
 | ルビ組（Atomic） | 親文字の**先頭の文字**が属する要素の計算値 |
 | `<br>`（ForcedBreak） | その `<br>` 自身の計算値（必ず改行するので結果には効かない） |
 
-- `line-break: auto` はエンジンの既定に解決する（A17）。`overflow-wrap` は `anywhere` /
-  `break-word` のどちらも `break_anywhere = true`（A23 の最後）
+- `line-break: auto` はエンジンの既定に解決する（A17）。`overflow-wrap` は 3 値をそのまま
+  `linebreak::Wrap`（`Normal` / `BreakWord` / `Anywhere`）に写す。どちらも緊急分割を許すが、
+  min-content に効くのは `anywhere` だけ（A-new。CSS Text 3 §5.4）
 - **ルビ組の内部（親文字の途中・`<rt>`）の指定は効かない。** 組は Atomic 1 個で、その内部には
   分割可能位置が存在しないため（§3.8 のルビ）。「指定を読み落としている」のではなく
   「効かせる場所がない」。1 文字だけの要素に `line-break` を書いても何も起きないのと同じ
 - **`linebreak::Config` は段落の既定値として残す。** いまは (c) がすべての `Item` に値を入れるので
-  `strictness` / `break_anywhere` については使われないが、約物のアキ・あふれ処理（`overflow` /
+  `strictness` / `wrap` については使われないが、約物のアキ・あふれ処理（`overflow` /
   `trim_line_end` / `collapse_punctuation_spacing`）は `Config` にしかない
 - 継承プロパティのうち、layout が「インライン要素の値」ではなく「段落のブロックの値」だけを
   読んでよいのは `text-align`（CSS ではブロックコンテナに適用。インライン要素に書いても
@@ -607,6 +612,54 @@ PNG エンコードで、そこは #7 の対象外**。
   後者は `tsan` プリセット（`SHASHOKU_SANITIZE_THREAD`）でも回す。**普段の完了条件には入れない**:
   依存ライブラリまで再ビルドになるので `dev` / `asan` と並べると重い
 
+**A-new. `overflow-wrap` は `linebreak` でも 3 値で持つ。`anywhere` だけが `min_content_width()` に
+効く。緊急分割の条件と禁則の優先順は変えない。**（issue #18。A23 の最後の割り切りを撤回する）
+
+CSS Text 3 §5.4 は 2 値を **min-content に効くかどうか**で区別している:
+
+> **anywhere**: An otherwise unbreakable sequence of characters may be broken at an arbitrary point
+> if there are no otherwise-acceptable break points in the line. …
+> **break-word**: As for `anywhere` except that soft wrap opportunities introduced by `break-word`
+> are **not** considered when calculating min-content intrinsic sizes.
+
+min-content は flex アイテムの自動最小サイズ（Flexbox §4.5。`min-width: auto` の content size
+suggestion は主軸の min-content サイズ）に使われるので、1 つの bool に潰すと
+`overflow-wrap: anywhere` を指定した flex の子が「1 行ぶんの幅」より縮まず、親からはみ出す
+（実測: 親 32px に子 82.21875px。同じ内容をブロックに置けば正しく 3 行になるので、
+**flex を通したときだけ指定が効かない**）。DESIGN.md §3-6「fail loudly」にも触れる:
+指定は受理され、エラーも警告も出ないまま黙って無視されていた。
+
+決めたこと:
+
+- **`linebreak` に CSS の 3 値に対応する `enum class Wrap { Normal, BreakWord, Anywhere }` を置き、
+  `Config::wrap` / `Item::wrap` にする。** `style::OverflowWrap` は持ち込まない
+  （`linebreak` は何にも依存しない。DESIGN.md §3-4）。値は**弱い順**に並べ、位置の両側の
+  アイテムの弱い方がその位置で何ができるかを決める（A23 の境界の規則を 3 値に読み替えただけ）
+- **`break_lines()` は 1 ビットも変えない。** 緊急分割の発動条件（分割可能位置が 1 つもない行
+  でだけ）、候補の判定（クラスタ境界。`anywhere_candidate()`）、位置選びの優先順
+  （分離禁則 > 行頭・行末禁則 > 最後の逃げ場）はそのまま。変えたのは `min_content_width()` の
+  区間の切り方だけで、`BreakWord` と `Anywhere` は実配置では完全に同じ振る舞いをする
+- **`min_content_width()` は、分割可能位置に加えて「両側がともに `Anywhere` のクラスタ境界」でも
+  区間を切る。** 切ってよい位置の判定は緊急分割と同じ `anywhere_candidate()` を使う
+  （クラスタ内部・ZWJ の吸収では割らない）
+- **禁則は min-content では守らない。** §5.4 は "broken at an arbitrary point" としか言わず、
+  禁則を守れとは書いていない。緊急分割には「守れる位置が 1 つもなければ破る」という最後の
+  逃げ場があるので、こう定義しても **`min_content_width()` の不変条件「この幅なら必ず収まる」は
+  保てる**（`tests/linebreak/property_test.cpp` の `MinContentWidthNeverOverflows` と
+  `min_content_test.cpp` の `TableWidthsAreAchievable` で検査する）。禁則の優先順そのものは
+  緊急分割のまま変えない
+- **`max_content` は変わらない。** `kUnbounded` では緊急分割の経路を通らない
+- **メモ化（A29）の鍵は変えない。** `IntrinsicKey` は `SubtreeId`（`ComputedStyle` のポインタを
+  含む）+ `%` の基準なので `overflow-wrap` の違いは既に鍵に入っている。`PreparedParagraph` も
+  ポリシーを `Item` に持つ。計算量も O(N) のまま（区間が細かくなるだけ。`anywhere_scan` に計上する）
+- **採らなかった案**: `bool` を残して `anywhere_in_min_content` をもう 1 本足す形。差分は小さいが、
+  bool 2 本の組み合わせに意味のない状態（緊急分割は不可・min-content には効く）ができて
+  契約が読みにくくなる
+- **範囲外**（この判断では直さない）: `min-width` の対応、`word-wrap`（`overflow-wrap` の
+  legacy name alias。CSS Text 3 §5.4 は必須としているが現状は `unsupported-property`）、
+  `anywhere_candidate()` が `Item::no_break_before` を見ないこと（rank 3/4 の候補にはなるので
+  実害はないが、緊急分割の候補判定としては見るのが筋）
+
 ---
 
 ## 2. モジュールと依存
@@ -752,24 +805,29 @@ BK CR LF NL SP ZW WJ GL CM ZWJ OP CL CP QU EX IS SY NS CJ IN B2 BA BB HY PR PO N
 - `Oikomi`: 貪欲法で決めた位置の次の分割可能位置までを、行内の約物の空き（(4) の空き量が上限）を
   詰めれば収められるなら、詰めて収める。詰め量は各約物の詰め可能量に比例配分する。
   収められなければ追い出し
-- どのポリシーでも (A4) 禁則 > 幅。`break_anywhere` は分割可能位置が 1 つもない行でだけ発動する
+- どのポリシーでも (A4) 禁則 > 幅。緊急分割（`Wrap` が `Normal` 以外）は分割可能位置が
+  1 つもない行でだけ発動する
 
 **(6) 不変条件**（ファジングで検査する）: 全アイテムがちょうど 1 行に属する / 行は空でない /
 `overflows` でない行は `width <= available_width`（+ 許容誤差）/ 分割位置は必ず
-`break_opportunities()` が true の位置か ForcedBreak の直後か `break_anywhere` の発動
-（= 両側のアイテムがともに anywhere の位置。(7)）/ 同じ入力には同じ出力。
+`break_opportunities()` が true の位置か ForcedBreak の直後か緊急分割の発動
+（= 両側のアイテムがともに `Normal` 以外の位置。(7)）/ `min_content_width()` の幅で組んだ行は
+どれも `overflows` にならない / 同じ入力には同じ出力。
 ファジングにはアイテムごとのポリシーをランダムな範囲で混ぜた入力も含める。
 
-**(7) アイテムごとのポリシー**（A23）: `Item::strictness` / `Item::break_anywhere` は
+**(7) アイテムごとのポリシー**（A23）: `Item::strictness` / `Item::wrap` は
 インライン要素（`<span>`）での上書き。nullopt なら `Config` の値を使い、すべて nullopt なら
 出力は `Config` だけを使っていたころと完全に同じ。境界の規則は:
 - (1) の分割クラスの解決は**そのアイテム自身の** `strictness` で行う。(2) のペア表・文脈規則は
   解決済みのクラスに対して従来どおり働く。例外は loose の「直前が ID ならハイフン ‐ – の前で
   割ってよい」だけで、これは行頭に来る側（後ろのアイテム）の `strictness` で決める
-- (5) の `break_anywhere` の緊急分割は、**両側のアイテムがともに** `break_anywhere` の位置でだけ
-  起こす。発動条件と位置選びの優先順は変わらない。割れる位置が 1 つもなければ A4 ではみ出す
-- `break_opportunities()` は `break_anywhere` の影響を受けない（緊急分割は「分割可能位置」ではない）。
-  `min_content_width()` は `strictness` の影響を受け、`break_anywhere` の影響は受けない
+- (5) の緊急分割は、**両側のアイテムがともに** `Wrap::Normal` 以外の位置でだけ起こす。
+  発動条件と位置選びの優先順は変わらない。割れる位置が 1 つもなければ A4 ではみ出す
+- `break_opportunities()` は `wrap` の影響を受けない（緊急分割は「分割可能位置」ではない）。
+  `min_content_width()` は `strictness` と `wrap` の影響を受ける: 分割可能位置に加えて
+  **両側がともに `Wrap::Anywhere` のクラスタ境界**でも区間を切る（CSS Text 3 §5.4。
+  `BreakWord` では切らない。A-new）。切った位置は緊急分割の候補そのものなので、
+  返した幅は必ず達成できる
 
 ### 3.5 text（④）
 
@@ -908,7 +966,7 @@ namespace shashoku::layout {
 struct Options {
   float viewport_width;                  // 物理 px
   std::optional<float> viewport_height;  // 縦書きでは必須（InvalidOption）
-  linebreak::Config line_break;          // strictness / break_anywhere は CSS が上書きする
+  linebreak::Config line_break;          // strictness / wrap は CSS が上書きする
 };
 struct ImageSize { float width, height; };  // <img> の固有寸法。名前 → 寸法は api が解決して渡す
 Result<BoxTree> layout(const style::StyledNode& root, const Options&, text::TextMeasurer&,

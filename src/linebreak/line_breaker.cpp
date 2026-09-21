@@ -75,13 +75,11 @@ class Analysis {
   [[nodiscard]] Strictness strictness_of(const Item& item) const {
     return item.strictness.value_or(config_.strictness);
   }
-  [[nodiscard]] bool break_anywhere_of(std::size_t i) const {
-    return items_[i].break_anywhere.value_or(config_.break_anywhere);
-  }
+  [[nodiscard]] Wrap wrap_of(std::size_t i) const { return items_[i].wrap.value_or(config_.wrap); }
   [[nodiscard]] BreakClass resolve_class(const Item& item) const;
   void resolve_classes();
   void build_spacing_tables();
-  void build_anywhere_table();
+  void build_wrap_table();
   void compute_opportunities();
 
   // --- 分割可能位置の規則（sig_ 上の位置 k = items_[sig_[k - 1]] と items_[sig_[k]] の間）---
@@ -123,8 +121,10 @@ class Analysis {
   [[nodiscard]] std::size_t next_opportunity(std::size_t from) const;
   void scan_candidates(std::size_t begin, std::size_t limit, float available, std::size_t& best,
                        std::size_t& next) const;
-  // 緊急分割（break_anywhere）の候補にできる位置か。
+  // 緊急分割（Wrap）の候補にできる位置か。
   [[nodiscard]] bool anywhere_candidate(std::size_t p) const;
+  // min_content_width() で区間を切ってよい位置か（両側がともに Wrap::Anywhere）。
+  [[nodiscard]] bool min_content_candidate(std::size_t p) const;
   void rank_anywhere_position(std::size_t p, std::array<std::size_t, 5>& choice) const;
   [[nodiscard]] std::size_t break_anywhere_at(std::size_t begin, std::size_t limit,
                                               float available) const;
@@ -153,10 +153,12 @@ class Analysis {
 
   std::vector<std::uint8_t> opp_;        // items_[i-1] と items_[i] の間で割ってよい
   std::vector<std::uint8_t> mandatory_;  // その位置で必ず割る（LB4 / LB5）
-  // items_[i-1] と items_[i] の間で break_anywhere の緊急分割をしてよい
-  // （両側のアイテムがともに anywhere のときだけ。ARCHITECTURE.md A23）
-  std::vector<std::uint8_t> anywhere_;
-  bool has_anywhere_ = false;  // anywhere_ に 1 が 1 つでもあるか
+  // items_[i-1] と items_[i] の間で overflow-wrap が何を許すか（両側の弱い方。A23 / A-new）。
+  //   Normal    … 何もしない（= 要素の境界では割れない）
+  //   BreakWord … 緊急分割だけ
+  //   Anywhere  … 緊急分割と min_content_width() の区間の切れ目
+  std::vector<Wrap> pair_wrap_;
+  bool has_anywhere_ = false;  // pair_wrap_ に Normal 以外が 1 つでもあるか
   // sig_ 上の位置 k の直前に並ぶ地域表示記号（RI）の個数が奇数か（LB30a）。
   std::vector<std::uint8_t> ri_odd_;
 
@@ -178,10 +180,10 @@ Analysis::Analysis(Config config, std::span<const Item> items, Counters* counter
   collapse_after_.assign(n, 0.0F);
   opp_.assign(n, 0);
   mandatory_.assign(n, 0);
-  anywhere_.assign(n, 0);
+  pair_wrap_.assign(n, Wrap::Normal);
   resolve_classes();
   build_spacing_tables();
-  build_anywhere_table();
+  build_wrap_table();
   compute_opportunities();
 }
 
@@ -225,13 +227,14 @@ BreakClass Analysis::resolve_class(const Item& item) const {
   return cls;
 }
 
-void Analysis::build_anywhere_table() {
-  // 位置 i で緊急分割してよいのは、items_[i - 1] と items_[i] がともに anywhere のときだけ
-  // （= anywhere を指定した要素の内部でだけ割れ、要素の境界では割れない。A23）。
+void Analysis::build_wrap_table() {
+  // 位置 i で何ができるかは、items_[i - 1] と items_[i] の overflow-wrap の**弱い方**で決まる
+  // （= 指定した要素の内部でだけ割れ、要素の境界では割れない。A23 / A-new）。
+  // Wrap は弱い順（Normal < BreakWord < Anywhere）に並んでいるので、小さい方を採ればよい。
   for (std::size_t i = 1; i < items_.size(); ++i) {
-    const bool allowed = break_anywhere_of(i - 1) && break_anywhere_of(i);
-    anywhere_[i] = static_cast<std::uint8_t>(allowed);
-    has_anywhere_ = has_anywhere_ || allowed;
+    const Wrap wrap = std::min(wrap_of(i - 1), wrap_of(i));
+    pair_wrap_[i] = wrap;
+    has_anywhere_ = has_anywhere_ || wrap != Wrap::Normal;
   }
 }
 
@@ -496,7 +499,7 @@ std::optional<bool> Analysis::rule_number(std::size_t k) const {
 }
 
 // items_[p] の直前で割ると「離してはいけない組」を割ることになるか。
-// 緊急分割（break_anywhere）の位置選びだけに使う判定で、通常の分割可能位置の判定
+// 緊急分割（overflow-wrap）の位置選びだけに使う判定で、通常の分割可能位置の判定
 // （can_break_between）とは別物。対象は JIS X 4051 の分離禁則:
 //   * ——（B2 の並び。LB17 B2 SP* × B2）
 //   * …… ‥‥（IN の並び）。並びの *直前* は分離禁則ではないので割ってよい
@@ -742,8 +745,14 @@ void Analysis::scan_candidates(std::size_t begin, std::size_t limit, float avail
 }
 
 bool Analysis::anywhere_candidate(std::size_t p) const {
-  // クラスタの内部では割らない。両側のアイテムがともに anywhere でなければ割らない（A23）。
-  return attached_[p] == 0 && raw_zwj_[p - 1] == 0 && anywhere_[p] != 0;
+  // クラスタの内部では割らない。両側のアイテムがともに Normal 以外でなければ割らない（A23）。
+  return attached_[p] == 0 && raw_zwj_[p - 1] == 0 && pair_wrap_[p] != Wrap::Normal;
+}
+
+bool Analysis::min_content_candidate(std::size_t p) const {
+  // min-content で区間を切ってよいのは、緊急分割できる位置のうち両側がともに Anywhere の
+  // ところだけ（CSS Text 3 §5.4 の break-word と anywhere の違い。A-new）。
+  return anywhere_candidate(p) && pair_wrap_[p] == Wrap::Anywhere;
 }
 
 void Analysis::rank_anywhere_position(std::size_t p, std::array<std::size_t, 5>& choice) const {
@@ -769,8 +778,8 @@ void Analysis::rank_anywhere_position(std::size_t p, std::array<std::size_t, 5>&
 
 std::size_t Analysis::break_anywhere_at(std::size_t begin, std::size_t limit,
                                         float available) const {
-  // overflow-wrap: anywhere。クラスタ境界で強制的に割る（line_breaker.hpp の
-  // Config::break_anywhere）。禁則は守れる限り守るので、幅に収まる位置を次の優先順位で選ぶ。
+  // overflow-wrap: anywhere / break-word。クラスタ境界で強制的に割る（line_breaker.hpp の
+  // Wrap）。禁則は守れる限り守るので、幅に収まる位置を次の優先順位で選ぶ。
   // 各段の中では「収まる最後の位置」= できるだけ長い行を採る。
   //   0: 通常の分割可能位置（ここに来た時点で普通は無いが、あれば最優先）
   //   1: 分離禁則にも行頭禁則・行末禁則にも掛からない位置
@@ -779,7 +788,7 @@ std::size_t Analysis::break_anywhere_at(std::size_t begin, std::size_t limit,
   //      （「￥1,200」のように、どこで割っても分離禁則に掛かるとき）
   //   4: 収まる最後のクラスタ境界。ここで初めて何もかも破る
   // クラスタの内部（結合文字・異体字セレクタ・ZWJ 列の吸収）では、4 でも絶対に割らない。
-  // anywhere_[p] が 0 の位置（両側のどちらかが anywhere でない = 要素の境界）も候補にしない。
+  // pair_wrap_[p] が Normal の位置（両側のどちらかが normal = 要素の境界）も候補にしない。
   std::array<std::size_t, 5> choice{kNone, kNone, kNone, kNone, kNone};
   std::size_t leftmost = kNone;  // 最初の候補（1 クラスタも収まらないときの逃げ場）
   for (std::size_t p = begin + 1; p < limit; ++p) {
@@ -926,7 +935,7 @@ Breaks Analysis::break_lines(float available_width) const {
     scan_candidates(begin, limit, available_width, best, next);
 
     if (best == kNone) {
-      // 収まる分割位置がない。break_anywhere が許されていればクラスタ境界で割り、
+      // 収まる分割位置がない。overflow-wrap が許していればクラスタ境界で割り、
       // それも駄目なら A4「禁則 > 幅」で、割らずにはみ出す。
       // 候補は「次の分割可能位置」か、無ければ強制改行の位置（= 段落の末尾）。
       std::size_t end = std::min(first_opp, limit);
@@ -961,12 +970,18 @@ Breaks Analysis::break_lines(float available_width) const {
 float Analysis::min_content_width() const {
   // 分割不能な最長区間の幅。連続約物のアキ詰めは反映し、行末のアキ詰めは反映しない
   // （min-content はこの幅で必ず収まる上限として使うため、詰める側に倒さない）。
+  // 区間は分割可能位置に加えて「両側がともに Anywhere のクラスタ境界」でも切る
+  // （CSS Text 3 §5.4。break-word では切らない。ARCHITECTURE.md A-new）。
+  // 切った位置は緊急分割の候補そのものなので、この幅は break_lines() で必ず達成できる。
   float widest = 0.0F;
   std::size_t start = 0;
   const std::size_t n = items_.size();
   for (std::size_t i = 1; i <= n; ++i) {
     if (i != n && opp_[i] == 0) {
-      continue;
+      count(&Counters::anywhere_scan);
+      if (!min_content_candidate(i)) {
+        continue;
+      }
     }
     const std::size_t content_end = strip_trailing(start, i);
     widest = std::max(widest, lay_out(start, content_end, false, 0.0F, nullptr));

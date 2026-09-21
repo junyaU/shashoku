@@ -42,7 +42,7 @@ class ParagraphBuilder {
   [[nodiscard]] linebreak::Item policy_of(linebreak::Item item, std::size_t style) const {
     const BreakingStyle& breaking = out_->styles.breaking(style);
     item.strictness = resolve_strictness(breaking.line_break, default_strictness_);
-    item.break_anywhere = resolve_break_anywhere(breaking.overflow_wrap);
+    item.wrap = resolve_wrap(breaking.overflow_wrap);
     return item;
   }
 

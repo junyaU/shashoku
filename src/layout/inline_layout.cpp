@@ -25,12 +25,12 @@ namespace {
 // (d) 行分割器の設定 = **段落の既定値**。Options を土台に、このブロックの CSS で上書きする。
 // アイテムごとのポリシー（A23 / A28）を持たない Item にだけ効く。いまは (c) がすべての
 // Item に値を入れているので実際には使われないが、契約としての既定値なので残す
-// （約物のアキ・あふれ処理など、strictness / break_anywhere 以外の設定はここだけにある）。
+// （約物のアキ・あふれ処理など、strictness / wrap 以外の設定はここだけにある）。
 linebreak::Config line_break_config(const InlineInput& input, const LayoutEngine& engine) {
   linebreak::Config config = engine.options().line_break;
   config.strictness = resolve_strictness(input.block_style->line_break, config.strictness);
-  config.break_anywhere =
-      config.break_anywhere || resolve_break_anywhere(input.block_style->overflow_wrap);
+  // 強い方を採る（エンジンの既定で緊急分割を許していたら CSS の normal では戻さない）。
+  config.wrap = std::max(config.wrap, resolve_wrap(input.block_style->overflow_wrap));
   return config;
 }
 

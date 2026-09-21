@@ -108,7 +108,7 @@ Result<std::unique_ptr<FontEntry>> make_entry(
   const FT_Error error = FT_New_Memory_Face(
       library, bytes->data(), static_cast<FT_Long>(bytes->size()), face_index, face.out());
   if (error != 0 || face.get() == nullptr) {
-    return fail(ErrorKind::FontLoad, "フォントを解釈できません (face " +
+    return fail(ErrorKind::FontLoad, "cannot parse the font (face " +
                                          std::to_string(face_index) + "): " + ft_error_text(error));
   }
   num_faces = face.get()->num_faces;
@@ -119,9 +119,8 @@ Result<std::unique_ptr<FontEntry>> make_entry(
   if (FT_IS_SCALABLE(face.get()) == 0 || face.get()->num_glyphs <= 0 ||
       face.get()->units_per_EM == 0) {
     return fail(ErrorKind::FontLoad,
-                "輪郭を持たないフォントは扱えません (face " + std::to_string(face_index) +
-                    "): 埋め込みビットマップ専用のフォント（CBDT / sbix のカラー絵文字など）は"
-                    "対応していません");
+                "the font has no outlines (face " + std::to_string(face_index) +
+                    "): bitmap-only fonts (CBDT / sbix color emoji) are not supported");
   }
 
   auto entry = std::make_unique<FontEntry>();
@@ -145,7 +144,7 @@ Result<std::unique_ptr<FontEntry>> make_entry(
   if (hb_face_get_glyph_count(hb_face) == 0) {
     hb_face_destroy(hb_face);
     return fail(ErrorKind::FontLoad,
-                "HarfBuzz がフォントを解釈できません (face " + std::to_string(face_index) + ")");
+                "HarfBuzz cannot parse the font (face " + std::to_string(face_index) + ")");
   }
   // 不変にしてから共有する。HarfBuzz は immutable なオブジェクトを複数スレッドから
   // 同時に使うことを想定していて、face が内部に持つ表とシェーププランの置き場は
@@ -158,7 +157,7 @@ Result<std::unique_ptr<FontEntry>> make_entry(
     // 黙って通すと「どの文字にもグリフが無い」= 全部豆腐になるので、ここで落とす。
     hb_face_destroy(hb_face);
     return fail(ErrorKind::OutOfMemory,
-                "HarfBuzz のフォントを作れませんでした (face " + std::to_string(face_index) + ")");
+                "cannot create the HarfBuzz font (face " + std::to_string(face_index) + ")");
   }
   hb_ot_font_set_funcs(hb_font);  // メトリクスは hb-ot から読む（A7）
 
@@ -190,14 +189,14 @@ FontStore& FontStore::operator=(FontStore&&) noexcept = default;
 
 Result<FontId> FontStore::load(std::span<const std::uint8_t> bytes) {
   if (bytes.empty()) {
-    return fail(ErrorKind::FontLoad, "フォントのバイト列が空です");
+    return fail(ErrorKind::FontLoad, "the font byte sequence is empty");
   }
   prime_harfbuzz_process_tables();
 
   // FT_Library はここで作ってここで閉じる（共有資源には残さない。A34）。
   LibraryHandle library;
   if (FT_Init_FreeType(library.out()) != 0) {
-    return fail(ErrorKind::Internal, "FreeType を初期化できませんでした");
+    return fail(ErrorKind::Internal, "cannot initialize FreeType");
   }
 
   auto data = std::make_shared<const std::vector<std::uint8_t>>(bytes.begin(), bytes.end());

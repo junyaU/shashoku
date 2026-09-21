@@ -109,6 +109,24 @@ TEST(TextFontStore, RejectsTruncatedFont) {
   EXPECT_EQ(store.size(), 0U);
 }
 
+// エラーメッセージの言語は英語にそろえる（#20）。text モジュールだけが日本語だったので、
+// 試用者が受け取る文面が混ざっていた。ASCII 以外が混ざっていないことで見張る。
+TEST(TextFontStore, ErrorMessagesAreAscii) {
+  const std::vector<std::uint8_t>& full = noto_sans_jp_regular();
+  ASSERT_GT(full.size(), 4096U);
+  const std::vector<std::uint8_t> truncated(full.begin(), full.begin() + 4096);
+
+  FontStore store;
+  for (const std::vector<std::uint8_t>& bytes : {std::vector<std::uint8_t>{}, truncated}) {
+    const auto result = store.load(bytes);
+    ASSERT_FALSE(result.has_value());
+    for (const char c : result.error().message) {
+      EXPECT_LT(static_cast<unsigned char>(c), 0x80U)
+          << "message は英語（ASCII）で書く: " << result.error().message;
+    }
+  }
+}
+
 TEST(TextFontStore, FailedLoadDoesNotDisturbEarlierFonts) {
   FontStore store;
   const FontId jp = *store.load(noto_sans_jp_regular());

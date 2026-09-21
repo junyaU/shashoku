@@ -211,6 +211,151 @@ TEST(LayoutRuby, GrowsTheLineWhenLineHeightIsTight) {
   EXPECT_FLOAT_EQ(line.rect.block_size, above + fake_descent(kBase));
 }
 
+// ---- 親文字のスタイルが混ざるときの行の高さ。issue #17 ---------------------------------
+//
+// CSS Ruby 1 §2: ruby base は inline box として扱う → 行の高さには親文字の**全区間**が
+// 参加する（CSS 2.1 §10.8）。§3.4: 注釈（<rt>）は行の高さに参加しない。
+// 行分割ポリシーの代表の文字（A28）から幾何を取ると、2 文字目以降の指定が絵から落ちる。
+
+// ベースラインから block-start 側 / block-end 側への広がり。
+float above_of(const LineBox& line) { return line.baseline - line.rect.block_start; }
+float below_of(const LineBox& line) { return line.rect.block_end() - line.baseline; }
+
+// 親文字の 2 文字目が大きいと、行もベースラインもそのぶん下がる（横書き）。
+TEST(LayoutRuby, BiggerFontOnTheSecondBaseCharacterGrowsTheLine) {
+  FakeMeasurer measurer;
+  const auto big = [](ComputedStyle& style) { style.font_size = 80; };
+  const auto plain = build({block({text("あ"), inline_box({text("い")}, big)})});
+  const auto annotated =
+      build({block({ruby({text("あ"), inline_box({text("い")}, big), rt("ab")})})});
+  const auto a = run_layout(plain, 400, measurer);
+  const auto b = run_layout(annotated, 400, measurer);
+  ASSERT_TRUE(a.has_value());
+  ASSERT_TRUE(b.has_value());
+  const LineBox& without = *all_lines(*a)[0];
+  const LineBox& with = *all_lines(*b)[0];
+  // ルビなしの行より低くならない。ベースラインは 80px の ascent 以上
+  // （端にちょうど接する場合があるので、積み上げ誤差ぶんの許容差を引く）
+  EXPECT_GE(with.rect.block_size, without.rect.block_size);
+  EXPECT_GE(above_of(with), fake_ascent(80) - kTolerance);
+  // block-end 側も 80px の descent ぶん空く（descent 側が落ちていた）
+  EXPECT_GE(below_of(with), fake_descent(80) - kTolerance);
+}
+
+// line-height でも同じ。
+TEST(LayoutRuby, LineHeightOnTheSecondBaseCharacterGrowsTheLine) {
+  FakeMeasurer measurer;
+  const auto tall = [](ComputedStyle& style) {
+    style.line_height = style::LineHeight{style::LineHeight::Kind::Px, 100};
+  };
+  for (const bool vertical : {false, true}) {
+    std::vector<Tree> children{
+        block({ruby({text("あ"), inline_box({text("い")}, tall), rt("ab")})})};
+    const auto root = vertical ? build_vertical(std::move(children)) : build(std::move(children));
+    const auto tree = vertical ? run_layout(root, vertical_options(400, 400), measurer)
+                               : run_layout(root, make_options(400), measurer);
+    ASSERT_TRUE(tree.has_value()) << vertical;
+    EXPECT_GE(all_lines(*tree)[0]->rect.block_size, 100) << vertical;
+  }
+}
+
+// 大きい文字が先頭でも末尾でも結果が同じ（代表の文字に依らない）。
+TEST(LayoutRuby, LineHeightDoesNotDependOnTheOrderOfBaseStyles) {
+  FakeMeasurer measurer;
+  const auto big = [](ComputedStyle& style) { style.font_size = 80; };
+  const auto first = build({block({ruby({inline_box({text("あ")}, big), text("い"), rt("ab")})})});
+  const auto second = build({block({ruby({text("あ"), inline_box({text("い")}, big), rt("ab")})})});
+  const auto a = run_layout(first, 400, measurer);
+  const auto b = run_layout(second, 400, measurer);
+  ASSERT_TRUE(a.has_value());
+  ASSERT_TRUE(b.has_value());
+  EXPECT_FLOAT_EQ(all_lines(*a)[0]->rect.block_size, all_lines(*b)[0]->rect.block_size);
+  EXPECT_FLOAT_EQ(above_of(*all_lines(*a)[0]), above_of(*all_lines(*b)[0]));
+}
+
+// A27 の不変条件をルビでも: 親文字を素の span で包んでも結果が変わらない。
+TEST(LayoutRuby, WrappingTheBaseInAPlainSpanChangesNothing) {
+  FakeMeasurer measurer;
+  const auto big = [](ComputedStyle& style) { style.font_size = 80; };
+  const auto bare = build({block({ruby({text("あ"), inline_box({text("い")}, big), rt("ab")})})});
+  const auto wrapped = build({block(
+      {ruby({inline_box({text("あ")}), inline_box({inline_box({text("い")}, big)}), rt("ab")})})});
+  const auto a = run_layout(bare, 400, measurer);
+  const auto b = run_layout(wrapped, 400, measurer);
+  ASSERT_TRUE(a.has_value());
+  ASSERT_TRUE(b.has_value());
+  EXPECT_FLOAT_EQ(all_lines(*a)[0]->rect.block_size, all_lines(*b)[0]->rect.block_size);
+  EXPECT_FLOAT_EQ(above_of(*all_lines(*a)[0]), above_of(*all_lines(*b)[0]));
+  EXPECT_EQ(base_glyph_positions(*all_lines(*a)[0]), base_glyph_positions(*all_lines(*b)[0]));
+}
+
+// 組み合わせの回帰テストの 1 ケース（親文字の 2 文字目に別のスタイルを当てる）。
+struct HeightCase {
+  std::string_view name;
+  StyleFn second;
+  float max_base_font_size = kBase;  // 親文字の最大 font-size（ルビの張り出しに効く）
+};
+
+std::vector<HeightCase> height_cases() {
+  return {
+      {.name = "font-size",
+       .second = [](ComputedStyle& style) { style.font_size = 80; },
+       .max_base_font_size = 80},
+      {.name = "line-height",
+       .second =
+           [](ComputedStyle& style) {
+             style.line_height = style::LineHeight{style::LineHeight::Kind::Px, 100};
+           }},
+      {.name = "font-weight", .second = [](ComputedStyle& style) { style.font_weight = 700; }},
+      {.name = "font-family",
+       .second = [](ComputedStyle& style) { style.font_family = {"Other"}; }},
+  };
+}
+
+void check_line_height(const HeightCase& test_case, bool vertical) {
+  const std::string label =
+      std::string(test_case.name) + " vertical=" + std::to_string(static_cast<int>(vertical));
+  FakeMeasurer measurer;
+  const auto base_children = [&test_case] {
+    return std::vector<Tree>{text("あ"), inline_box({text("い")}, test_case.second)};
+  };
+  std::vector<Tree> plain_children{block(base_children())};
+  std::vector<Tree> ruby_parts = base_children();
+  ruby_parts.push_back(rt("ab"));
+  std::vector<Tree> ruby_children{block({ruby(std::move(ruby_parts))})};
+
+  const auto plain =
+      vertical ? build_vertical(std::move(plain_children)) : build(std::move(plain_children));
+  const auto annotated =
+      vertical ? build_vertical(std::move(ruby_children)) : build(std::move(ruby_children));
+  const auto options = vertical ? vertical_options(400, 400) : make_options(400);
+  const auto a = run_layout(plain, options, measurer);
+  const auto b = run_layout(annotated, options, measurer);
+  ASSERT_TRUE(a.has_value()) << label;
+  ASSERT_TRUE(b.has_value()) << label;
+  const LineBox& without = *all_lines(*a)[0];
+  const LineBox& with = *all_lines(*b)[0];
+
+  // ルビの張り出し（横は ascent ベース、縦は em ベース。書字方向で違うのは既知。§4）
+  const float overhang = vertical ? (test_case.max_base_font_size / 2) + kRuby
+                                  : fake_ascent(test_case.max_base_font_size) + fake_ascent(kRuby) +
+                                        fake_descent(kRuby);
+  // 行の高さは「ルビなしの同じ内容」から決まる: block-start 側だけがルビのぶん広がる
+  EXPECT_FLOAT_EQ(above_of(with), std::max(above_of(without), overhang)) << label;
+  EXPECT_FLOAT_EQ(below_of(with), below_of(without)) << label;
+  EXPECT_GE(with.rect.block_size, without.rect.block_size) << label;
+}
+
+// 組み合わせの回帰テスト: {横書き, 縦書き} × {font-size 混在, line-height 混在,
+// font-weight 混在, font-family 混在}。
+TEST(LayoutRuby, BaseStyleCombinationsDecideTheLineHeight) {
+  for (const HeightCase& test_case : height_cases()) {
+    for (const bool vertical : {false, true}) {
+      check_line_height(test_case, vertical);
+    }
+  }
+}
+
 // ---- 行分割 -----------------------------------------------------------------------
 
 // 組の内部では割らない（Atomic）。収まらなければはみ出す（A4）。

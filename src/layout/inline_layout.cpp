@@ -267,10 +267,22 @@ Extent InlineFormatter::measure_line(const linebreak::Line& line) {
     }
     if (source.ruby != kNone) {
       const RubyPiece& piece = paragraph_->rubies[source.ruby];
+      // 親文字は通常のインライン内容と同じに行の高さへ参加する（CSS Ruby 1 §2 / CSS 2.1
+      // §10.8）。代表の文字 1 つでは 2 文字目以降の font-size / line-height が落ちる（#17）。
+      // 同じスタイルのクラスタはメトリクスも同じなので、世代印で 1 回だけ見る
       if (style_stamp_[piece.base_style] != stamp_) {
         style_stamp_[piece.base_style] = stamp_;
         extend_line_height(piece.base_style, extent);
       }
+      for (std::size_t c = piece.base_begin; c < piece.base_end; ++c) {
+        const std::size_t style_id = paragraph_->ruby_clusters[c].source.style;
+        if (style_stamp_[style_id] != stamp_) {
+          style_stamp_[style_id] = stamp_;
+          extend_line_height(style_id, extent);
+        }
+      }
+      // ルビ（注釈）自身は行の高さに参加しない（CSS Ruby 1 §3.4）。参加するのは
+      // 「親文字の外側に置くための張り出し」だけ
       extent.above = std::max(extent.above, ruby_above(piece));
       continue;
     }

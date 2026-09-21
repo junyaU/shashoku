@@ -1091,4 +1091,8 @@ CLI は `tools/shashoku/`: `shashoku input.html --font A.otf [--font B.ttf …] 
 「意図した差」の候補にもなる）: ベースライン（縦書きでは行の中心軸）／`sideways` と、それによる
 断片の切れ目／`<img>` の行内での揃え方（横書きはベースライン揃え、縦書きは中心軸に中央揃え）と
 固有寸法が物理であること／行に font-size の大小が混ざるときのインライン背景の block 方向／
-ルビの行高の float 1 ulp。
+**ルビを含む行の高さ**。最後のものは float の誤差ではなく**モデルの違い**で、横書きは
+ascent ベース（`max_base_ascent + rt_ascent + rt_descent`）、縦書きは em ベース
+（`max_base_font_size / 2 + rt_font_size`）で張り出しを出している。`font-size: 16px` の
+ブロックで親文字だけ 24px にすると 横 46.328125 / 縦 37.375 になる。縦書きに ascent の
+概念（行の中心軸からの上下）が無いためで、揃えるかどうかは Chrome と見比べてから決める（#15）。

@@ -1,0 +1,33 @@
+<!-- 禁則処理（DESIGN.md Phase 4、JLREQ 3.1）の見本。幅 520px で組むことを想定している。
+     狭い段に流し込んでも、句読点・終わり括弧が行頭に落ちず、始め括弧が行末に残らない。
+     このまま貼れば PNG になる（--font は要らない。埋め込みの既定フォントを使う）:
+
+     shashoku examples/kinsoku.html -o kinsoku.png --width 520
+
+     あふれ処理は 3 方式から選べる。上の 1 行に足して見比べられる:
+       --overflow oidashi   禁則にかかった文字を次の行へ送る（既定。追い出し）
+       --overflow oikomi    字間を詰めて前の行に収める（追い込み）
+       --overflow burasage  行末の句読点を版面の外にぶら下げる（ぶら下げ）
+-->
+<style>
+  .sheet  { background: #fbf8f1; padding: 24px; font-size: 18px; line-height: 1.95;
+            color: #1d1a15; }
+  h1      { font-size: 22px; margin-top: 0; margin-bottom: 18px; color: #7a2018; }
+  .rule   { font-size: 13px; color: #6d6255; margin: 0 0 4px 0; }
+  .sample { width: 310px; background: #fffdf8; border: 1px solid #e3dac6; padding: 12px;
+            margin: 0 0 16px 0; }
+  .last   { margin-bottom: 0; }
+  .mark   { color: #b3402c; font-weight: 700; }
+</style>
+<div class="sheet">
+  <h1>禁則処理の見本</h1>
+
+  <p class="rule">行頭禁則 — 句読点と<span class="mark">終わり括弧</span>は行頭に来ない</p>
+  <p class="sample">動的に流し込んだ見出しでも、行頭に「。」や「、」が落ちることはありません。</p>
+
+  <p class="rule">行末禁則 — <span class="mark">始め括弧</span>は行末に残らない</p>
+  <p class="sample">彼は静かに言った、「組版というのは、読む人のためにある仕事なんだ」と。</p>
+
+  <p class="rule">分離禁止 — 三点リーダとダッシュは<span class="mark">割らない</span></p>
+  <p class="sample last">写植機の音が遠ざかっていく……そして印画紙の上に、活字だけが残った——。</p>
+</div>

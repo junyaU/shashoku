@@ -191,7 +191,7 @@ const auto result = shashoku::render(html, fonts, images, options);
 | `nesting_depth` / `dom_nodes` / `text_code_points` | 256 / 20,000 / 50,000 | 木の大きさと組む文字数 |
 | `style_rules` | 2,000 | セレクタの照合は「規則数 × 要素数」 |
 | `font_size_device_px` | 2,048 | グリフのビットマップは font-size の 2 乗で増えます（`font-size: 30000px` の 1 文字だけで 1.2 GB でした） |
-| `length_px` | 2^24 px | 長さ・座標の絶対値。`padding: 1e38em` のように計算値が float をあふれる入力を、位置つきのエラーで止めます |
+| `length_px` | 2^24 px | 1 要素あたりの長さの絶対値。`padding: 1e38em` のように計算値が float をあふれる入力を、位置つきのエラーで止めます。組み上がった座標には「これ × `dom_nodes`」が掛かるので、縦に長い文書は通ります |
 | `scale` / `device_pixels` | 256 / 2^26 px | 出力画像そのもの |
 
 > **⚠️ `0` は「無制限」ではありません**（文字どおり 0 です）。事実上外したいときは型の最大値を入れてください。

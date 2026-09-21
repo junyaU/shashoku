@@ -694,9 +694,32 @@ layout の加算で `inf` になる。そこで `RenderLimits` に**長さ・座
   宣言の側に移るだけで得るものがない。ただし**非有限な font-size は style が止める**
   （`em` の基準が壊れたまま残りのプロパティを解決すると、原因ではないプロパティを指す
   エラーが出るため）。種類と位置は従来どおり `LimitExceeded` + 要素の位置
-- **`%` と flex の比は style では判定できない**（A5: 包含ブロックが要る）。`width: 1e38%` は
-  同じ HTML でもビューポート幅で結果が変わる（200 px なら描けて 1000 px なら消える）。
-  **③ layout の出口で BoxTree を 1 回走査する**のが残りの半分で、issue #19 の第 2 段階
+- **③ layout の出口**（実装済み。`check_geometry()`）: `%` と flex の比は style では判定できない
+  （A5: 包含ブロックが要る）。`width: 1e38%` は同じ HTML でもビューポート幅で結果が変わっていた
+  （200 px なら `2e38` で有限、1000 px なら `inf`）。そこで `layout()` の最後に BoxTree を
+  前順に 1 回辿り、**座標・寸法・行・断片・グリフ位置がすべて有限かつ上限以内**であることを
+  確かめる。違反は `LimitExceeded` + **その箱の入力位置**（断片なら断片の位置）。
+  費用は O(N) で paint の走査 1 回ぶん
+- **layout の上限は `length_px x dom_nodes`（既定 2^24 x 20,000 = 3.36x10^11）にする。**
+  座標は長さの足し算なので、`length_px` をそのまま使うと**常識的な文書が落ちる**
+  （高さ 1000 px のブロックを 20,000 個積むと 2x10^7 で 2^24 を超える）。一方で「有限であること」
+  だけでは足りない（`width: 1e38%` @200 の `2e38` が通ってしまい、**幅によってエラーになったり
+  ならなかったりする**）。そこで**新しい制約を足すのではなく、既存の 2 つの上限から導く**:
+  1 要素あたりの長さが `length_px` 以内で要素が `dom_nodes` 個以下なら、どれだけ足し込んでも
+  この値を超えない。つまり**②の検査を通った文書がこの上限で落ちることはありえない**。
+  落ちたということは、`%` の解決や flex の比のように「入力の長さに比例しない計算」が
+  壊れたということで、それこそが報告すべき事故。`RenderLimits` に新しいフィールドは足さない
+  （api が同じ式で計算して `layout::Options::max_geometry_px` に渡す。導出が 2 か所で
+  別々に動かないよう `static_assert` で固定）。float の上限 3.4x10^38 からも 27 桁離れている
+- **`BlockBox` に入力位置を足した**（`TextFragment::location`（A31）と同じ考え方）。
+  出口の検査が「どの要素の座標が壊れたか」を言うために要る。`--dump-stage box` にも出す
+  （ダンプできない中間表現を作らない。DESIGN.md §3-3）。**paint は読まないので絵は 1 ビットも
+  変わらない**（`examples/*.html` の PNG と display-list ダンプがバイト一致することで確かめた）
+- **flex の比の計算そのものは直さない。** `factor / factors.scaled` が `inf/inf` = NaN になる式は
+  `distribute_once()` の中にあるが、そこを `Result` にしても保証は強くならない。NaN が入る先は
+  そのアイテムの箱なので、出口の検査でも位置は同じ精度で付く。検査を個々の計算に散らさず
+  段の出口に 1 か所置いたのは、**あとから計算を足したときに検査を書き忘れても
+  不変条件が破れない**ようにするため
 - **`ErrorKind` は `LimitExceeded` に一本化する。** パーサは以前 `1e39px`（float にできない数値）を
   `UnsupportedValue`（the number is out of range）で返していたが、`1e38em` が `LimitExceeded` に
   なると**ほぼ同じ入力が別の種類**になる。利用者から見てこの区別は説明しづらい。まだリリース前で
@@ -711,6 +734,13 @@ layout の加算で `inf` になる。そこで `RenderLimits` に**長さ・座
   正しい（落ちない・UB を踏まない）。前段で止まるので到達しなくなるだけ。
   **却下した案**: raster で非有限を見つけたときに警告を出す。段としては最後で「どの入力が
   原因か」の情報がもう無く、fail loudly の「原因の入力位置つき」を満たせない
+- 同じ理由で、**JSON / SVG ダンプが非有限を `null` / `0` に潰す**のも直していない。
+  ②③ の出口で止まるので、ダンプに非有限が現れることがなくなった（`--dump-stage svg` が
+  「PNG に描かれないグリフを原点に描く」食い違いも、ダンプ自体が出なくなることで消える）
+- **自動高さ（`--height` なし）のときの「the content height is 0」**は、内容高さが `NaN` のときにも
+  出ていた（`!(height > 0)` が NaN でも真になる）。③ の出口が先に止めるので到達しなくなったが、
+  万一届いたら layout の不変条件が破れている = shashoku 側のバグなので、`Internal` で
+  「有限でない」と報告する。本当に高さ 0 のときのメッセージは従来どおり
 
 **A37. ルビ組の「代表の文字」は行分割ポリシー専用。組の内部は通常のインライン内容として
 組み、幾何は親文字の全クラスタから出す。**（issue #16 / #17）A28 は「ルビ組の
@@ -1127,6 +1157,7 @@ struct Options {
   float viewport_width;                  // 物理 px
   std::optional<float> viewport_height;  // 縦書きでは必須（InvalidOption）
   linebreak::Config line_break;          // strictness / wrap は CSS が上書きする
+  float max_geometry_px;                 // 出口の検査の上限（A36。既定 length_px x dom_nodes）
 };
 struct ImageSize { float width, height; };  // <img> の固有寸法。名前 → 寸法は api が解決して渡す
 Result<BoxTree> layout(const style::StyledNode& root, const Options&, text::TextMeasurer&,
@@ -1139,6 +1170,7 @@ std::string dump_json(const BoxTree&);
   layout の実装者が定義する。最低限: ブロックの border-box と塗り情報、行ボックス、
   行内のテキスト断片（FontId・サイズ・色・sideways・グリフごとの inline 位置と offset・
   ベースライン / 中心軸の block 位置・**元ノードの位置**）、画像断片、インライン背景。
+  ブロックも**元要素の位置**（`BlockBox::location`。A36）を持つ。
   加えて豆腐の記録（`BoxTree::missing_glyphs`。A31）を持つ。**絵には影響しない**
   （paint は読まない）が、api が `Warning` にし、`dump_json()` が出す
 - **block**: 幅は親から降り、高さは子から戻る。`width: auto` は利用可能幅いっぱい。
@@ -1180,6 +1212,14 @@ std::string dump_json(const BoxTree&);
   段落全体ぶんの作業バッファを確保したりしない（A22）。flex の入れ子は深さ d に対して d²
   （A29。メモがないと 2^d）。守れているかは計測カウンタ（A21）で
   検査する（`tests/layout/complexity_test.cpp`）。時間ではなく回数で見る
+- **出力の不変条件（A36）**: 返る `BoxTree` に入っている数値 —— ブロック・行・画像断片・
+  インライン背景の矩形（位置・大きさ・端）、枠線の幅と半径、padding、ベースライン、
+  テキスト断片の font-size と inline 範囲、グリフごとの位置と offset —— は、**すべて有限で、
+  絶対値が `Options::max_geometry_px` 以内**である。`layout()` は最後に `check_geometry()` で
+  木を前順に 1 回辿ってこれを確かめ、破れていたら `LimitExceeded` + **その箱（断片なら断片）の
+  入力位置**を返す。②の `length_px` と違い、この上限は**足し算の結果**に掛かるので
+  `length_px x dom_nodes` で取る（根拠は A36。②を通った文書では発動しない）。
+  後段（paint / raster）はこの前提に寄りかかってよい
 - テストは偽の `TextMeasurer`（全角 1em / 半角 0.5em、ascent 0.88em / descent 0.12em）で
   フォントなしに書き、`dump_json()` の座標を検証する（DESIGN.md §10-3）
 

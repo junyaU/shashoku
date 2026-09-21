@@ -6,9 +6,11 @@
 //
 // 実行時に踏めない経路（輪郭を持たないグリフ、未対応の pixel_mode、HarfBuzz の確保失敗など）は
 // このテストでは踏めないので、`src/text/` 全体を grep して日本語が残っていないことも確かめてある。
+#include <array>
 #include <cstdint>
 #include <limits>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -63,13 +65,13 @@ TEST(TextMessageLanguage, GlyphSourceErrorsAreAscii) {
     float pixel_size;
     const char* what;
   };
-  const Case cases[] = {
+  const std::array<Case, 5> cases{{
       {99, 1, 32.0F, "不正な FontId"},
       {jp, 65535, 32.0F, "範囲外の glyph_id（FT_Load_Glyph の失敗）"},
       {jp, glyph, 0.0F, "pixel_size = 0"},
       {jp, glyph, std::numeric_limits<float>::quiet_NaN(), "pixel_size = NaN"},
       {jp, glyph, 1.0e30F, "pixel_size が上限超え"},
-  };
+  }};
   for (const Case& c : cases) {
     const Result<raster::GlyphBitmap> result =
         glyphs.rasterize(c.font, c.glyph, c.pixel_size, false);

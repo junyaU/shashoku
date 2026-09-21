@@ -28,6 +28,7 @@ import base64
 import json
 import os
 import re
+import shutil
 import struct
 import subprocess
 import sys
@@ -555,7 +556,11 @@ def judge_missing(shk, chrome):
 
 # ---------------------------------------------------------------- Chrome の起動
 def to_windows_path(path):
-    return subprocess.run(["wslpath", "-w", path], check=True,
+    # **必ず絶対パスにしてから渡す。** 相対パスのままだと `wslpath -w` も相対のまま返し、
+    # chrome.exe は自分のカレントディレクトリを基準に解釈して
+    # 「Failed to write file build\compare\01\chrome.png: 指定されたパスが見つかりません」
+    # で静かに失敗する（スクリーンショットだけが書かれない形で出る）。
+    return subprocess.run(["wslpath", "-w", os.path.abspath(path)], check=True,
                           capture_output=True, text=True).stdout.strip()
 
 
@@ -660,8 +665,8 @@ document.fonts.ready.then(function () {
     }
 
 
-def run_chrome(chrome, page_path, profile_dir, width, height, screenshot_path, timeout=180):
-    args = [
+def chrome_args(chrome, profile_dir, width, height):
+    return [
         chrome,
         "--headless",
         "--disable-gpu",
@@ -672,12 +677,27 @@ def run_chrome(chrome, page_path, profile_dir, width, height, screenshot_path, t
         "--window-size=%d,%d" % (width, height),
         "--user-data-dir=%s" % to_windows_path(profile_dir),
         "--virtual-time-budget=10000",
-        "--dump-dom",
     ]
+
+
+def launch_chrome(args, timeout):
+    if os.environ.get("SHASHOKU_COMPARE_DEBUG"):
+        print("  chrome: %s" % " ".join(args), file=sys.stderr)
+    return subprocess.run(args, capture_output=True, timeout=timeout)
+
+
+def run_chrome(chrome, page_path, profile_dir, width, height, screenshot_path, timeout=180):
+    """測定（--dump-dom）と、ついでにスクリーンショットを撮る。
+
+    `--screenshot` は `--dump-dom` より**前**に置く（後ろだと PNG が書かれない）。
+    それでも書かれないことがあるので、呼び出し側は `screenshot_only()` で撮り直せる。
+    """
+    args = chrome_args(chrome, profile_dir, width, height)
     if screenshot_path:
         args.append("--screenshot=%s" % to_windows_path(screenshot_path))
+    args.append("--dump-dom")
     args.append(to_file_url(page_path))
-    proc = subprocess.run(args, capture_output=True, timeout=timeout)
+    proc = launch_chrome(args, timeout)
     dom = proc.stdout.decode("utf-8", "replace")
     # base64 の文字だけを拾う（ページの中には measure.js の原文も入っているため）。
     pattern = r'id="shk-result"[^<>]*?data-json="([A-Za-z0-9+/=]+)"'
@@ -688,6 +708,18 @@ def run_chrome(chrome, page_path, profile_dir, width, height, screenshot_path, t
         raise RuntimeError("Chrome の測定結果が取れなかった（フォント読み込みで止まった？）\n"
                            + proc.stderr.decode("utf-8", "replace")[-2000:])
     return json.loads(base64.b64decode(match).decode("utf-8"))
+
+
+def screenshot_only(chrome, page_path, profile_dir, width, height, screenshot_path, timeout=180):
+    """スクリーンショットだけを撮り直す。撮れたかどうかを返す。"""
+    args = chrome_args(chrome, profile_dir, width, height)
+    args.append("--screenshot=%s" % to_windows_path(screenshot_path))
+    args.append(to_file_url(page_path))
+    proc = launch_chrome(args, timeout)
+    if os.path.exists(screenshot_path):
+        return True, ""
+    tail = proc.stderr.decode("utf-8", "replace").strip().splitlines()[-3:]
+    return False, "exit %d: %s" % (proc.returncode, " / ".join(tail))
 
 
 # ---------------------------------------------------------------- フォントの確認
@@ -822,7 +854,10 @@ def main():
     ctx.chrome = args.chrome
     ctx.out = args.out
     ctx.images = {"box": image_path}
-    ctx.profile = os.path.join(args.out, "chrome-profile")
+    # **ユーザーの普段の Chrome のプロファイルには触らない。** 実行ごとに使い捨ての
+    # ディレクトリを作り、終わったら消す（前の実行が残したロックを引きずらないよう
+    # プロセス ID を付ける）。Windows 側には何も置かない。
+    ctx.profile = os.path.join(args.out, "chrome-profile-%d" % os.getpid())
     os.makedirs(ctx.profile, exist_ok=True)
     with open(os.path.join(HERE, "measure.js"), encoding="utf-8") as f:
         ctx.measure_js = f.read()
@@ -936,13 +971,20 @@ def main():
                        for n in JUDGMENTS])
         results.append(entry)
 
-        if not args.no_images and os.path.exists(shk_png) and os.path.exists(shot):
+        if not os.path.exists(shot):
+            # 測定と同じ起動で撮れないことがある（原因は不明。--dump-dom と一緒に撮ると
+            # 書かれないことがある）。スクリーンショットだけでもう 1 回起動する。
+            ok, why = screenshot_only(ctx.chrome, page, ctx.profile, png_w, png_h, shot)
+            if not ok:
+                entry["errors"].append("chrome: スクリーンショットが書かれなかった（%s）" % why)
+        if os.path.exists(shot) and not args.no_images and os.path.exists(shk_png):
             try:
                 png_side_by_side(shk_png, shot, os.path.join(case_dir, "side-by-side.png"))
             except Exception as exc:  # noqa: BLE001
                 entry["errors"].append("side-by-side: %s" % exc)
 
     write_reports(args.out, rows, results, font_report)
+    shutil.rmtree(ctx.profile, ignore_errors=True)
     print("\n" + format_table(rows))
     print("\n報告: %s" % os.path.join(args.out, "report.txt"))
     return 0

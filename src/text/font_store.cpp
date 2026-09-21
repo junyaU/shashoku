@@ -108,8 +108,8 @@ Result<std::unique_ptr<FontEntry>> make_entry(
   const FT_Error error = FT_New_Memory_Face(
       library, bytes->data(), static_cast<FT_Long>(bytes->size()), face_index, face.out());
   if (error != 0 || face.get() == nullptr) {
-    return fail(ErrorKind::FontLoad, "cannot parse the font (face " +
-                                         std::to_string(face_index) + "): " + ft_error_text(error));
+    return fail(ErrorKind::FontLoad, "cannot parse the font (face " + std::to_string(face_index) +
+                                         "): " + ft_error_text(error));
   }
   num_faces = face.get()->num_faces;
 

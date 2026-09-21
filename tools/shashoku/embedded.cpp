@@ -96,9 +96,11 @@ bool has_default_font() noexcept {
 #endif
 }
 
+// 大きさの無い配列（アセンブラの記号）をポインタにするので、暗黙の decay ではなく
+// 先頭要素のアドレスを明示的に取る。長さは同じ asm ブロックが `.quad` で置いている。
 std::span<const std::uint8_t> default_font_regular() noexcept {
 #if defined(SHASHOKU_EMBED_DEFAULT_FONT)
-  return {kShashokuDefaultFontRegularBegin,
+  return {&kShashokuDefaultFontRegularBegin[0],
           static_cast<std::size_t>(kShashokuDefaultFontRegularSize)};
 #else
   return {};
@@ -107,7 +109,8 @@ std::span<const std::uint8_t> default_font_regular() noexcept {
 
 std::span<const std::uint8_t> default_font_bold() noexcept {
 #if defined(SHASHOKU_EMBED_DEFAULT_FONT)
-  return {kShashokuDefaultFontBoldBegin, static_cast<std::size_t>(kShashokuDefaultFontBoldSize)};
+  return {&kShashokuDefaultFontBoldBegin[0],
+          static_cast<std::size_t>(kShashokuDefaultFontBoldSize)};
 #else
   return {};
 #endif
@@ -122,11 +125,12 @@ std::string_view default_font_version() noexcept {
 }
 
 std::string_view license_text() noexcept {
-  return {kShashokuLicenseBegin, static_cast<std::size_t>(kShashokuLicenseSize)};
+  return {&kShashokuLicenseBegin[0], static_cast<std::size_t>(kShashokuLicenseSize)};
 }
 
 std::string_view third_party_license_text() noexcept {
-  return {kShashokuThirdPartyLicenseBegin, static_cast<std::size_t>(kShashokuThirdPartyLicenseSize)};
+  return {&kShashokuThirdPartyLicenseBegin[0],
+          static_cast<std::size_t>(kShashokuThirdPartyLicenseSize)};
 }
 
 }  // namespace shashoku::cli

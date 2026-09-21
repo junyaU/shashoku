@@ -65,7 +65,7 @@ Chrome の方が日本語組版として劣る）に仕分けてから読む。�
 - `\\wsl.localhost\...` の HTML とフォントは `file://` で読める（`@font-face` も通る）。
   パスの変換は `wslpath -w`
 - **ユーザーの普段のプロファイルには触らない。** `--user-data-dir` に `--out` の下の
-  使い捨てディレクトリ（`build/compare/chrome-profile`）を必ず渡している。
+  使い捨てディレクトリ（`build/compare/chrome-profile-<pid>`）を必ず渡し、終わったら消す。
   Windows 側には何も書かない
 - `--window-size` は当てにならない。WSL から呼ぶと幅は 500 px 未満にならず、
   `--dump-dom` のときは `window.innerWidth` が 0 になる。そのため紙面は CSS 側で決めている

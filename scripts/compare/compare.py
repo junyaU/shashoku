@@ -1203,7 +1203,11 @@ def main():
                 entry["errors"].append("side-by-side: %s" % exc)
 
     write_reports(args.out, rows, results, font_report)
-    shutil.rmtree(ctx.profile, ignore_errors=True)
+    # 使い捨てプロファイルを消す。chrome.exe が `chrome-profile` という名前の
+    # ディレクトリを別に作ることがある（中身は空の Default だけ）ので、まとめて片付ける。
+    for name in os.listdir(args.out):
+        if name.startswith("chrome-profile"):
+            shutil.rmtree(os.path.join(args.out, name), ignore_errors=True)
     print("\n" + format_table(rows))
     print("\n報告: %s" % os.path.join(args.out, "report.txt"))
     return 0

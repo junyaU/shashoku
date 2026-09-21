@@ -142,11 +142,12 @@ window.__shkMeasure = function (opts) {
     var rubies = block.tagName.toLowerCase() === 'ruby'
       ? [block] : Array.prototype.slice.call(block.querySelectorAll('ruby'));
     rubies.forEach(function (ruby) {
-      var base = [], annotation = [];
+      var base = [], annotation = [], label = '';
       (function visit(node, inRt) {
         for (var c = node.firstChild; c; c = c.nextSibling) {
           if (c.nodeType === Node.TEXT_NODE) {
             if (c.data.trim() === '') continue;
+            label += c.data.replace(/\s+/g, '');   // <rp> は visit に入らないので混ざらない
             var range = document.createRange();
             range.selectNodeContents(c);
             (inRt ? annotation : base).push(box(range.getBoundingClientRect()));
@@ -174,7 +175,7 @@ window.__shkMeasure = function (opts) {
         base_last_cluster_start: base[base.length - 1].last_cluster_start,
         rt_box: [Math.min.apply(null, annotation.map(function (b) { return b.inline_start; })),
                  Math.max.apply(null, annotation.map(function (b) { return b.inline_end; }))],
-        text: ruby.textContent.replace(/\s+/g, '')
+        text: label
       });
     });
     return groups;
@@ -204,13 +205,21 @@ window.__shkMeasure = function (opts) {
       cur.block_end = Math.max(cur.block_end, it.block_end);
     });
 
-    // ルビは inline 範囲が最も重なる行に入れる（行の組み立てには使わない）。
+    // ルビは「block 方向に一番近い行」に入れる（注記は行のすぐ上／右に出る）。
+    // 同じくらい近い行が複数あれば inline の重なりが大きい方。inline の重なりだけで選ぶと、
+    // <br> で分かれた 2 行がどちらも行頭から始まるので取り違える（実測: ケース 7）。
     items.forEach(function (it) {
       if (!it.ruby) return;
-      var best = null, bestOverlap = -1;
+      var center = (it.block_start + it.block_end) / 2;
+      var best = null, bestKey = null;
       lines.forEach(function (ln) {
+        var d = Math.max(ln.block_start - center, center - ln.block_end, 0);
         var o = Math.min(ln.inline_end, it.inline_end) - Math.max(ln.inline_start, it.inline_start);
-        if (o > bestOverlap) { bestOverlap = o; best = ln; }
+        var key = [Math.round(d * 100), -o];
+        if (bestKey === null || key[0] < bestKey[0] ||
+            (key[0] === bestKey[0] && key[1] < bestKey[1])) {
+          bestKey = key; best = ln;
+        }
       });
       if (best !== null) best.ruby.push(it);
     });

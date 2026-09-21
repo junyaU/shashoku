@@ -46,6 +46,17 @@ struct RenderLimits {
   // font-size の上限（**デバイスピクセル** = 計算値の font-size x scale）。
   // グリフのビットマップは pixel_size の 2 乗で大きくなる。`<rt>` を含む全要素が対象。
   float font_size_device_px = 2048.0F;
+  // 長さ・座標の絶対値の上限（CSS px）。計算値化で `em` を掛けた結果や、px で直接書かれた
+  // 値がこれを超えたら `LimitExceeded`（ARCHITECTURE.md A-new）。
+  //
+  // 2^24 を選んだ根拠:
+  //   - 出力の絶対上限（1 辺 2^32-1 px）より十分小さいので、これ以下の長さだけを扱う限り
+  //     座標の加算が出力の表せる範囲を大きく踏み越えることはない
+  //   - `dom_nodes` = 20,000 段ぶん足しても 2^24 x 2x10^4 = 3.4x10^11 で、float の上限
+  //     3.4x10^38 に遠く届かない（入れ子で足し込んでも inf / NaN にならない）
+  //   - 2^24 は float が整数を 1 刻みで表せる上限でもあるので、この範囲の長さは
+  //     整数部が丸められない
+  float length_px = 16777216.0F;  // 2^24
   // RenderOptions::scale の上限。
   float scale = 256.0F;
 

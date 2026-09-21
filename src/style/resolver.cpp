@@ -620,7 +620,8 @@ Result<void> read_image_attributes(const html::Node& node, StyledNode& styled) {
 
 class Resolver {
  public:
-  explicit Resolver(std::size_t max_style_rules) : max_style_rules_(max_style_rules) {}
+  Resolver(std::size_t max_style_rules, float max_length_px)
+      : max_style_rules_(max_style_rules), max_length_px_(max_length_px) {}
 
   Result<void> load(const html::Node& root);
   Result<StyledNode> build(const html::Node& root);
@@ -635,6 +636,7 @@ class Resolver {
                                                                 const StyleState& parent) const;
 
   std::size_t max_style_rules_ = kMaxStyleRules;
+  [[maybe_unused]] float max_length_px_ = kMaxLengthPx;
   Stylesheet ua_;
   Stylesheet author_;
 };
@@ -864,12 +866,13 @@ Result<StyledNode> Resolver::build(const html::Node& root) {
 
 }  // namespace
 
-Result<StyledNode> resolve(const html::Node& root, std::size_t max_style_rules) {
+Result<StyledNode> resolve(const html::Node& root, std::size_t max_style_rules,
+                           float max_length_px) {
   if (root.type != html::Node::Type::Element) {
     return fail(ErrorKind::Internal, "style::resolve() expects the synthetic root element",
                 root.location);
   }
-  Resolver resolver(max_style_rules);
+  Resolver resolver(max_style_rules, max_length_px);
   if (Result<void> loaded = resolver.load(root); !loaded) {
     return std::unexpected(loaded.error());
   }

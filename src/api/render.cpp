@@ -52,6 +52,8 @@ static_assert(RenderLimits{}.nesting_depth == html::kMaxNestingDepth,
               "RenderLimits::nesting_depth と html::kMaxNestingDepth の既定値が食い違っている");
 static_assert(RenderLimits{}.style_rules == style::kMaxStyleRules,
               "RenderLimits::style_rules と style::kMaxStyleRules の既定値が食い違っている");
+static_assert(RenderLimits{}.length_px == style::kMaxLengthPx,
+              "RenderLimits::length_px と style::kMaxLengthPx の既定値が食い違っている");
 static_assert(RenderLimits{}.image_pixels == png::kMaxPixels,
               "RenderLimits::image_pixels と png::kMaxPixels の既定値が食い違っている");
 static_assert(RenderLimits{}.device_pixels == raster::kMaxDevicePixels,
@@ -478,7 +480,7 @@ Result<RenderResult> render_impl(std::string_view html, const ResourceSource& so
   if (const Result<void> ok = check_dom_limits(*dom, options.limits); !ok) {
     return std::unexpected(ok.error());
   }
-  const Result<style::StyledNode> styled = style::resolve(*dom, options.limits.style_rules);
+  const Result<style::StyledNode> styled = style::resolve(*dom, options.limits.style_rules, options.limits.length_px);
   if (!styled) {
     return std::unexpected(styled.error());
   }
@@ -549,7 +551,7 @@ Result<std::string> dump_impl(std::string_view html, const ResourceSource& sourc
   if (stage == DumpStage::Dom) {
     return html::dump_json(*dom);
   }
-  const Result<style::StyledNode> styled = style::resolve(*dom, options.limits.style_rules);
+  const Result<style::StyledNode> styled = style::resolve(*dom, options.limits.style_rules, options.limits.length_px);
   if (!styled) {
     return std::unexpected(styled.error());
   }

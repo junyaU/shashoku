@@ -24,13 +24,22 @@ namespace shashoku::style {
 // 既定と同じ（食い違わないことを src/api/render.cpp が static_assert する）。
 inline constexpr std::size_t kMaxStyleRules = 2000;
 
+// 長さ・座標の絶対値の上限（CSS px）の既定。`RenderLimits::length_px` と同じ値で、
+// 一致は src/api/render.cpp の static_assert が検査する（kMaxStyleRules と同じ流儀）。
+inline constexpr float kMaxLengthPx = 16777216.0F;  // 2^24
+
 // 合成ルート `#root`（html::parse() の返り値）を受け取り、全ノードに ComputedStyle が
 // 確定した木を返す。`display: none` の要素と `<style>` / `<rp>` は木から落ちる。
 //
 // fail loudly（DESIGN.md §3-6）: 対応外のプロパティ / 値 / セレクタ / レイアウトは
 // すべて入力位置つきのエラーになる。黙って無視する宣言は 1 つもない。
 // 規則が max_style_rules を超えたら LimitExceeded。
-Result<StyledNode> resolve(const html::Node& root, std::size_t max_style_rules = kMaxStyleRules);
+//
+// 出力の不変条件（ARCHITECTURE.md A-new）: 返ってきた木の ComputedStyle に入っている
+// 長さは、`font-size` を除いてすべて有限で、絶対値が max_length_px 以内である
+// （`%` と `auto` は layout が解決するので対象外）。超えたら LimitExceeded（位置つき）。
+Result<StyledNode> resolve(const html::Node& root, std::size_t max_style_rules = kMaxStyleRules,
+                           float max_length_px = kMaxLengthPx);
 
 // --dump-stage=style の出力。キー順は固定（DESIGN.md §3-3）。
 std::string dump_json(const StyledNode& root);

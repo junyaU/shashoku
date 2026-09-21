@@ -3,13 +3,19 @@
 # 出力 PNG のバイト列が変わり、純粋関数の原則とゴールデンテストが崩れるため。
 include(FetchContent)
 
+# 版は変数に持たせて URL に差し込む。`shashoku --version` がこの値をそのまま出す
+# （利用者が「どの依存でできた PNG か」を言えるようにするため。#20）。
+set(SHASHOKU_ZLIB_VERSION 1.3.2)
+set(SHASHOKU_FREETYPE_VERSION 2.14.3)
+set(SHASHOKU_HARFBUZZ_VERSION 14.4.0)
+
 # ---- zlib（Phase 0: PNG エンコーダの deflate）--------------------------------
 set(ZLIB_BUILD_TESTING OFF CACHE BOOL "" FORCE)
 set(ZLIB_BUILD_SHARED OFF CACHE BOOL "" FORCE)
 set(ZLIB_BUILD_STATIC ON CACHE BOOL "" FORCE)
 set(ZLIB_INSTALL OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(zlib
-  URL https://github.com/madler/zlib/releases/download/v1.3.2/zlib-1.3.2.tar.gz
+  URL "https://github.com/madler/zlib/releases/download/v${SHASHOKU_ZLIB_VERSION}/zlib-${SHASHOKU_ZLIB_VERSION}.tar.gz"
   URL_HASH SHA256=bb329a0a2cd0274d05519d61c667c062e06990d72e125ee2dfa8de64f0119d16)
 FetchContent_MakeAvailable(zlib)
 shashoku_mark_system(ZLIB::ZLIBSTATIC)
@@ -38,7 +44,7 @@ endforeach()
 set(FT_ENABLE_ERROR_STRINGS ON CACHE BOOL "" FORCE)  # FontLoad エラーの message に使う
 set(SKIP_INSTALL_ALL ON CACHE BOOL "" FORCE)
 FetchContent_Declare(freetype
-  URL https://download.savannah.gnu.org/releases/freetype/freetype-2.14.3.tar.xz
+  URL "https://download.savannah.gnu.org/releases/freetype/freetype-${SHASHOKU_FREETYPE_VERSION}.tar.xz"
   URL_HASH SHA256=36bc4f1cc413335368ee656c42afca65c5a3987e8768cc28cf11ba775e785a5f)
 FetchContent_MakeAvailable(freetype)
 # FreeType のビルドツリーには CMake の FindFreetype 互換の名前が無い（インストール時の
@@ -62,7 +68,7 @@ shashoku_mark_system(freetype)
 # SOURCE_SUBDIR に存在しないディレクトリを指すのは「取得はするが add_subdirectory しない」
 # ための定石（CMake 3.18+）。
 FetchContent_Declare(harfbuzz
-  URL https://github.com/harfbuzz/harfbuzz/releases/download/14.4.0/harfbuzz-14.4.0.tar.xz
+  URL "https://github.com/harfbuzz/harfbuzz/releases/download/${SHASHOKU_HARFBUZZ_VERSION}/harfbuzz-${SHASHOKU_HARFBUZZ_VERSION}.tar.xz"
   URL_HASH SHA256=2357ed966c6ced7bfa720b0640c0231065af01158fbea215093ffa15aed44371
   SOURCE_SUBDIR do-not-add-subdirectory)
 FetchContent_MakeAvailable(harfbuzz)

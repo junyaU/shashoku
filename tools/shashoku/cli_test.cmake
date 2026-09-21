@@ -3,6 +3,11 @@
 #
 # 「正常に PNG ができる」「未対応 CSS で終了コード 1 とエラーメッセージ」
 # 「--dump-stage=box が JSON を出す」の 3 つだけを見る。組版の中身は integration_test の担当。
+#
+# 配布（#20）で足したケース:
+#   version / license   --version と --license の中身
+#   default_font        --font 無しで PNG が出て、`--font <同じ OTF>` とバイト単位で一致する
+#   examples            examples/*.html の先頭コメントの「そのまま貼れる 1 行」が実際に動く
 
 function(expect_equal actual expected what)
   if(NOT actual STREQUAL expected)
@@ -135,6 +140,131 @@ elseif(CASE STREQUAL "dump_box")
   if(NOT stdout_text MATCHES "\"root\"")
     message(FATAL_ERROR "ボックスツリーの JSON に見えません: ${stdout_text}")
   endif()
+
+elseif(CASE STREQUAL "version")
+  # --version は試用報告にそのまま貼る欄（#20）。shashoku 自身・依存 3 つ・既定フォントを出す。
+  execute_process(
+    COMMAND "${CLI}" --version
+    RESULT_VARIABLE status OUTPUT_VARIABLE stdout_text ERROR_VARIABLE stderr_text)
+  expect_equal("${status}" "0" "exit code (stderr: ${stderr_text})")
+  foreach(needle "shashoku [0-9]+\\.[0-9]+\\.[0-9]+" "zlib [0-9]" "FreeType [0-9]"
+                 "HarfBuzz [0-9]" "default font: Noto Sans JP")
+    if(NOT stdout_text MATCHES "${needle}")
+      message(FATAL_ERROR "--version に ${needle} がありません: ${stdout_text}")
+    endif()
+  endforeach()
+  # 入力ファイルが無くても動く（引数エラーにしない）
+  if(NOT stderr_text STREQUAL "")
+    message(FATAL_ERROR "--version が stderr に何か書いています: ${stderr_text}")
+  endif()
+
+elseif(CASE STREQUAL "license")
+  # SIL OFL 1.1 の「ライセンス文の同梱」を、バイナリ 1 つでも満たせることの検査（#20）。
+  execute_process(
+    COMMAND "${CLI}" --license
+    RESULT_VARIABLE status OUTPUT_VARIABLE stdout_text ERROR_VARIABLE stderr_text)
+  expect_equal("${status}" "0" "exit code (stderr: ${stderr_text})")
+  foreach(needle "MIT License" "zlib" "The FreeType Project LICENSE" "HarfBuzz"
+                 "SIL OPEN FONT LICENSE Version 1.1")
+    if(NOT stdout_text MATCHES "${needle}")
+      message(FATAL_ERROR "--license に ${needle} がありません")
+    endif()
+  endforeach()
+
+elseif(CASE STREQUAL "default_font")
+  # 既定フォント（#20 / A-new-1）。CLI 層だけの機能で、render() の署名は変わっていない。
+  set(bold "${FONT_DIR}/NotoSansJP-Bold.otf")
+
+  # (1) --font 無しで PNG が出る
+  set(default_png "${WORK_DIR}/default_hello.png")
+  file(REMOVE "${default_png}")
+  execute_process(
+    COMMAND "${CLI}" "${SOURCE_DIR}/examples/hello.html" -o "${default_png}" --width 600
+    RESULT_VARIABLE status ERROR_VARIABLE stderr_text)
+  expect_equal("${status}" "0" "exit code without --font (stderr: ${stderr_text})")
+  file(READ "${default_png}" signature LIMIT 8 HEX)
+  expect_equal("${signature}" "89504e470d0a1a0a" "PNG signature")
+
+  # (2) 受け入れ条件の要: 埋め込みと `--font <同じ OTF>` がバイト単位で一致する。
+  #     og_card は font-weight: 700 を含むので、Regular / Bold 2 本の選び方まで見る。
+  set(explicit_png "${WORK_DIR}/explicit_hello.png")
+  execute_process(
+    COMMAND "${CLI}" "${SOURCE_DIR}/examples/hello.html" --font "${font}" --font "${bold}"
+            -o "${explicit_png}" --width 600
+    RESULT_VARIABLE status ERROR_VARIABLE stderr_text)
+  expect_equal("${status}" "0" "exit code with --font (stderr: ${stderr_text})")
+  file(READ "${default_png}" a HEX)
+  file(READ "${explicit_png}" b HEX)
+  if(NOT a STREQUAL b)
+    message(FATAL_ERROR "既定フォントと --font <同じ OTF> の PNG が一致しません: hello.html")
+  endif()
+
+  set(default_og "${WORK_DIR}/default_og.png")
+  set(explicit_og "${WORK_DIR}/explicit_og.png")
+  execute_process(
+    COMMAND "${CLI}" "${SOURCE_DIR}/examples/og_card.html"
+            --image "icon=${SOURCE_DIR}/examples/icon.png" -o "${default_og}"
+            --width 1200 --height 630 --scale 0.5
+    RESULT_VARIABLE status ERROR_VARIABLE stderr_text)
+  expect_equal("${status}" "0" "og_card without --font (stderr: ${stderr_text})")
+  execute_process(
+    COMMAND "${CLI}" "${SOURCE_DIR}/examples/og_card.html" --font "${font}" --font "${bold}"
+            --image "icon=${SOURCE_DIR}/examples/icon.png" -o "${explicit_og}"
+            --width 1200 --height 630 --scale 0.5
+    RESULT_VARIABLE status ERROR_VARIABLE stderr_text)
+  expect_equal("${status}" "0" "og_card with --font (stderr: ${stderr_text})")
+  file(READ "${default_og}" a HEX)
+  file(READ "${explicit_og}" b HEX)
+  if(NOT a STREQUAL b)
+    message(FATAL_ERROR "既定フォントと --font <同じ OTF> の PNG が一致しません: og_card.html")
+  endif()
+
+  # (3) --font を書いたらそちらが優先される。欧文フォントだけを渡すと和文が豆腐になる
+  #     （= 既定フォントが黙って足されていない）。
+  set(latin_png "${WORK_DIR}/latin_hello.png")
+  execute_process(
+    COMMAND "${CLI}" "${SOURCE_DIR}/examples/hello.html" --font "${FONT_DIR}/NotoSans-Regular.ttf"
+            -o "${latin_png}" --width 600
+    RESULT_VARIABLE status ERROR_VARIABLE stderr_text)
+  expect_equal("${status}" "0" "exit code with Latin-only font (stderr: ${stderr_text})")
+  if(NOT stderr_text MATCHES "missing-glyph")
+    message(FATAL_ERROR "欧文フォントだけなのに豆腐の警告がありません: ${stderr_text}")
+  endif()
+  file(READ "${latin_png}" c HEX)
+  file(READ "${default_png}" a HEX)
+  if(a STREQUAL c)
+    message(FATAL_ERROR "--font が既定フォントより優先されていません")
+  endif()
+
+elseif(CASE STREQUAL "examples")
+  # examples/*.html の先頭コメントに書いた「そのまま貼れる 1 行」を、**その行のまま**実行する
+  # （README の約束が腐らないようにするための検査。#20）。--font を要求していないことも見る。
+  foreach(name hello og_card ruby vertical kinsoku)
+    set(path "${SOURCE_DIR}/examples/${name}.html")
+    file(READ "${path}" content)
+    if(NOT content MATCHES "[\r\n][ \t]*(shashoku examples/[^\r\n]*)")
+      message(FATAL_ERROR "examples/${name}.html に「そのまま貼れる 1 行」がありません")
+    endif()
+    set(line "${CMAKE_MATCH_1}")
+    if(line MATCHES "--font")
+      message(FATAL_ERROR "examples/${name}.html の 1 行が --font を要求しています: ${line}")
+    endif()
+    separate_arguments(args UNIX_COMMAND "${line}")
+    list(POP_FRONT args)  # 先頭の "shashoku"（実行ファイルは ${CLI}）
+    set(output "${WORK_DIR}/example_${name}.png")
+    file(REMOVE "${output}")
+    # 末尾の -o が勝つ（リポジトリを汚さずに、書かれているとおりの引数で動かす）。
+    execute_process(
+      COMMAND "${CLI}" ${args} -o "${output}"
+      WORKING_DIRECTORY "${SOURCE_DIR}"
+      RESULT_VARIABLE status ERROR_VARIABLE stderr_text)
+    expect_equal("${status}" "0" "examples/${name}.html: exit code (stderr: ${stderr_text})")
+    if(NOT EXISTS "${output}")
+      message(FATAL_ERROR "examples/${name}.html: PNG が作られていません")
+    endif()
+    file(READ "${output}" signature LIMIT 8 HEX)
+    expect_equal("${signature}" "89504e470d0a1a0a" "examples/${name}.html: PNG signature")
+  endforeach()
 
 else()
   message(FATAL_ERROR "知らないケースです: ${CASE}")

@@ -1,9 +1,12 @@
 // shashoku の CLI（ARCHITECTURE.md §3.10）。
 //
-//   shashoku input.html --font NotoSansJP.otf -o out.png --width 800
+//   shashoku input.html -o out.png --width 800
 //
 // 公開 API だけを使う（`src/` のヘッダは include しない）。ライブラリの利用例も兼ねる。
 // 終了コード: 0 成功 / 1 レンダリングエラー・入出力エラー / 2 引数の誤り。
+//
+// `--font` を省いたときは、バイナリに埋め込んだ既定フォントを使う（#20 / A-new-1）。
+// **これは CLI 層だけの機能**で、ライブラリはバイト列しか受け取らない（embedded.hpp）。
 #include <algorithm>
 #include <array>
 #include <charconv>
@@ -23,6 +26,7 @@
 #include <utility>
 #include <vector>
 
+#include "embedded.hpp"
 #include "shashoku/shashoku.hpp"
 
 namespace {
@@ -32,9 +36,10 @@ constexpr int kExitError = 1;
 constexpr int kExitUsage = 2;
 
 void print_usage(std::ostream& out) {
-  out << R"(使い方: shashoku <input.html> --font <file> [options]
+  out << R"(使い方: shashoku <input.html> [options]
 
-  --font <file>           フォント（複数指定可。指定順がフォールバック順）
+  --font <file>           フォント（複数指定可。指定順がフォールバック順）。
+                          省略すると埋め込みの既定フォントを使う（--version で版を表示）
   --image <name>=<file>   PNG 画像。<img src="name"> で参照する
   -o, --output <file>     出力先。PNG を書くときは必須（ダンプは省略で標準出力）
   --width <N>             ビューポートの幅（CSS px、既定 1200）
@@ -44,6 +49,8 @@ void print_usage(std::ostream& out) {
   --overflow <policy>     あふれ処理 oidashi | oikomi | burasage（既定 oidashi）
   --line-break <mode>     行分割の厳しさ strict | normal | loose（既定 strict）
   --dump-stage <stage>    中間表現を出す dom | style | box | display-list | svg
+  --version               版を表示する（shashoku・依存ライブラリ・既定フォント）
+  --license               ライセンスを表示する（shashoku の MIT と第三者ソフトウェア）
   -h, --help              この使い方を表示する
 
 約物の空き（JLREQ 3.1）:
@@ -54,6 +61,21 @@ void print_usage(std::ostream& out) {
 )";
 }
 
+// 試用報告（.github/ISSUE_TEMPLATE/）にそのまま貼れる形にする。
+// 「どの版で組んだ PNG か」は依存ライブラリと既定フォントまで含めて決まる（A32）。
+void print_version(std::ostream& out) {
+  out << "shashoku " << shashoku::version() << '\n'
+      << "  zlib " << SHASHOKU_ZLIB_VERSION << '\n'
+      << "  FreeType " << SHASHOKU_FREETYPE_VERSION << '\n'
+      << "  HarfBuzz " << SHASHOKU_HARFBUZZ_VERSION << '\n'
+      << "  default font: " << shashoku::cli::default_font_version() << '\n';
+}
+
+// SIL OFL 1.1 が求める「ライセンス文の同梱」を、バイナリ 1 つでも満たすための出口。
+void print_license(std::ostream& out) {
+  out << shashoku::cli::license_text() << '\n' << shashoku::cli::third_party_license_text();
+}
+
 struct Arguments {
   std::string input;
   std::vector<std::string> fonts;
@@ -62,6 +84,8 @@ struct Arguments {
   shashoku::RenderOptions options;
   std::optional<shashoku::DumpStage> stage;
   bool help = false;
+  bool version = false;
+  bool license = false;
 };
 
 // 引数の誤りは message を持って返る（使い方を出して終了コード 2）。
@@ -154,8 +178,17 @@ class Parser {
     Arguments parsed;
     while (index_ < args_.size()) {
       const std::string_view arg = args_[index_++];
+      // 情報を出すだけのオプションは、入力ファイルが無くても動く（そこで読み終わる）。
       if (arg == "-h" || arg == "--help") {
         parsed.help = true;
+        return parsed;
+      }
+      if (arg == "--version") {
+        parsed.version = true;
+        return parsed;
+      }
+      if (arg == "--license") {
+        parsed.license = true;
         return parsed;
       }
       if (const auto step = parse_one(arg, parsed); !step) {
@@ -336,8 +369,10 @@ class Parser {
     if (parsed.input.empty()) {
       return error("入力の HTML ファイルを指定してください");
     }
-    if (parsed.fonts.empty()) {
-      return error("--font でフォントを 1 つ以上指定してください");
+    if (parsed.fonts.empty() && !shashoku::cli::has_default_font()) {
+      return error(
+          "--font でフォントを 1 つ以上指定してください"
+          "（このビルドには既定フォントが埋め込まれていません）");
     }
     if (!parsed.stage && parsed.output.empty()) {
       return error("PNG の出力先を -o で指定してください（標準出力には書きません）");
@@ -406,6 +441,12 @@ int run(const Arguments& arguments) {
   const std::string html(source->begin(), source->end());
 
   shashoku::FontSet fonts;
+  if (arguments.fonts.empty()) {
+    // 既定フォント（#20）。**順序は Regular → Bold**。`--font <Regular> --font <Bold>` と
+    // 書いたときとバイト単位で同じ PNG が出ることを cli_test.cmake が検査している。
+    fonts.add(shashoku::cli::default_font_regular());
+    fonts.add(shashoku::cli::default_font_bold());
+  }
   for (const std::string& path : arguments.fonts) {
     const std::optional<std::vector<std::uint8_t>> bytes = read_binary(path);
     if (!bytes) {
@@ -466,6 +507,14 @@ int cli_main(std::span<const std::string_view> args) {
   }
   if (arguments->help) {
     print_usage(std::cout);
+    return kExitOk;
+  }
+  if (arguments->version) {
+    print_version(std::cout);
+    return kExitOk;
+  }
+  if (arguments->license) {
+    print_license(std::cout);
     return kExitOk;
   }
   return run(*arguments);

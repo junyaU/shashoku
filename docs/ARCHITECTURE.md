@@ -819,6 +819,19 @@ release ビルドの動的依存は `libc++.so.1` / `libc++abi.so.1` / `libunwin
   **ubuntu:22.04 のコンテナでビルドする**（= glibc 2.35 以降が前提。Ubuntu 22.04 /
   Debian 12 以降）。**musl の環境（Alpine など）では動かない**。「どの Linux でも動く」とは
   言えなくなったので、README と配布物の README に前提を明記する
+- **この前提は静かに壊れる**（新しいランナーでビルドすると、要求する glibc のシンボル版だけが
+  上がって「古いディストリで GLIBC_2.39 not found」になる。絵もテストも変わらないので気づけない）。
+  だから 2 つを機械で押さえる:
+  1. **ビルドは必ず ubuntu:22.04 のコンテナの中**（`scripts/dist_container_build.sh` を
+     `docker run ... ubuntu:22.04` で呼ぶ。CI の `dist` ジョブと release.yml の両方）。
+     22.04 には clang-18 / libc++-18 が無いので apt.llvm.org の jammy-18 を足す。
+     CMake は 22.04 の 3.22.1 で足りる（`cmake_minimum_required` と同じ）
+  2. **`scripts/check_dist_binary.sh`** が NEEDED と**要求する glibc のシンボル版の最大**
+     （既定の上限 2.35）を検査する。`readelf --dyn-syms` の `@GLIBC_x.y` を集めて最大を取る
+     （`2.4 < 2.35` を正しく比べるため major / minor は整数で見る）
+- workflow のシェルは `scripts/` に切り出してある（workflow に埋め込むと**ローカルで一度も
+  動かせない**）。`check_dist_binary.sh` / `pack_dist.sh` / `release_notes.sh` は docker 無しで
+  回せる。`dist_container_build.sh` は `SHASHOKU_SKIP_TOOLCHAIN=1` で apt の部分だけ飛ばせる
 - **`cmake/CompilerOptions.cmake`（`-ffp-contract=off` など決定性のフラグ）は変えない。**
   変えるのは CLI のリンク方法だけで、浮動小数点の丸めには触れない。実測でも、`dist` と
   通常の release の CLI で examples 5 本 + 禁則 3 方式の PNG がバイト単位で一致した

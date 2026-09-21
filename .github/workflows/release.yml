@@ -5,8 +5,15 @@ name: Release
 # glibc は動的なので **glibc 2.35 以降 = Ubuntu 22.04 以降**が前提。A-new-2）と、
 # サンプル・README・ライセンスを入れた tar.gz、その SHA256。
 #
+# **ビルドは ubuntu:22.04 のコンテナの中で行う**。glibc を動的にしているので、
+# ビルド機の glibc の版がそのまま「動く環境の下限」になる。ランナー（ubuntu-24.04 /
+# glibc 2.39）で直接ビルドすると 22.04 で起動できないバイナリができる。
+#
 # **作るのはドラフトのリリース**。公開はユーザーが GitHub の Releases の画面で
 # "Publish release" を押して行う（タグを push しただけでは公開されない）。
+#
+# 中身のほとんどは scripts/ に切り出してある（workflow に埋めるとローカルで一度も
+# 動かせないため）。この workflow 自体は、最初にタグを push したときが初回の実行になる。
 on:
   push:
     tags: ['v*']
@@ -15,122 +22,34 @@ permissions:
   contents: write  # gh release create のため
 
 env:
-  ARCHIVE_DIR: shashoku-linux-x86_64
+  ARCHIVE_NAME: shashoku-linux-x86_64
 
 jobs:
   release:
-    name: linux-x86_64
+    name: linux-x86_64（ubuntu:22.04 の中でビルド）
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
 
-      - name: Install toolchain
+      # ツールチェーンの導入 → configure / build / ctest 全件（ゴールデン 16 枚と
+      # Cli.examples を含む）→ NEEDED と要求 glibc の検査 → アーカイブの組み立て。
+      # 依存はキャッシュしない（リリースは滅多に走らないので、毎回取り直す）。
+      - name: Build, test and pack inside ubuntu:22.04
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            ninja-build clang-18 libc++-18-dev libc++abi-18-dev
-
-      # dist = Release + SHASHOKU_STATIC_CLI + 既定フォントの埋め込み。
-      - name: Configure
-        run: cmake --preset dist
-
-      - name: Build
-        run: cmake --build --preset dist
-
-      # 配布するのと同じ設定でビルドしたバイナリで、ゴールデン画像を含む全件を通す
-      # （README「決定性」の保証範囲は「同じ版・同じ依存」で語っているため。A32）。
-      - name: Test
-        run: ctest --preset dist
-
-      # 動的に残ってよいのは glibc（libc / libm）だけ。libc++ / libc++abi / libunwind /
-      # libgcc_s が残っていたら、素の Ubuntu では起動できない（A-new-2）。
-      - name: Check the dynamic dependencies
-        run: |
-          set -eu
-          bin=build/dist/tools/shashoku/shashoku
-          file "$bin"
-          readelf -d "$bin" | grep NEEDED || true
-          unexpected=$(readelf -d "$bin" | sed -n 's/.*NEEDED.*\[\(.*\)\].*/\1/p' \
-            | grep -v -E '^(libc\.so\.6|libm\.so\.6|ld-linux-x86-64\.so\.2)$' || true)
-          if [ -n "$unexpected" ]; then
-            echo "::error::glibc 以外の動的依存が残っています: $unexpected"
-            exit 1
-          fi
-          "$bin" --version
-
-      - name: Assemble the archive
-        run: |
-          set -eu
-          dir="$ARCHIVE_DIR"
-          rm -rf "dist/$dir"
-          mkdir -p "dist/$dir"
-          cp build/dist/tools/shashoku/shashoku "dist/$dir/shashoku"
-          strip "dist/$dir/shashoku"
-          cp -R examples "dist/$dir/examples"
-          cp LICENSE THIRD_PARTY_LICENSES "dist/$dir/"
-          cp docs/dist/README.md "dist/$dir/README.md"
-          # 同じタグからは同じ tar.gz が出るようにする（所有者・時刻・並び順・gzip の
-          # タイムスタンプを固定する。shashoku 自身の決定性と同じ考え方）。
-          stamp=$(git log -1 --format=%ct HEAD)
-          tar -C dist --owner=0 --group=0 --numeric-owner --sort=name \
-              --mtime="@$stamp" -cf - "$dir" | gzip -9n > "$dir.tar.gz"
-          sha256sum "$dir.tar.gz" > "$dir.tar.gz.sha256"
-          cat "$dir.tar.gz.sha256"
+          docker run --rm -v "$PWD:/src" -w /src \
+            ubuntu:22.04 bash scripts/dist_container_build.sh
 
       # ビルドツールを何も入れていない素の Ubuntu で、展開して 1 コマンドで PNG が
       # 出ることを確かめる（#20 の受け入れ条件）。22.04 は glibc が古い側の下限。
       - name: Run in bare Ubuntu containers
-        run: |
-          set -eu
-          mkdir -p container_out
-          for image in ubuntu:22.04 ubuntu:24.04; do
-            tag="${image/:/-}"
-            docker run --rm \
-              -v "$PWD/dist/$ARCHIVE_DIR:/opt/shashoku:ro" \
-              -v "$PWD/container_out:/out" \
-              -w /opt/shashoku "$image" \
-              ./shashoku examples/og_card.html --image icon=examples/icon.png \
-                -o "/out/$tag.png" --width 1200 --height 630
-            # PNG のシグネチャ（89 50 4E 47 0D 0A 1A 0A）で始まること
-            head -c 8 "container_out/$tag.png" | od -An -tx1 | tr -d ' \n' \
-              | grep -qx "89504e470d0a1a0a"
-            echo "$image: OK ($(stat -c%s "container_out/$tag.png") B)"
-          done
+        run: scripts/smoke_dist_containers.sh "build/package/$ARCHIVE_NAME"
 
       - name: Write the release notes
         run: |
-          set -eu
-          sha=$(cut -d' ' -f1 "$ARCHIVE_DIR.tar.gz.sha256")
-          {
-            echo '### 試す（ビルドもフォントの用意も要りません）'
-            echo
-            echo '```bash'
-            echo "curl -LO https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/$ARCHIVE_DIR.tar.gz"
-            echo "tar xf $ARCHIVE_DIR.tar.gz && cd $ARCHIVE_DIR"
-            echo './shashoku examples/og_card.html --image icon=examples/icon.png -o og.png --width 1200 --height 630'
-            echo '```'
-            echo
-            echo '実行ファイルは 1 つだけで、依存ライブラリも既定フォント（Noto Sans JP Regular / Bold）も'
-            echo '中に入っています。`--font` を書けばそちらが優先されます。'
-            echo
-            echo '**対応環境: linux-x86_64 / glibc 2.35 以降**（Ubuntu 22.04 以降、Debian 12 以降など）。'
-            echo 'C++ ランタイムは静的リンク済みで、動的に要るのは libc と libm だけです。'
-            echo 'musl の環境（Alpine など）では動きません。'
-            echo
-            echo '### 版'
-            echo
-            echo '```'
-            build/dist/tools/shashoku/shashoku --version
-            echo '```'
-            echo
-            echo "### SHA256"
-            echo
-            echo '```'
-            echo "$sha  $ARCHIVE_DIR.tar.gz"
-            echo '```'
-            echo
-            echo "組めなかった HTML があれば、[試用報告](https://github.com/$GITHUB_REPOSITORY/issues/new/choose) から教えてください。"
-          } > release_notes.md
+          scripts/release_notes.sh \
+            "build/package/$ARCHIVE_NAME/shashoku" \
+            "build/package/$ARCHIVE_NAME.tar.gz" \
+            "$GITHUB_REPOSITORY" "$GITHUB_REF_NAME" > release_notes.md
           cat release_notes.md
 
       # **ドラフト**として作る。公開はユーザーが GitHub の Releases の画面で
@@ -143,6 +62,7 @@ jobs:
             --draft \
             --title "shashoku $GITHUB_REF_NAME" \
             --notes-file release_notes.md \
-            "$ARCHIVE_DIR.tar.gz" "$ARCHIVE_DIR.tar.gz.sha256"
+            "build/package/$ARCHIVE_NAME.tar.gz" \
+            "build/package/$ARCHIVE_NAME.tar.gz.sha256"
           echo "ドラフトを作りました。GitHub の Releases で中身を確かめ、"
-          echo "\"Publish release\" を押すと公開されます。"
+          echo '"Publish release" を押すと公開されます。'

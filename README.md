@@ -327,6 +327,11 @@ GCC を使う場合は 13 以上: `CXX=g++-14 cmake --preset gcc`
 | `SHASHOKU_EMBED_DEFAULT_FONT` | ON | CLI に既定フォントを埋め込む（OFF なら `--font` が必須） |
 | `SHASHOKU_STATIC_RUNTIME` | OFF | CLI に C++ ランタイム（libc++ / libc++abi / libunwind / libgcc）を静的リンクする（配布用。glibc は動的のまま） |
 
+配布物は **`ubuntu:22.04` のコンテナの中で**作ります（`scripts/dist_container_build.sh`）。
+glibc を動的にしているので、**ビルド機の glibc の版がそのまま「動く環境の下限」になる**ためです。
+できたバイナリは `scripts/check_dist_binary.sh` が検査します（動的依存が glibc だけであること、
+要求する glibc のシンボル版が 2.35 以下であること）。これは docker 無しでも回せます。
+
 ## ライセンス
 
 shashoku 本体は [MIT License](LICENSE)。配布する実行ファイルに組み込まれる

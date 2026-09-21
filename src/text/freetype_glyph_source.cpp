@@ -52,7 +52,7 @@ std::string where(FontId font, GlyphId glyph_id, float pixel_size) {
 
 std::string ft_failure(std::string_view function, FT_Error error, FontId font, GlyphId glyph_id,
                        float pixel_size) {
-  return std::format("グリフをラスタライズできません ({}): {} が失敗しました: {} (0x{:02X})",
+  return std::format("cannot rasterize the glyph ({}): {} failed: {} (0x{:02X})",
                      where(font, glyph_id, pixel_size), function, detail::ft_error_text(error),
                      static_cast<unsigned int>(error));
 }
@@ -120,8 +120,7 @@ struct GlyphRuntime {
   Result<FT_Face> face(const FontEntry& entry, FontId font, GlyphId glyph_id, float pixel_size) {
     if (library == nullptr) {
       return fail(ErrorKind::Internal,
-                  std::format("グリフをラスタライズできません ({}): FreeType を初期化できません"
-                              "でした: {}",
+                  std::format("cannot rasterize the glyph ({}): cannot initialize FreeType: {}",
                               where(font, glyph_id, pixel_size), ft_error_text(library_error)));
     }
     if (faces.size() <= font) {
@@ -177,21 +176,18 @@ Result<raster::GlyphBitmap> FreeTypeGlyphSource::rasterize(FontId font, GlyphId 
   const detail::FontEntry* entry = detail::FontStoreAccess::impl(*impl_->fonts).at(font);
   if (entry == nullptr) {
     return fail(ErrorKind::Internal,
-                std::format("グリフをラスタライズできません ({}): FontStore にその FontId が"
-                            "ありません",
+                std::format("cannot rasterize the glyph ({}): no such FontId in the FontStore",
                             where(font, glyph_id, pixel_size)));
   }
   // pixel_size の有限性・正値は呼び出し側の責務（glyph_source.hpp）。破られたらバグ。
   if (!std::isfinite(pixel_size) || pixel_size <= 0.0F) {
     return fail(ErrorKind::Internal,
-                std::format("グリフをラスタライズできません ({}): pixel_size は有限で 0 より"
-                            "大きいこと",
+                std::format("cannot rasterize the glyph ({}): pixel_size must be finite and greater than 0",
                             where(font, glyph_id, pixel_size)));
   }
   if (pixel_size > kMaxPixelSize) {
     return fail(ErrorKind::FontLoad,
-                std::format("グリフをラスタライズできません ({}): pixel_size が上限 {} px を"
-                            "超えています",
+                std::format("cannot rasterize the glyph ({}): pixel_size exceeds the limit of {} px",
                             where(font, glyph_id, pixel_size), kMaxPixelSize));
   }
 
@@ -235,8 +231,8 @@ Result<raster::GlyphBitmap> FreeTypeGlyphSource::rasterize(FontId font, GlyphId 
     // 輪郭を持たないグリフ（埋め込みビットマップ・カラーグリフ）は描けないし回せない。
     // 黙って空白にすると文字の抜けた PNG が「成功」になる（issue #3）。
     return fail(ErrorKind::FontLoad,
-                std::format("グリフをラスタライズできません ({}): グリフが輪郭を持ちません"
-                            "（埋め込みビットマップ / カラーグリフ）",
+                std::format("cannot rasterize the glyph ({}): the glyph has no outline "
+                            "(embedded bitmap / color glyph)",
                             where(font, glyph_id, pixel_size)));
   }
   if (sideways) {
@@ -257,8 +253,8 @@ Result<raster::GlyphBitmap> FreeTypeGlyphSource::rasterize(FontId font, GlyphId 
   }
   if (bitmap.pixel_mode != FT_PIXEL_MODE_GRAY) {
     return fail(ErrorKind::FontLoad,
-                std::format("グリフをラスタライズできません ({}): 未対応の pixel_mode {} です"
-                            "（8bit グレースケールのみ）",
+                std::format("cannot rasterize the glyph ({}): unsupported pixel_mode {} "
+                            "(8-bit grayscale only)",
                             where(font, glyph_id, pixel_size),
                             static_cast<unsigned int>(bitmap.pixel_mode)));
   }

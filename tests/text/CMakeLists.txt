@@ -10,6 +10,7 @@ shashoku_add_test(text_test
     vertical_test.cpp
     glyph_source_test.cpp
     debug_output_test.cpp
+    message_language_test.cpp
   LIBS shashoku::text shashoku::raster)
 
 shashoku_use_test_fonts(text_test)

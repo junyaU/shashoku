@@ -35,12 +35,24 @@ constexpr int kExitOk = 0;
 constexpr int kExitError = 1;
 constexpr int kExitUsage = 2;
 
+// `--font` の説明だけは埋め込みの有無で変わる（SHASHOKU_EMBED_DEFAULT_FONT=OFF の
+// ビルドで「省略できる」と書かない。#20）。
+std::string_view font_option_help() {
+  if (shashoku::cli::has_default_font()) {
+    return R"(  --font <file>           フォント（複数指定可。指定順がフォールバック順）。
+                          省略すると埋め込みの既定フォントを使う（--version で版を表示）
+)";
+  }
+  return R"(  --font <file>           フォント（複数指定可。指定順がフォールバック順）。
+                          **必須**（このビルドには既定フォントが埋め込まれていない）
+)";
+}
+
 void print_usage(std::ostream& out) {
   out << R"(使い方: shashoku <input.html> [options]
 
-  --font <file>           フォント（複数指定可。指定順がフォールバック順）。
-                          省略すると埋め込みの既定フォントを使う（--version で版を表示）
-  --image <name>=<file>   PNG 画像。<img src="name"> で参照する
+)" << font_option_help()
+      << R"(  --image <name>=<file>   PNG 画像。<img src="name"> で参照する
   -o, --output <file>     出力先。PNG を書くときは必須（ダンプは省略で標準出力）
   --width <N>             ビューポートの幅（CSS px、既定 1200）
   --height <N>            ビューポートの高さ（CSS px、既定は内容の高さに追従）

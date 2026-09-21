@@ -44,7 +44,7 @@ enum class OverflowPolicy : std::uint8_t {
 // §5.4 は 2 値の違いをこう定める:「break-word は anywhere と同じだが、break-word が
 // もたらす分割位置は min-content intrinsic size の計算では考えない」。
 // min-content は flex アイテムの自動最小サイズ（Flexbox §4.5）に使うので、この区別が
-// 無いと anywhere を指定した flex の子が親からはみ出す（issue #18 / ARCHITECTURE.md A-new）。
+// 無いと anywhere を指定した flex の子が親からはみ出す（issue #18 / ARCHITECTURE.md A35）。
 //
 // 値は「弱い順」に並べてある。位置の両側のアイテムの**弱い方**が、その位置で何ができるかを
 // 決める（Item の境界の規則を参照）。

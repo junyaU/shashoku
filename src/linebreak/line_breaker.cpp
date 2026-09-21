@@ -153,7 +153,7 @@ class Analysis {
 
   std::vector<std::uint8_t> opp_;        // items_[i-1] と items_[i] の間で割ってよい
   std::vector<std::uint8_t> mandatory_;  // その位置で必ず割る（LB4 / LB5）
-  // items_[i-1] と items_[i] の間で overflow-wrap が何を許すか（両側の弱い方。A23 / A-new）。
+  // items_[i-1] と items_[i] の間で overflow-wrap が何を許すか（両側の弱い方。A23 / A35）。
   //   Normal    … 何もしない（= 要素の境界では割れない）
   //   BreakWord … 緊急分割だけ
   //   Anywhere  … 緊急分割と min_content_width() の区間の切れ目
@@ -229,7 +229,7 @@ BreakClass Analysis::resolve_class(const Item& item) const {
 
 void Analysis::build_wrap_table() {
   // 位置 i で何ができるかは、items_[i - 1] と items_[i] の overflow-wrap の**弱い方**で決まる
-  // （= 指定した要素の内部でだけ割れ、要素の境界では割れない。A23 / A-new）。
+  // （= 指定した要素の内部でだけ割れ、要素の境界では割れない。A23 / A35）。
   // Wrap は弱い順（Normal < BreakWord < Anywhere）に並んでいるので、小さい方を採ればよい。
   for (std::size_t i = 1; i < items_.size(); ++i) {
     const Wrap wrap = std::min(wrap_of(i - 1), wrap_of(i));
@@ -751,7 +751,7 @@ bool Analysis::anywhere_candidate(std::size_t p) const {
 
 bool Analysis::min_content_candidate(std::size_t p) const {
   // min-content で区間を切ってよいのは、緊急分割できる位置のうち両側がともに Anywhere の
-  // ところだけ（CSS Text 3 §5.4 の break-word と anywhere の違い。A-new）。
+  // ところだけ（CSS Text 3 §5.4 の break-word と anywhere の違い。A35）。
   return anywhere_candidate(p) && pair_wrap_[p] == Wrap::Anywhere;
 }
 
@@ -971,7 +971,7 @@ float Analysis::min_content_width() const {
   // 分割不能な最長区間の幅。連続約物のアキ詰めは反映し、行末のアキ詰めは反映しない
   // （min-content はこの幅で必ず収まる上限として使うため、詰める側に倒さない）。
   // 区間は分割可能位置に加えて「両側がともに Anywhere のクラスタ境界」でも切る
-  // （CSS Text 3 §5.4。break-word では切らない。ARCHITECTURE.md A-new）。
+  // （CSS Text 3 §5.4。break-word では切らない。ARCHITECTURE.md A35）。
   // 切った位置は緊急分割の候補そのものなので、この幅は break_lines() で必ず達成できる。
   float widest = 0.0F;
   std::size_t start = 0;

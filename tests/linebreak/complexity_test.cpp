@@ -130,7 +130,7 @@ TEST(LineBreakComplexity, IntrinsicWidthsAreLinear) {
 }
 
 TEST(LineBreakComplexity, IntrinsicWidthWithAnywhereIsLinear) {
-  // overflow-wrap: anywhere は min_content_width() で位置ごとに区間を切る（A-new）。
+  // overflow-wrap: anywhere は min_content_width() で位置ごとに区間を切る（A35）。
   // 区間が細かくなるだけで段落を 1 回走査するのは変わらないので、N に線形のまま。
   const std::vector<Item> items = long_text(U'A', 0.5F * kEm);
   Config config;

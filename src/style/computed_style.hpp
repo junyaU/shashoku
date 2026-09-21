@@ -16,6 +16,20 @@ namespace shashoku::style {
 // em は計算値化の時点で px に解決する。ただし `%` と `auto` は包含ブロックの大きさが
 // 決まる ③ レイアウトまで解決できないので、Dimension として残す
 // （CSS の「計算値」と「使用値」の区別。DESIGN.md §5 の「1.2em や未指定が消えた状態」の例外）。
+//
+// **不変条件（ARCHITECTURE.md A36）**: ここに入っている長さ（padding / margin の px /
+// border-width / border-radius / row-gap / column-gap / letter-spacing / width / height /
+// flex-basis の px / line-height の px）は、すべて**有限**で、絶対値が
+// `RenderLimits::length_px`（既定 2^24 px）**以内**である。`line-height` が倍率のときは
+// 「倍率 x その要素の font_size」が同じ上限以内。resolve() がこれを保証し、超えたら
+// `LimitExceeded`（位置つき）で失敗する。後段（layout / paint / raster）はこの前提に
+// 寄りかかってよい。
+//
+// 対象外が 2 つある:
+//   - `%`（Dimension::Kind::Percent）は layout が包含ブロックで解決するので、その上限は
+//     layout の出口が見る（issue #19 の第 2 段階）
+//   - `font_size` は A25 の `RenderLimits::font_size_device_px`（scale 込み）が api で見る。
+//     非有限な font_size だけは resolve() が止めるので、ここには有限な値しか入らない
 
 struct Dimension {
   enum class Kind : std::uint8_t { Auto, Px, Percent };

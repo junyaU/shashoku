@@ -18,7 +18,7 @@
 //     クラスに対して従来どおり働く。例外は「loose: ID の直後のハイフンの前で割ってよい」で、
 //     これだけは 2 アイテムにまたがるので行頭に来る側（後ろのアイテム）で決める
 //   * overflow-wrap の緊急分割は、位置の両側のアイテムがともに Normal 以外のときだけ。
-//     min_content_width() の区間を切るのは、両側がともに Anywhere のときだけ（A-new）
+//     min_content_width() の区間を切るのは、両側がともに Anywhere のときだけ（A35）
 // 出典: CSS Text Level 3 「Line Breaking Details」（要素の境界にまたがる分割位置で
 // どの要素の line-break / overflow-wrap が効くかは "undefined in this level"）。
 namespace shashoku::linebreak {
@@ -269,7 +269,7 @@ TEST(LineBreakItemPolicy, BreakAnywhereDoesNotChangeOpportunities) {
 
 TEST(LineBreakItemPolicy, BreakWordDoesNotChangeMinContentWidth) {
   // CSS Text 3 §5.4: break-word がもたらす分割位置は min-content では考えない。
-  // Config でもアイテムごとの指定でも同じ（A23 / A-new）。
+  // Config でもアイテムごとの指定でも同じ（A23 / A35）。
   const LineBreaker breaker;
   const std::vector<Item> plain = test::items_of("ABCDEFGH");
   std::vector<Item> break_word = plain;
@@ -284,7 +284,7 @@ TEST(LineBreakItemPolicy, BreakWordDoesNotChangeMinContentWidth) {
 }
 
 TEST(LineBreakItemPolicy, AnywhereChangesMinContentWidth) {
-  // CSS Text 3 §5.4: anywhere の分割位置は min-content でも考える（issue #18 / A-new）。
+  // CSS Text 3 §5.4: anywhere の分割位置は min-content でも考える（issue #18 / A35）。
   // アイテムごとの指定では、両側がともに anywhere の位置でだけ切る（A23 の境界の規則）。
   const std::vector<Item> plain = test::items_of("ABCDEFGH");
   std::vector<Item> anywhere = plain;

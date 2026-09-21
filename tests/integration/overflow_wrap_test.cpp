@@ -11,7 +11,7 @@
 #include "shashoku/shashoku.hpp"
 
 // overflow-wrap（CSS Text Level 3 §5.4）と flex アイテムの自動最小サイズ
-// （CSS Flexbox Level 1 §4.5）の組み合わせ（issue #18 / ARCHITECTURE.md A-new）。
+// （CSS Flexbox Level 1 §4.5）の組み合わせ（issue #18 / ARCHITECTURE.md A35）。
 //
 // 単独では通っていた機能が、**組み合わせたときだけ**壊れていた:
 // `anywhere` は緊急分割にしか効かず min-content に効かなかったので、flex アイテムは

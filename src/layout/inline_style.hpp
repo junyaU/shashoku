@@ -88,7 +88,7 @@ struct CharStyle {
 // A17: `line-break: auto` は「エンジンの既定に従う」= `Options::line_break.strictness` を使う。
 [[nodiscard]] linebreak::Strictness resolve_strictness(style::LineBreak value,
                                                        linebreak::Strictness fallback);
-// `overflow-wrap` の 3 値をそのまま `linebreak::Wrap` に写す（A28 / A-new）。
+// `overflow-wrap` の 3 値をそのまま `linebreak::Wrap` に写す（A28 / A35）。
 // `anywhere` と `break-word` はどちらも緊急分割を許すが、min-content に効くのは
 // `anywhere` だけ（CSS Text 3 §5.4）。
 [[nodiscard]] linebreak::Wrap resolve_wrap(style::OverflowWrap value);

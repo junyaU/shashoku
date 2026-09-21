@@ -282,7 +282,7 @@ TEST(LineBreakProperty, InvariantsWithUnboundedWidth) {
 
 TEST(LineBreakProperty, MinContentWidthNeverOverflows) {
   // min_content_width は「この幅なら必ず収まる」下限であること。
-  // overflow-wrap: anywhere は min-content の区間を細かく切る（A-new）ので、
+  // overflow-wrap: anywhere は min-content の区間を細かく切る（A35）ので、
   // 「切った位置で本当に割れる」ことがここで担保される（緊急分割の最後の逃げ場）。
   // アイテムごとに anywhere / break-word / normal を混ぜた入力でも成り立つこと。
   std::mt19937 rng = seeded_rng(20260921);

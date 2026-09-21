@@ -21,7 +21,7 @@
 //              are **not** considered when calculating min-content intrinsic sizes."
 //
 // この区別が無いと、flex アイテムの自動最小サイズ（CSS Flexbox Level 1 §4.5）が
-// 「1 行ぶんの幅」のままになり、子が親からはみ出す（issue #18 / ARCHITECTURE.md A-new）。
+// 「1 行ぶんの幅」のままになり、子が親からはみ出す（issue #18 / ARCHITECTURE.md A35）。
 //
 // 禁則との関係: 区間の切れ目は緊急分割と同じ「クラスタ境界」で判定する（禁則は見ない）。
 // 緊急分割には「守れる位置が 1 つもなければ破る」という最後の逃げ場があるので、
@@ -169,7 +169,7 @@ TEST(LineBreakMinContent, MaxContentIsNotAffected) {
 // ---- 実配置（break_lines）は 2 値で変わらない ------------------------------------------
 
 TEST(LineBreakMinContent, BreakWordAndAnywhereBreakLinesTheSame) {
-  // 変えたのは min_content_width() だけで、緊急分割の条件と位置選びは同じ（A-new）。
+  // 変えたのは min_content_width() だけで、緊急分割の条件と位置選びは同じ（A35）。
   const std::vector<Item> plain = test::items_of("ABCDEFGH");
   for (const float width : {kAscii, 3.0F * kAscii, 8.0F * kAscii}) {
     SCOPED_TRACE("width " + std::to_string(width));

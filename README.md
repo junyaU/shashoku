@@ -261,6 +261,10 @@ grid・float・table・`position` / アニメーション / メディアクエ�
 
 詳細は [DESIGN.md §4](docs/DESIGN.md)。
 
+ピクセル一致は目指しませんが、**組み合わせで情報が落ちていないか**を見るために Chrome（headless）と
+構造を突き合わせる仕組みはあります（欠落 / 重なり / 改行位置 / はみ出しの 4 つ）。
+ローカル専用で CI には入れていません: [docs/chrome_compare.md](docs/chrome_compare.md)。
+
 ## ビルド
 
 必要なもの: CMake 3.22+ / Ninja / clang-18 + libc++-18（C++23 の `std::expected` を使うため）

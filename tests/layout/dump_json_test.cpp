@@ -28,6 +28,7 @@ TEST(LayoutDumpJson, FixedFormat) {
   "viewport_height": null,
   "root": {
     "tag": "#root",
+    "location": "1:1",
     "rect": [
       0,
       0,
@@ -37,6 +38,7 @@ TEST(LayoutDumpJson, FixedFormat) {
     "blocks": [
       {
         "tag": "div",
+        "location": "1:1",
         "rect": [
           0,
           0,
@@ -105,6 +107,7 @@ TEST(LayoutDumpJson, OmitsDefaults) {
   "viewport_height": null,
   "root": {
     "tag": "#root",
+    "location": "1:1",
     "rect": [
       0,
       0,
@@ -137,6 +140,7 @@ TEST(LayoutDumpJson, BorderAndInlineBackground) {
   "viewport_height": null,
   "root": {
     "tag": "#root",
+    "location": "1:1",
     "rect": [
       0,
       0,
@@ -146,6 +150,7 @@ TEST(LayoutDumpJson, BorderAndInlineBackground) {
     "blocks": [
       {
         "tag": "div",
+        "location": "1:1",
         "rect": [
           0,
           0,
@@ -220,6 +225,7 @@ TEST(LayoutDumpJson, ImageFragment) {
   "viewport_height": null,
   "root": {
     "tag": "#root",
+    "location": "1:1",
     "rect": [
       0,
       0,
@@ -229,6 +235,7 @@ TEST(LayoutDumpJson, ImageFragment) {
     "blocks": [
       {
         "tag": "img",
+        "location": "1:1",
         "rect": [
           0,
           0,

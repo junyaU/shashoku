@@ -8,6 +8,7 @@
 #include <utility>
 #include <vector>
 
+#include "layout/check_geometry.hpp"
 #include "layout/engine.hpp"
 #include "layout/flex_layout.hpp"
 #include "layout/inline_layout.hpp"
@@ -167,6 +168,7 @@ Result<BlockBox> LayoutEngine::layout_block(const BlockInput& input, const BoxSi
 
   BlockBox box;
   box.tag = input.tag;
+  box.location = input.location;
   if (!input.anonymous) {
     box.decoration = BoxDecoration{.background_color = input.style->background_color,
                                    .border_width = sizing.border,
@@ -277,8 +279,8 @@ Result<BoxTree> layout_root(const style::StyledNode& root, const Options& option
   const float viewport_inline_size =
       mode == WritingMode::VerticalRl ? *options.viewport_height : options.viewport_width;
   Counters discarded;  // 呼び出し側が数えないときの捨て場（null 判定を 1 か所で済ませる）
-  LayoutEngine engine(options, measurer, images, mode, counters != nullptr ? *counters : discarded,
-                      memo);
+  Counters& work = counters != nullptr ? *counters : discarded;
+  LayoutEngine engine(options, measurer, images, mode, work, memo);
   Result<BoxSizing> sizing = engine.resolve_box(root.style, viewport_inline_size, root.location);
   if (!sizing) {
     return std::unexpected(sizing.error());
@@ -303,6 +305,13 @@ Result<BoxTree> layout_root(const style::StyledNode& root, const Options& option
   // 豆腐の記録（A31）。同じ段落を計測と配置で何度組んでも重複しないよう LayoutEngine が
   // (位置, コードポイント) で重複を除いて溜めており、並びも決定的（入力位置 → コードポイント）。
   tree.missing_glyphs = engine.missing_glyphs();
+  // 段の出口の不変条件（A36）: 出す座標・寸法はすべて有限で上限以内。`%` の解決も
+  // 座標の足し算も flex の比も、この段でしか起きない（style では判定できない。A5）。
+  // ここで止めないと raster が「非有限な寸法のコマンドは無視する」（§3.3）で黙って捨て、
+  // その要素だけが消えた PNG が終了コード 0 で返る（issue #19）。
+  if (const Result<void> ok = check_geometry(tree, options.max_geometry_px, work); !ok) {
+    return std::unexpected(ok.error());
+  }
   return tree;
 }
 

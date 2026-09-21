@@ -685,6 +685,7 @@ Result<BlockBox> layout_flex(LayoutEngine& engine, const BlockInput& input, cons
       sizing.content_block_size.value_or(row ? line_cross : container_main);
   BlockBox box;
   box.tag = input.tag;
+  box.location = input.location;
   if (!input.anonymous) {
     box.decoration = BoxDecoration{.background_color = input.style->background_color,
                                    .border_width = sizing.border,

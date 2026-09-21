@@ -11,21 +11,21 @@
 #include "shashoku/shashoku.hpp"
 
 // 計算値が非有限（inf / NaN）になっても警告なしで成功した PNG が返る問題（issue #19）の
-// end-to-end の検査。第 1 段階は style の出口の保証（ARCHITECTURE.md A36）:
+// end-to-end の検査。段の契約は 2 つある（ARCHITECTURE.md A36）:
 //
-//   style が出す長さは、font-size を除いてすべて有限で、絶対値が RenderLimits::length_px 以内。
+//   ② style が出す長さは、font-size を除いてすべて有限で、絶対値が RenderLimits::length_px 以内
+//   ③ layout が出す座標・寸法は、すべて有限で、絶対値が length_px x dom_nodes 以内
 //
 // 「成功したなら中間表現に非有限な数値が 1 つもない」を性質として書く。JSON は非有限を
 // `null` にするので（core/json_writer.hpp）、ダンプに `null` が出ないことがそのまま
 // 「全数値が有限」の検査になる。
-//
-// **第 2 段階（layout の出口の走査）が入ったら**、kCheckedStages に Box と DisplayList を
-// 足すだけで同じ性質が box / display-list にも効くようにしてある。
 namespace shashoku::test {
 namespace {
 
-// 第 1 段階で「非有限が 1 つもない」を保証できる段。第 2 段階で Box / DisplayList が増える。
-constexpr std::array<DumpStage, 1> kCheckedStages = {DumpStage::Style};
+// 「非有限が 1 つもない」を保証できる段。② と ③ の両方の出口が保証するので、
+// style から display-list まで通しで見られる（第 2 段階で Box / DisplayList が増えた）。
+constexpr std::array<DumpStage, 3> kCheckedStages = {DumpStage::Style, DumpStage::Box,
+                                                     DumpStage::DisplayList};
 
 RenderOptions viewport(int width, bool vertical = false) {
   RenderOptions options = options_for(width);
@@ -181,16 +181,43 @@ std::string nest(std::string_view declarations, std::size_t depth, std::string_v
   return out;
 }
 
+// box / display-list まで見るのでフォントが要る。組み合わせの数が多いので 1 回だけ
+// 用意して使い回す（A34。同じ入力からは同じ結果が出る）。
+const LoadedFonts& shared_fonts() {
+  static const LoadedFonts fonts = [] {
+    auto loaded = LoadedFonts::prepare(japanese_fonts());
+    EXPECT_TRUE(loaded.has_value());
+    return std::move(*loaded);
+  }();
+  return fonts;
+}
+
+const LoadedImages& shared_images() {
+  static const LoadedImages images = [] {
+    auto loaded = LoadedImages::prepare(ImageSet{}, RenderLimits{});
+    EXPECT_TRUE(loaded.has_value());
+    return std::move(*loaded);
+  }();
+  return images;
+}
+
 // 成功したダンプに非有限（JSON では null）が現れないことを確かめる。
 void expect_no_non_finite(std::string_view html, const RenderOptions& options) {
   for (const DumpStage stage : kCheckedStages) {
-    const auto text = dump(html, FontSet{}, ImageSet{}, options, stage);
+    const auto text = dump(html, shared_fonts(), shared_images(), options, stage);
     if (!text) {
       // エラーになるのは構わない（対応外の値・上限超過）。黙って壊れないことが要件。
       EXPECT_FALSE(text.error().message.empty()) << html.substr(0, 96);
       continue;
     }
-    EXPECT_EQ(text->find("null"), std::string::npos)
+    // box ダンプの `"viewport_height": null` だけは「指定なし」を表す正当な null
+    // （非有限な数値ではない）。それを外してから探す。
+    std::string body = *text;
+    constexpr std::string_view kAbsentHeight = R"("viewport_height": null)";
+    if (const std::size_t at = body.find(kAbsentHeight); at != std::string::npos) {
+      body.erase(at, kAbsentHeight.size());
+    }
+    EXPECT_EQ(body.find("null"), std::string::npos)
         << to_string(stage) << " に非有限な数値が出た: " << html.substr(0, 96);
   }
 }
@@ -309,11 +336,8 @@ TEST(NonFiniteLengths, RaisingTheLimitAllowsLargerLengths) {
 // ---------------------------------------------------------------------------
 
 // `%` の解決と flex の比（`factor / factors.scaled` が inf/inf）は包含ブロックが要るので
-// style では判定できない（A5）。この 2 つはいまも **style を通り抜けて layout で非有限になる**。
-//
-// #19 の第 2 段階（layout の出口の走査）が入ったら、ここは失敗する。そうなったら
-// `render_failure` に裏返し、kCheckedStages に Box / DisplayList を足すこと。
-TEST(NonFiniteLengths, PendingSecondStageCasesStillPassStyle) {
+// style では判定できない（A5）。**layout の出口の走査**（A36 の第 2 段階）が止める。
+TEST(NonFiniteLengths, PercentAndFlexRatioAreStoppedAtTheLayoutExit) {
   RenderOptions options = viewport(1000);
   options.viewport_height = 100;
   for (const std::string_view html :
@@ -321,18 +345,75 @@ TEST(NonFiniteLengths, PendingSecondStageCasesStillPassStyle) {
         R"(<div style="display:flex;width:10px"><div style="flex-shrink:1e38;width:1e7px">)"
         R"(あ</div></div>)"}) {
     SCOPED_TRACE(html);
+    // style は通る（ここでは有限）
     const auto style_dump = dump(html, FontSet{}, ImageSet{}, options, DumpStage::Style);
     ASSERT_TRUE(style_dump.has_value())
-        << "第 2 段階が入ったらここが失敗する（期待どおり）: "
         << (style_dump ? std::string{} : to_string(style_dump.error()));
-    EXPECT_EQ(style_dump->find("null"), std::string::npos) << "style では有限";
-
-    // layout ではまだ非有限になる（第 2 段階で塞ぐ）
-    const auto box = dump(html, japanese_fonts(), ImageSet{}, options, DumpStage::Box);
-    ASSERT_TRUE(box.has_value()) << (box ? std::string{} : to_string(box.error()));
-    EXPECT_NE(box->find("null"), std::string::npos)
-        << "layout で非有限にならなくなった = 第 2 段階が入った。このテストを裏返すこと";
+    EXPECT_EQ(style_dump->find("null"), std::string::npos);
+    // layout の出口で止まる
+    const RenderError error = render_failure(html, options);
+    EXPECT_EQ(error.kind, ErrorKind::LimitExceeded) << error.message;
+    EXPECT_TRUE(error.location.has_value()) << error.message;
   }
+}
+
+// `width: 1e38%` は同じ HTML でもビューポート幅で結果が変わっていた
+// （200 なら 2e38 で有限、1000 なら inf）。**どの幅でも同じ種類のエラー**でなければならない。
+TEST(NonFiniteLengths, HugePercentIsTheSameErrorAtEveryViewport) {
+  for (const int width : {200, 1000, 16384}) {
+    SCOPED_TRACE(width);
+    RenderOptions options = viewport(width);
+    options.viewport_height = 100;
+    const RenderError error = render_failure(R"(<div style="width:1e38%">あ</div>)", options);
+    EXPECT_EQ(error.kind, ErrorKind::LimitExceeded) << error.message;
+    ASSERT_TRUE(error.location.has_value()) << error.message;
+    EXPECT_EQ(error.location.value_or(SourceLocation{}).column, 1U) << error.message;
+  }
+}
+
+// メッセージの誤りの 3 件目（issue #19）: 高さを省いたときに内容の高さが非有限だと
+// 「nothing to render: the content height is 0」と言っていた。出口の検査が先に止めるので
+// もう到達しない。到達しないことをここで固定する。
+TEST(NonFiniteLengths, AutoHeightNeverBlamesAZeroContentHeight) {
+  // `--height` を省く（内容の高さに追従させる）
+  const RenderOptions options = viewport(300);
+  for (const std::string_view html :
+       {R"(<div style="width:1e38%">あ</div>)", R"(<div style="padding:1e38em">あ</div>)"}) {
+    SCOPED_TRACE(html);
+    const RenderError error = render_failure(html, options);
+    EXPECT_EQ(error.kind, ErrorKind::LimitExceeded) << error.message;
+    EXPECT_EQ(error.message.find("content height is 0"), std::string::npos) << error.message;
+  }
+}
+
+// 本当に中身が無いときは従来どおり（「0」は正しい）。
+TEST(NonFiniteLengths, GenuinelyEmptyContentStillSaysZero) {
+  const auto result = render("<div></div>", japanese_fonts(), viewport(300));
+  ASSERT_FALSE(result.has_value());
+  EXPECT_EQ(result.error().kind, ErrorKind::InvalidOption) << to_string(result.error());
+  EXPECT_NE(result.error().message.find("content height is 0"), std::string::npos)
+      << result.error().message;
+}
+
+// 常識的な入力が新しく落ちないこと: 座標の上限は「1 要素あたりの長さ x 要素数」で
+// 導いてあるので、縦に長い文書も通る（A36）。
+TEST(NonFiniteLengths, TallDocumentsStillRender) {
+  std::string html;
+  for (int i = 0; i < 200; ++i) {
+    html += R"(<div style="height:2000px">あ</div>)";
+  }
+  RenderOptions options = viewport(300);
+  options.viewport_height = 200;  // 出力は先頭だけ。内容は 400,000 px まで伸びる
+  const auto box = dump(html, japanese_fonts(), ImageSet{}, options, DumpStage::Box);
+  EXPECT_TRUE(box.has_value()) << (box ? std::string{} : to_string(box.error()));
+}
+
+// box ダンプに BlockBox の入力位置が出る（A36。paint は読まないので絵は変わらない）。
+TEST(NonFiniteLengths, BoxDumpCarriesTheBlockLocation) {
+  const auto box =
+      dump("<div>あ</div>", japanese_fonts(), ImageSet{}, viewport(300), DumpStage::Box);
+  ASSERT_TRUE(box.has_value()) << (box ? std::string{} : to_string(box.error()));
+  EXPECT_NE(box->find(R"("location": "1:1")"), std::string::npos) << *box;
 }
 
 }  // namespace

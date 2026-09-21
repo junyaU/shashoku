@@ -7,14 +7,15 @@
 #include "layout/engine.hpp"
 #include "layout/flex_layout.hpp"
 #include "layout/inline_layout.hpp"
+#include "layout/layout_cache.hpp"
 
 // 固有寸法（min-content / max-content の inline サイズ）。
 // flex の flex-basis: auto・自動最小サイズ・shrink-to-fit に要る。
 //
 // 限界（意図した割り切り）:
 //   * block 方向の固有寸法は出さない（要るのは inline 方向だけ）
-//   * ここでの計測は本番のレイアウトとは別に shape() を呼ぶ。A6「段落全体で 1 回」は
-//     1 回のレイアウトの中での話で、固有寸法を測るための計測は別勘定にしている
+//   * 同じ部分木を同じ `%` の基準で何度も測るので、結果はメモする（A29）。段落の
+//     シェーピングは PreparedParagraph の共有で配置とも分け合う（A6 / A29）
 namespace shashoku::layout {
 namespace {
 
@@ -29,7 +30,23 @@ bool has_block_child(const BlockInput& input) {
 
 }  // namespace
 
+// メモの外側。結果は「部分木 + `%` の基準」だけで決まる純粋な値なので、そのまま覚えてよい。
 Result<Intrinsic> LayoutEngine::content_intrinsic(const BlockInput& input, float percent_basis) {
+  const IntrinsicKey key = IntrinsicKey::of(input, percent_basis);
+  if (memo_) {
+    if (const Intrinsic* found = cache().intrinsic(key)) {
+      return *found;
+    }
+  }
+  Result<Intrinsic> out = compute_intrinsic(input, percent_basis);
+  if (out && memo_) {
+    cache().remember(key, *out);
+  }
+  return out;
+}
+
+Result<Intrinsic> LayoutEngine::compute_intrinsic(const BlockInput& input, float percent_basis) {
+  ++counters().content_intrinsic;
   if (input.replaced != nullptr) {
     const Result<ResolvedImage> image = resolve_image(*input.replaced, percent_basis);
     if (!image) {
@@ -46,7 +63,8 @@ Result<Intrinsic> LayoutEngine::content_intrinsic(const BlockInput& input, float
                                    .block_style = input.style,
                                    .content_inline_start = 0,
                                    .content_inline_size = percent_basis,
-                                   .content_block_start = 0};
+                                   .content_block_start = 0,
+                                   .location = input.location};
     return inline_intrinsic(inline_input, *this);
   }
 
@@ -75,7 +93,8 @@ Result<Intrinsic> LayoutEngine::content_intrinsic(const BlockInput& input, float
                                      .block_style = input.style,
                                      .content_inline_start = 0,
                                      .content_inline_size = percent_basis,
-                                     .content_block_start = 0};
+                                     .content_block_start = 0,
+                                     .location = run.front().location};
       child = inline_intrinsic(inline_input, *this);
     } else {
       child = outer_intrinsic(children[i], percent_basis);

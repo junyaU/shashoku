@@ -87,6 +87,47 @@ TEST(LayoutError, PercentageHeightIsRejected) {
   EXPECT_TRUE(tree.error().location.has_value());
 }
 
+// A30 / issue #3: TextMeasurer が失敗したらレイアウトも失敗する。
+// かつては shape() / metrics() が値返しで、失敗を「空の結果」としてしか表せなかった。
+TEST(LayoutError, ShapeFailurePropagates) {
+  FakeMeasurer measurer;
+  measurer.fail_on = U"😀";
+  const auto root = build({block({text("ABC😀")})});
+  const auto tree = run_layout(root, 200, measurer);
+  ASSERT_FALSE(tree.has_value());
+  EXPECT_EQ(tree.error().kind, ErrorKind::FontLoad);
+}
+
+// ルビ文字（<rt>）のシェーピングも同じ経路を通る。
+TEST(LayoutError, ShapeFailureInRubyTextPropagates) {
+  FakeMeasurer measurer;
+  measurer.fail_on = U"か";
+  const auto root = build({block({ruby({text("漢"), rt("かん")})})});
+  const auto tree = run_layout(root, 200, measurer);
+  ASSERT_FALSE(tree.has_value());
+  EXPECT_EQ(tree.error().kind, ErrorKind::FontLoad);
+}
+
+// metrics() も同じ（支柱の高さ・インライン背景の広がりに使う）。
+TEST(LayoutError, MetricsFailurePropagates) {
+  FakeMeasurer measurer;
+  measurer.fail_metrics = true;
+  const auto root = build({block({text("あ")})});
+  const auto tree = run_layout(root, 200, measurer);
+  ASSERT_FALSE(tree.has_value());
+  EXPECT_EQ(tree.error().kind, ErrorKind::FontLoad);
+}
+
+// 固有寸法の計測（flex）でも同じ。失敗した結果をメモに残してはいけない。
+TEST(LayoutError, ShapeFailurePropagatesThroughFlexMeasurement) {
+  FakeMeasurer measurer;
+  measurer.fail_on = U"😀";
+  const auto root = build({flex({block({text("ABC😀")})})});
+  const auto tree = run_layout(root, 200, measurer);
+  ASSERT_FALSE(tree.has_value());
+  EXPECT_EQ(tree.error().kind, ErrorKind::FontLoad);
+}
+
 // 有効な viewport_height はそのままボックスツリーに載る（paint が物理座標に使う）。
 TEST(LayoutError, ViewportHeightIsCarried) {
   FakeMeasurer measurer;

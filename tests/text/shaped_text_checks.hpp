@@ -1,10 +1,33 @@
 #pragma once
 
 #include <cstddef>
+#include <string>
+#include <string_view>
+#include <utility>
 
 #include <gtest/gtest.h>
 
+#include "shashoku/error.hpp"
 #include "text/text_measurer.hpp"
+
+namespace shashoku::text {
+
+// shape() / metrics() は Result を返す（A30 / issue #3）。テストの大半は「成功するはず」
+// なので、ここで 1 回だけ剥がす。失敗したらそのテストを落とす。
+inline ShapedText shape_ok(TextMeasurer& measurer, std::u32string_view text,
+                           const TextStyle& style) {
+  Result<ShapedText> out = measurer.shape(text, style);
+  EXPECT_TRUE(out.has_value()) << (out.has_value() ? std::string{} : to_string(out.error()));
+  return out.has_value() ? std::move(*out) : ShapedText{};
+}
+
+inline FontMetrics metrics_ok(TextMeasurer& measurer, const TextStyle& style) {
+  const Result<FontMetrics> out = measurer.metrics(style);
+  EXPECT_TRUE(out.has_value()) << (out.has_value() ? std::string{} : to_string(out.error()));
+  return out.value_or(FontMetrics{});
+}
+
+}  // namespace shashoku::text
 
 namespace shashoku::text::assets {
 

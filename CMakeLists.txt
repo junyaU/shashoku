@@ -11,6 +11,7 @@ option(SHASHOKU_BUILD_TESTS "テストをビルドする" ${PROJECT_IS_TOP_LEVEL
 option(SHASHOKU_BUILD_TOOLS "CLI（tools/shashoku）をビルドする" ${PROJECT_IS_TOP_LEVEL})
 option(SHASHOKU_WARNINGS_AS_ERRORS "警告をエラーとして扱う" OFF)
 option(SHASHOKU_SANITIZE "ASan + UBSan を有効にする（依存ライブラリにも適用）" OFF)
+option(SHASHOKU_SANITIZE_THREAD "TSan を有効にする（依存ライブラリにも適用）" OFF)
 
 # ---- 言語規格 ---------------------------------------------------------------
 set(CMAKE_CXX_STANDARD 23)
@@ -44,10 +45,21 @@ endif()
 
 # ---- サニタイザ -------------------------------------------------------------
 # 依存ライブラリより前に置く（zlib / GoogleTest も同じフラグでビルドする）
+if(SHASHOKU_SANITIZE AND SHASHOKU_SANITIZE_THREAD)
+  message(FATAL_ERROR
+    "SHASHOKU_SANITIZE（ASan）と SHASHOKU_SANITIZE_THREAD（TSan）は併用できません。\n"
+    "  どちらか一方のプリセットを使ってください: cmake --preset asan / cmake --preset tsan")
+endif()
 if(SHASHOKU_SANITIZE)
   add_compile_options(-fsanitize=address,undefined -fno-sanitize-recover=undefined
                       -fno-omit-frame-pointer)
   add_link_options(-fsanitize=address,undefined)
+endif()
+# TSan は共有資源の同時利用（ARCHITECTURE.md A34）を確かめるためのもの。
+# dev / asan と並べると依存ライブラリまで再ビルドになるので、常用はしない。
+if(SHASHOKU_SANITIZE_THREAD)
+  add_compile_options(-fsanitize=thread -fno-omit-frame-pointer)
+  add_link_options(-fsanitize=thread)
 endif()
 
 include(CompilerOptions)

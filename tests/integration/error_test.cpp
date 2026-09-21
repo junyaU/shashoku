@@ -142,6 +142,7 @@ struct OptionCase {
   std::string_view name;
   RenderOptions options;
   std::string_view message_contains;
+  ErrorKind kind = ErrorKind::InvalidOption;
 };
 
 TEST(RenderErrors, InvalidOptions) {
@@ -154,20 +155,30 @@ TEST(RenderErrors, InvalidOptions) {
     options.scale = scale;
     return options;
   };
+  const auto with_level = [](int level) {
+    RenderOptions options;
+    options.viewport_width = 320;
+    options.compression_level = level;
+    return options;
+  };
   const std::vector<OptionCase> cases{
       {"zero-width", make(0, 0, 1.0F), "viewport width"},
       {"negative-width", make(-100, 0, 1.0F), "viewport width"},
       {"zero-height", make(320, -1, 1.0F), "viewport height"},
       {"zero-scale", make(320, 0, 0.0F), "scale"},
       {"negative-scale", make(320, 0, -2.0F), "scale"},
-      {"huge-scale", make(320, 0, 1e9F), "scale"},
+      // scale の上限だけは「不正な値」ではなく RenderLimits::scale の超過（A25）。
+      {"huge-scale", make(320, 0, 1e9F), "scale", ErrorKind::LimitExceeded},
       {"nan-scale", make(320, 0, std::numeric_limits<float>::quiet_NaN()), "scale"},
       {"inf-scale", make(320, 0, std::numeric_limits<float>::infinity()), "scale"},
+      // 圧縮レベルは 0〜9（A33）。範囲外は「不正な値」なので InvalidOption。
+      {"level-below-range", with_level(-1), "compression level"},
+      {"level-above-range", with_level(10), "compression level"},
   };
   for (const OptionCase& test_case : cases) {
     const auto result = render("<div>あ</div>", japanese_fonts(), test_case.options);
     ASSERT_FALSE(result.has_value()) << test_case.name;
-    EXPECT_EQ(result.error().kind, ErrorKind::InvalidOption) << test_case.name;
+    EXPECT_EQ(result.error().kind, test_case.kind) << test_case.name;
     EXPECT_NE(result.error().message.find(test_case.message_contains), std::string::npos)
         << test_case.name << ": " << result.error().message;
   }

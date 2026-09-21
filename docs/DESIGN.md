@@ -62,7 +62,7 @@ Satori 系への不満は「対応外の CSS を書くと無言で変な絵が�
 2. **重いデータは参照で引き回す**: グリフ輪郭・フォント実体は FontStore が所有し、ツリーには ID（FontId, glyph_id）だけを載せる。デリファレンスはラスタライズの瞬間のみ
 3. **各段の出力はダンプ可能**: `--dump-stage=dom|style|box|display-list|svg` で全中間表現を目視できる。デバッグとテストの基盤
 4. **行分割器は独立モジュール**: 製品のコアなので、レイアウトエンジンから分離してテーブル駆動で単体テストできる形にする。テキスト計測器（TextMeasurer）はインターフェースとしてレイアウトに注入する（レイアウト⇄計測の相互再帰を疎結合に保つ）
-5. **純粋関数**: 同じ入力（HTML + フォント + オプション）からは常にバイト単位で同じ PNG が出る。グローバル状態・時刻・乱数・ネットワークへの依存なし
+5. **純粋関数**: 同じ入力（HTML + フォント + オプション）からは常にバイト単位で同じ PNG が出る。グローバル状態・時刻・乱数・ネットワークへの依存なし。**この一致をどの範囲で保証するか**（同じ版・同じ依存・x86-64 Linux の 2 つのツールチェーンまでは検査済み／aarch64・macOS・MSVC・依存の版違いは未確認）は [README の「決定性」](../README.md#決定性同じ入力から同じ-png)にまとめる。原則はここに書いたとおりで変わらない
 6. **fail loudly**: 未対応のタグ・プロパティ・値は警告ではなくエラー。ただし豆腐（グリフ欠落）は警告リストとして返し、描画は続行する（代替グリフ □ を描く）
 
 ## 4. スコープ
@@ -216,7 +216,9 @@ class LineBreaker {
 3. **縦書き（Phase 8）**: 主軸の転置（幅と高さの役割交換）＋ HarfBuzz の `vert` フィーチャーで約物グリフを差し替え＋縦中横（`text-combine-upright` 相当は将来）
 4. **ルビ（Phase 7）**: 親文字の上（縦書きなら右）に小サイズのグリフ列を配置。行高への影響（ルビぶんの行間確保）を含む
 5. **フォントフォールバック**: `FontStack` を順に cmap 引きし、最初にグリフを持つフォントを採用。テキストは「同一フォントで描ける区間（run）」に分割されてからシェーピングされる
-6. **豆腐検出**: どのフォントにもグリフがないコードポイントは警告リスト（コードポイント＋位置）として `RenderResult` に積み、□ を描画して続行する
+6. **豆腐検出**: どのフォントにもグリフがないコードポイントは警告リスト（コードポイント＋位置）として `RenderResult` に積み、□ を描画して続行する。
+   位置は「その文字を含むテキストノードの先頭」で、報告は (コードポイント, テキストノード) の組ごとに 1 件。
+   並びは入力位置の昇順 → コードポイントの昇順（ARCHITECTURE.md A31）
 
 ## 7. 技術選定（C++）
 
@@ -250,9 +252,18 @@ struct RenderOptions {
   std::optional<int> viewport_height; // 未指定ならコンテンツ高さに追従
   float scale = 1.0f;                // 2.0 で Retina 向け 2 倍解像度
   LineBreakConfig line_break;        // 禁則テーブル・OverflowPolicy
+  RenderLimits limits;               // 入力の上限（バイト数・ノード数・font-size・画素数…）
+  int compression_level = 6;         // PNG（zlib）の圧縮レベル 0〜9。範囲外は InvalidOption
 };
 
-struct Warning { WarningKind kind; std::string detail; };
+// 処理全体の予算。上限は「入力の一部」なので、同じ入力 + 同じ上限なら出力も同じ。
+// 既定値は OG 画像には十分広く、事故（巨大な font-size、画像の枚数、深い入れ子）は止まる。
+// 超過は ErrorKind::LimitExceeded。詳細は ARCHITECTURE.md A25。
+struct RenderLimits { /* html_bytes, dom_nodes, text_code_points, font_size_device_px, … */ };
+
+// 位置はその文字を含むテキストノードの先頭（ARCHITECTURE.md A31）
+struct Warning { WarningKind kind; std::string detail; char32_t codepoint;
+                 std::optional<SourceLocation> location; };
 
 struct RenderResult {
   std::vector<uint8_t> png;
@@ -268,10 +279,24 @@ class FontSet {
 std::expected<RenderResult, RenderError>
 render(std::string_view html, const FontSet& fonts, const RenderOptions& opts);
 
+// 連続生成のための共有資源（ARCHITECTURE.md A34）。バイト列の解釈と PNG のデコードを
+// 1 回だけ済ませて使い回す。prepare() のあとは読み取り専用で、複数の render() から、
+// 複数のスレッドから同時に使ってよい（破棄とムーブ代入だけは利用者が直列化する）。
+// **出力は変わらない**: 毎回 FontSet / ImageSet から作り直したのとバイト単位で同じ PNG が出る。
+class LoadedFonts  { public: static std::expected<LoadedFonts, RenderError>  prepare(const FontSet&); };
+class LoadedImages { public: static std::expected<LoadedImages, RenderError> prepare(const ImageSet&, const RenderLimits& = {}); };
+
+std::expected<RenderResult, RenderError>
+render(std::string_view html, const LoadedFonts& fonts, const LoadedImages& images,
+       const RenderOptions& opts);
+
 }  // namespace shashoku
 ```
 
-- エラー（`RenderError`）: パース失敗、未対応タグ / プロパティ / 値、フォント読込失敗。**どの入力のどこが原因かを必ず含める**
+- エラー（`RenderError`）: パース失敗、未対応タグ / プロパティ / 値、フォント読込失敗、上限超過（`LimitExceeded`）、メモリ不足（`OutOfMemory`）。**どの入力のどこが原因かを必ず含める**
+- 信頼できない HTML を受けるときは `RenderOptions::limits` で予算を決める。メモリ不足の扱い（`OutOfMemory` は最善努力で、保証は上限の側）は ARCHITECTURE.md A26
+- **圧縮レベルも「入力の一部」**。同じ HTML + 同じ `RenderOptions` なら常に同じバイト列が出る。レベルを変えるとファイルの大きさは変わるが、デコードした画素は 1 ビットも変わらない（ARCHITECTURE.md A33）
+- **連続生成**（OG 画像をリクエストごとに作る、という本来の用途）では `LoadedFonts` / `LoadedImages` を使う。効くのは時間より**メモリと並行度**で、8 並行で 96 本組んだときの RSS が 194 → 110 MiB。画像を使い回す効果はもっと大きい（全面背景のデコードは 1 回あたり 16 ms = `render()` の 26%）。詳細と計測は ARCHITECTURE.md A34
 - CLI も薄く用意する: `shashoku input.html --font NotoSansJP.ttf -o out.png --dump-stage=box`
 
 ## 9. 開発フェーズ（出口から通す）

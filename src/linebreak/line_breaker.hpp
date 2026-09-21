@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <optional>
 #include <span>
 #include <string>
 #include <vector>
@@ -35,12 +36,16 @@ enum class OverflowPolicy : std::uint8_t {
   Burasage,  // ぶら下げ: 行末の句読点 1 文字を行の外にはみ出させる。対象外の文字なら追い出し
 };
 
+// 段落（インライン整形文脈）全体の既定値。strictness と break_anywhere は
+// アイテムごとに Item::strictness / Item::break_anywhere で上書きできる（<span> の指定）。
 struct Config {
   Strictness strictness = Strictness::Strict;
   OverflowPolicy overflow = OverflowPolicy::Oidashi;
 
   // overflow-wrap: anywhere / break-word。分割可能位置がなく行に収まらない語
   // （長い URL など）を、クラスタ境界で強制的に割る。
+  // min_content_width() には影響しない（CSS の break-word 相当。CSS Text 3 の
+  // overflow-wrap: anywhere は min-content に効くが、ここでは両者を区別していない）。
   // このときも分離禁則（—— …… 数値と単位）> 行頭禁則・行末禁則 の順にできる限り守る。
   // 分離禁則を破らざるをえない位置ばかりでも、その中で行頭禁則を守れる位置を優先する。
   // 守れる位置が 1 つもなければ破る。クラスタの内部では決して割らない。
@@ -76,6 +81,30 @@ struct Item {
   float em = 0;
   // このアイテムの直前での分割を禁止する（呼び出し側の都合。例: 複数クラスタからなるルビ内部）
   bool no_break_before = false;
+
+  // --- アイテムごとのポリシー上書き（CSS の line-break / overflow-wrap）---
+  // どちらも CSS ではテキスト（インラインボックス）に適用される継承プロパティなので、
+  // 段落の途中の <span> で値が変わりうる。nullopt なら Config の値を使う
+  // （既定のまま = Config だけを使っていたころと出力は完全に同じ）。
+  //
+  // 境界の規則（ARCHITECTURE.md A23。CSS Text Level 3 の "Line Breaking Details" は、
+  // 要素の境界にまたがる分割位置でどの要素の line-break / word-break / overflow-wrap が
+  // 効くかを "undefined in this level" としているので、ここで決める）:
+  //
+  //   * strictness は「分割クラスの解決」に使い、アイテム自身の値で解決する
+  //     （CJ を NS とみなすか ID とみなすか、loose の追加規則で ID に格下げするかは
+  //     その文字 1 個の問題なので、境界が曖昧にならない）。ペア表・文脈規則は
+  //     解決済みのクラスに対して従来どおり働く。例外は loose の
+  //     「直前が ID ならハイフン ‐ – の前で割ってよい」だけで、これは 2 アイテムに
+  //     またがるので、行頭に来る側（= 後ろのアイテム = ハイフン自身）の値で決める
+  //   * break_anywhere の緊急分割は、位置の両側のアイテムがともに true のときだけ許す
+  //     （anywhere を指定した要素の内部でだけ割れ、要素の境界では割れない）。
+  //     発動条件（分割可能位置が 1 つもない行でだけ）と位置選びの優先順は Config と同じ
+  //
+  // = std::nullopt は既定値の明示。designated initializer で Item を作っている呼び出し側が
+  // -Wmissing-field-initializers に掛からないように、既定値を必ず書く。
+  std::optional<Strictness> strictness = std::nullopt;
+  std::optional<bool> break_anywhere = std::nullopt;
 
   bool operator==(const Item&) const = default;
 };
@@ -117,19 +146,42 @@ struct Breaks {
 
 inline constexpr float kUnbounded = std::numeric_limits<float>::infinity();
 
+// 計算量の回帰を「時間」ではなく「回数」で測るための計測カウンタ（ARCHITECTURE.md A21 / A24）。
+// linebreak は何にも依存しないので layout::Counters は使えず、同じ約束で自前に持つ:
+//   * 出力（Breaks）には一切影響しない。値を読んで分岐しない。読むのはテストだけ
+//   * グローバル状態・static を持たない。呼び出しごとに引数で受け取る
+//   * 既定は nullptr なので、既存の呼び出し側は書き換えずに済む
+struct Counters {
+  std::uint64_t lines = 0;  // 出した行の数（1 行あたりの作業量を見るときの分母）
+  // 行の決定で調べた位置の数。行ごとに段落の残り全体を舐めていると行数 × N に膨らむ。
+  std::uint64_t line_scan = 0;
+  // 幅と字間調整の計算で舐めたアイテム数の合計（lay_out / squeeze_pool / strip_trailing）。
+  std::uint64_t width_items = 0;
+  // 次の強制改行（<br>）を探して進んだ位置の数。行ごとに前方走査すると行数 × N になる。
+  std::uint64_t mandatory_scan = 0;
+  // 緊急分割（break_anywhere）の位置選びで見た位置の数。
+  std::uint64_t anywhere_scan = 0;
+  // 分割可能位置の判定で前に遡った位置の数（空白越し・数値の並び・地域表示記号の並び）。
+  std::uint64_t rule_scan = 0;
+};
+
 class LineBreaker {
  public:
   explicit LineBreaker(Config config = {});
 
   // available_width に kUnbounded を渡すと ForcedBreak でしか改行しない（max-content の計測）。
-  [[nodiscard]] Breaks break_lines(std::span<const Item> items, float available_width) const;
+  // counters は省略可能な計測の口（出力には影響しない）。
+  [[nodiscard]] Breaks break_lines(std::span<const Item> items, float available_width,
+                                   Counters* counters = nullptr) const;
 
   // 分割不能な最長区間の幅（min-content）。flex アイテムの最小幅の計算に使う。
-  [[nodiscard]] float min_content_width(std::span<const Item> items) const;
+  [[nodiscard]] float min_content_width(std::span<const Item> items,
+                                        Counters* counters = nullptr) const;
 
   // items[i - 1] と items[i] の間で改行してよいか（i は 1..size-1）。
   // 幅を考えない純粋な UAX #14 + 禁則の判定。テストとデバッグダンプ用に公開する。
-  [[nodiscard]] std::vector<bool> break_opportunities(std::span<const Item> items) const;
+  [[nodiscard]] std::vector<bool> break_opportunities(std::span<const Item> items,
+                                                      Counters* counters = nullptr) const;
 
  private:
   Config config_;

@@ -38,7 +38,7 @@ TEST(TextFallback, FallsBackToTheNextFontThatHasTheGlyph) {
   Shaper shaper(store);
 
   const std::u32string text = U"ABCあ";
-  const ShapedText shaped = shaper.shape(text, style_at());
+  const ShapedText shaped = shape_ok(shaper, text, style_at());
   expect_valid_clusters(shaped, text.size());
   ASSERT_EQ(shaped.clusters.size(), 4U);
 
@@ -47,7 +47,9 @@ TEST(TextFallback, FallsBackToTheNextFontThatHasTheGlyph) {
   EXPECT_EQ(cluster_font(shaped, 1), latin);
   EXPECT_EQ(cluster_font(shaped, 2), latin);
   EXPECT_EQ(cluster_font(shaped, 3), japanese);
-  EXPECT_TRUE(shaper.take_missing_glyphs().empty());
+  for (const ShapedCluster& cluster : shaped.clusters) {
+    EXPECT_FALSE(cluster.missing);
+  }
 }
 
 TEST(TextFallback, FontFamilyChangesTheOrder) {
@@ -59,7 +61,7 @@ TEST(TextFallback, FontFamilyChangesTheOrder) {
   TextStyle style = style_at();
   style.font_family = {"Noto Sans JP"};
   const std::u32string text = U"ABCあ";
-  const ShapedText shaped = shaper.shape(text, style);
+  const ShapedText shaped = shape_ok(shaper, text, style);
   expect_valid_clusters(shaped, text.size());
   ASSERT_EQ(shaped.clusters.size(), 4U);
 
@@ -78,7 +80,7 @@ TEST(TextFallback, FamilyMatchingIgnoresCaseAndSurroundingSpaces) {
 
   TextStyle style = style_at();
   style.font_family = {"  nOtO sAnS jP  "};
-  const ShapedText shaped = shaper.shape(U"A", style);
+  const ShapedText shaped = shape_ok(shaper, U"A", style);
   ASSERT_EQ(shaped.clusters.size(), 1U);
   EXPECT_EQ(cluster_font(shaped, 0), japanese);
 }
@@ -92,7 +94,7 @@ TEST(TextFallback, UnknownFamilyNamesAreSkipped) {
 
   TextStyle style = style_at();
   style.font_family = {"No Such Font", "sans-serif", "Noto Sans JP"};
-  const ShapedText shaped = shaper.shape(U"A", style);
+  const ShapedText shaped = shape_ok(shaper, U"A", style);
   ASSERT_EQ(shaped.clusters.size(), 1U);
   EXPECT_EQ(cluster_font(shaped, 0), japanese);
 }
@@ -105,7 +107,7 @@ TEST(TextFallback, AllUnknownFamiliesFallBackToLoadOrder) {
 
   TextStyle style = style_at();
   style.font_family = {"No Such Font", "serif"};
-  const ShapedText shaped = shaper.shape(U"A", style);
+  const ShapedText shaped = shape_ok(shaper, U"A", style);
   ASSERT_EQ(shaped.clusters.size(), 1U);
   EXPECT_EQ(cluster_font(shaped, 0), latin);
 }
@@ -129,10 +131,10 @@ TEST(TextFallback, WeightAppliesWithoutAnyFontFamily) {
   for (const Case& testcase : {Case{100, regular}, Case{400, regular}, Case{500, regular},
                                Case{600, bold}, Case{700, bold}, Case{900, bold}}) {
     style.font_weight = testcase.weight;
-    EXPECT_EQ(cluster_font(shaper.shape(U"あ", style), 0), testcase.expected)
+    EXPECT_EQ(cluster_font(shape_ok(shaper, U"あ", style), 0), testcase.expected)
         << "font-weight " << testcase.weight;
     // 欧文も同じ列から引かれる（Noto Sans JP グループが先なので Bold が 'A' を持つ）
-    EXPECT_EQ(cluster_font(shaper.shape(U"A", style), 0), testcase.expected)
+    EXPECT_EQ(cluster_font(shape_ok(shaper, U"A", style), 0), testcase.expected)
         << "font-weight " << testcase.weight;
   }
 }
@@ -150,8 +152,8 @@ TEST(TextFallback, WeightAppliesInsideFamiliesThatFontFamilyDidNotName) {
   style.font_family = {"Noto Sans"};  // 欧文だけを名指しする
   style.font_weight = 700;
 
-  EXPECT_EQ(cluster_font(shaper.shape(U"A", style), 0), latin) << "名指しした family が先";
-  EXPECT_EQ(cluster_font(shaper.shape(U"あ", style), 0), bold)
+  EXPECT_EQ(cluster_font(shape_ok(shaper, U"A", style), 0), latin) << "名指しした family が先";
+  EXPECT_EQ(cluster_font(shape_ok(shaper, U"あ", style), 0), bold)
       << "落ちた先の family でも font-weight は効く";
 }
 
@@ -164,9 +166,9 @@ TEST(TextFallback, WeightAppliesInVerticalTextToo) {
   TextStyle style = style_at();
   style.direction = Direction::Vertical;
   style.font_weight = 700;
-  EXPECT_EQ(cluster_font(shaper.shape(U"あ", style), 0), bold);
+  EXPECT_EQ(cluster_font(shape_ok(shaper, U"あ", style), 0), bold);
   style.font_weight = 400;
-  EXPECT_EQ(cluster_font(shaper.shape(U"あ", style), 0), regular);
+  EXPECT_EQ(cluster_font(shape_ok(shaper, U"あ", style), 0), regular);
 }
 
 // family に face が 1 つしかなければ、font-weight が何であってもそれが使われる。
@@ -179,8 +181,9 @@ TEST(TextFallback, SingleFaceFamilyIsUsedWhateverTheWeight) {
   TextStyle style = style_at();
   for (const int weight : {100, 400, 700, 900}) {
     style.font_weight = weight;
-    EXPECT_EQ(cluster_font(shaper.shape(U"A", style), 0), latin) << "font-weight " << weight;
-    EXPECT_EQ(cluster_font(shaper.shape(U"あ", style), 0), japanese) << "font-weight " << weight;
+    EXPECT_EQ(cluster_font(shape_ok(shaper, U"A", style), 0), latin) << "font-weight " << weight;
+    EXPECT_EQ(cluster_font(shape_ok(shaper, U"あ", style), 0), japanese)
+        << "font-weight " << weight;
   }
 }
 
@@ -196,14 +199,14 @@ TEST(TextFallback, FamilyOrderFollowsTheFirstFaceOfEachFamily) {
   TextStyle style = style_at();
   style.font_weight = 700;
   // Noto Sans が先に追加されているので、'A' は Bold ではなく Noto Sans で描かれる
-  EXPECT_EQ(cluster_font(shaper.shape(U"A", style), 0), latin);
-  EXPECT_EQ(cluster_font(shaper.shape(U"あ", style), 0), bold);
+  EXPECT_EQ(cluster_font(shape_ok(shaper, U"A", style), 0), latin);
+  EXPECT_EQ(cluster_font(shape_ok(shaper, U"あ", style), 0), bold);
 
   style.font_family = {"Noto Sans JP"};
-  EXPECT_EQ(cluster_font(shaper.shape(U"A", style), 0), bold) << "名指しで family の順が変わる";
+  EXPECT_EQ(cluster_font(shape_ok(shaper, U"A", style), 0), bold) << "名指しで family の順が変わる";
 
   style.font_weight = 400;
-  EXPECT_EQ(cluster_font(shaper.shape(U"A", style), 0), regular);
+  EXPECT_EQ(cluster_font(shape_ok(shaper, U"A", style), 0), regular);
 }
 
 TEST(TextFallback, MetricsComeFromTheWeightMatchedFace) {
@@ -215,11 +218,11 @@ TEST(TextFallback, MetricsComeFromTheWeightMatchedFace) {
 
   TextStyle style = style_at();
   style.font_weight = 700;
-  const FontMetrics bold_metrics = shaper.metrics(style);
+  const FontMetrics bold_metrics = metrics_ok(shaper, style);
   EXPECT_GT(bold_metrics.ascent, 0.0F);
   EXPECT_GT(bold_metrics.descent, 0.0F);
   // 先頭が Bold になっているので、Bold のグリフが選ばれることで裏づける
-  EXPECT_EQ(cluster_font(shaper.shape(U"あ", style), 0), bold);
+  EXPECT_EQ(cluster_font(shape_ok(shaper, U"あ", style), 0), bold);
 }
 
 TEST(TextFallback, TofuBoxComesFromTheWeightMatchedFace) {
@@ -230,7 +233,7 @@ TEST(TextFallback, TofuBoxComesFromTheWeightMatchedFace) {
 
   TextStyle style = style_at();  // font_family なし
   style.font_weight = 700;
-  const ShapedText shaped = shaper.shape(U"😀", style);
+  const ShapedText shaped = shape_ok(shaper, U"😀", style);
   ASSERT_EQ(shaped.glyphs.size(), 1U);
   EXPECT_EQ(shaped.glyphs[0].font, bold);
   EXPECT_EQ(shaped.glyphs[0].glyph_id, store.glyph_for(bold, U'□'));
@@ -247,19 +250,19 @@ TEST(TextFallback, PicksTheClosestWeightWithinAFamily) {
   style.font_family = {"Noto Sans JP"};
 
   style.font_weight = 400;
-  EXPECT_EQ(cluster_font(shaper.shape(U"あ", style), 0), regular);
+  EXPECT_EQ(cluster_font(shape_ok(shaper, U"あ", style), 0), regular);
 
   style.font_weight = 700;
-  EXPECT_EQ(cluster_font(shaper.shape(U"あ", style), 0), bold);
+  EXPECT_EQ(cluster_font(shape_ok(shaper, U"あ", style), 0), bold);
 
   style.font_weight = 900;  // 700 以上が無いので 700 に落ちる
-  EXPECT_EQ(cluster_font(shaper.shape(U"あ", style), 0), bold);
+  EXPECT_EQ(cluster_font(shape_ok(shaper, U"あ", style), 0), bold);
 
   style.font_weight = 100;  // 400 以下が無いので 400 に落ちる
-  EXPECT_EQ(cluster_font(shaper.shape(U"あ", style), 0), regular);
+  EXPECT_EQ(cluster_font(shape_ok(shaper, U"あ", style), 0), regular);
 
   style.font_weight = 600;  // 700 のほうが近い
-  EXPECT_EQ(cluster_font(shaper.shape(U"あ", style), 0), bold);
+  EXPECT_EQ(cluster_font(shape_ok(shaper, U"あ", style), 0), bold);
 }
 
 TEST(TextFallback, BoldGlyphsDifferFromRegular) {
@@ -271,9 +274,9 @@ TEST(TextFallback, BoldGlyphsDifferFromRegular) {
   TextStyle style = style_at();
   style.font_family = {"Noto Sans JP"};
   style.font_weight = 400;
-  const ShapedText regular = shaper.shape(U"永", style);
+  const ShapedText regular = shape_ok(shaper, U"永", style);
   style.font_weight = 700;
-  const ShapedText bold = shaper.shape(U"永", style);
+  const ShapedText bold = shape_ok(shaper, U"永", style);
 
   ASSERT_EQ(regular.glyphs.size(), 1U);
   ASSERT_EQ(bold.glyphs.size(), 1U);
@@ -290,19 +293,16 @@ TEST(TextFallback, TofuBoxComesFromTheWholeFallbackChain) {
   ASSERT_TRUE(store.has_glyph(japanese, U'□'));
   Shaper shaper(store);
 
-  const ShapedText shaped = shaper.shape(U"😀", style_at());
+  const ShapedText shaped = shape_ok(shaper, U"😀", style_at());
   ASSERT_EQ(shaped.glyphs.size(), 1U);
   EXPECT_EQ(shaped.glyphs[0].font, japanese) << "第一フォントに □ が無ければ次を探す";
   EXPECT_EQ(shaped.glyphs[0].glyph_id, store.glyph_for(japanese, U'□'));
   EXPECT_NE(shaped.glyphs[0].glyph_id, 0);
 
-  // 送りと豆腐の記録はこれまでどおり
+  // 送りと豆腐の印はこれまでどおり
   ASSERT_EQ(shaped.clusters.size(), 1U);
   EXPECT_TRUE(shaped.clusters[0].missing);
   EXPECT_NEAR(shaped.clusters[0].advance, 32.0F, 0.02F);
-  const std::vector<MissingGlyph> missing = shaper.take_missing_glyphs();
-  ASSERT_EQ(missing.size(), 1U);
-  EXPECT_EQ(missing[0].cp, U'\U0001F600');
 }
 
 // font-family で並べ替えたフォールバック列の順に探す（FontStore の追加順ではなく）。
@@ -315,7 +315,7 @@ TEST(TextFallback, TofuBoxFollowsTheResolvedFontOrder) {
   TextStyle style = style_at();
   style.font_family = {"Noto Sans JP"};
   style.font_weight = 700;
-  const ShapedText shaped = shaper.shape(U"😀", style);
+  const ShapedText shaped = shape_ok(shaper, U"😀", style);
   ASSERT_EQ(shaped.glyphs.size(), 1U);
   EXPECT_EQ(shaped.glyphs[0].font, bold);
   EXPECT_EQ(shaped.glyphs[0].glyph_id, store.glyph_for(bold, U'□'));
@@ -329,7 +329,7 @@ TEST(TextFallback, TofuBoxIsUprightInVerticalText) {
 
   TextStyle style = style_at();
   style.direction = Direction::Vertical;
-  const ShapedText shaped = shaper.shape(U"😀", style);
+  const ShapedText shaped = shape_ok(shaper, U"😀", style);
   ASSERT_EQ(shaped.glyphs.size(), 1U);
   EXPECT_EQ(shaped.glyphs[0].font, japanese);
   EXPECT_FALSE(shaped.glyphs[0].sideways);
@@ -345,7 +345,7 @@ TEST(TextFallback, SwitchesFontsRepeatedlyWithinOneRun) {
   Shaper shaper(store);
 
   const std::u32string text = U"あAいBう";
-  const ShapedText shaped = shaper.shape(text, style_at());
+  const ShapedText shaped = shape_ok(shaper, text, style_at());
   expect_valid_clusters(shaped, text.size());
   ASSERT_EQ(shaped.clusters.size(), 5U);
 

@@ -8,6 +8,7 @@
 #include "core/ids.hpp"
 #include "core/result.hpp"
 #include "layout/box_tree.hpp"
+#include "layout/counters.hpp"
 #include "linebreak/line_breaker.hpp"
 #include "style/computed_style.hpp"
 #include "text/text_measurer.hpp"
@@ -35,8 +36,11 @@ using ImageLookup = std::function<std::optional<ImageInfo>(std::string_view src)
 
 // root は style::resolve() が返す合成ルート（"#root"、display: block）。
 // measurer は注入される計測器（DESIGN.md §3-4）。テストは偽物を渡す。
+// counters は計測カウンタ（counters.hpp）の置き場。非 null なら作業量を足し込む。
+// 出力には影響しないので、製品の呼び出し側は渡さなくてよい。
 Result<BoxTree> layout(const style::StyledNode& root, const Options& options,
-                       text::TextMeasurer& measurer, const ImageLookup& images);
+                       text::TextMeasurer& measurer, const ImageLookup& images,
+                       Counters* counters = nullptr);
 
 // --dump-stage=box の出力。キー順は固定（box_tree.hpp の型の並び順）。
 std::string dump_json(const BoxTree& tree);

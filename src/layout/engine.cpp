@@ -1,9 +1,12 @@
 #include "layout/engine.hpp"
 
 #include <algorithm>
+#include <memory>
 #include <span>
 #include <variant>
 #include <vector>
+
+#include "layout/layout_cache.hpp"
 
 namespace shashoku::layout {
 namespace {
@@ -40,6 +43,20 @@ void translate_line(LineBox& line, float delta_inline, float delta_block) {
 }
 
 }  // namespace
+
+LayoutEngine::LayoutEngine(const Options& options, text::TextMeasurer& measurer,
+                           const ImageLookup& images, WritingMode mode, Counters& counters,
+                           bool memo)
+    : options_(&options),
+      measurer_(&measurer),
+      images_(&images),
+      map_(mode),
+      mode_(mode),
+      counters_(&counters),
+      cache_(std::make_unique<LayoutCache>()),
+      memo_(memo) {}
+
+LayoutEngine::~LayoutEngine() = default;
 
 ChildKind classify(const StyledNode& node) {
   if (node.type == StyledNode::Type::Text) {

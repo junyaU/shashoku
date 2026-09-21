@@ -152,7 +152,7 @@ struct Image {
   std::vector<std::uint8_t> idat;
 };
 
-Result<Header> parse_ihdr(std::span<const std::uint8_t> data) {
+Result<Header> parse_ihdr(std::span<const std::uint8_t> data, std::uint64_t max_pixels) {
   if (data.size() != kIhdrSize) {
     return bad_png(std::format("IHDR must be {} bytes but is {}", kIhdrSize, data.size()));
   }
@@ -177,10 +177,12 @@ Result<Header> parse_ihdr(std::span<const std::uint8_t> data) {
     return bad_png(std::format("IHDR dimensions must be at most {} but are {}x{}", kMaxChunkLength,
                                header.width, header.height));
   }
+  // 画素を 1 バイトも確保する前に判定する（A25 の検査点 (c)）。
   const std::uint64_t pixels = std::uint64_t{header.width} * header.height;
-  if (pixels > kMaxPixels) {
-    return bad_png(std::format("image is too large: {}x{} = {} pixels, the limit is {}",
-                               header.width, header.height, pixels, kMaxPixels));
+  if (pixels > max_pixels) {
+    return fail(ErrorKind::LimitExceeded,
+                std::format("image is too large: {}x{} = {} pixels, the limit is {}", header.width,
+                            header.height, pixels, max_pixels));
   }
   if (color_type != 0 && color_type != 2 && color_type != 3 && color_type != 4 && color_type != 6) {
     return bad_png(std::format("IHDR has an invalid color type {}", color_type));
@@ -345,11 +347,12 @@ Result<RawChunk> read_chunk(Reader& reader, std::span<const std::uint8_t> bytes)
 }
 
 // 先頭チャンク（IHDR でなければならない）。
-Result<void> begin_image(Image& image, ChunkOrder& order, const RawChunk& chunk) {
+Result<void> begin_image(Image& image, ChunkOrder& order, const RawChunk& chunk,
+                         std::uint64_t max_pixels) {
   if (chunk.type != kIhdr) {
     return bad_png(std::format("the first chunk must be IHDR but is '{}'", type_name(chunk.type)));
   }
-  Result<Header> header = parse_ihdr(chunk.data);
+  Result<Header> header = parse_ihdr(chunk.data, max_pixels);
   if (!header) {
     return std::unexpected(std::move(header).error());
   }
@@ -374,9 +377,10 @@ Result<void> handle_palette_chunk(Image& image, ChunkOrder& order, const RawChun
 }
 
 // 1 チャンクを状態に取り込む。IEND に達したら true を返す。
-Result<bool> handle_chunk(Image& image, ChunkOrder& order, const RawChunk& chunk) {
+Result<bool> handle_chunk(Image& image, ChunkOrder& order, const RawChunk& chunk,
+                          std::uint64_t max_pixels) {
   if (!order.seen_ihdr) {
-    Result<void> begun = begin_image(image, order, chunk);
+    Result<void> begun = begin_image(image, order, chunk, max_pixels);
     if (!begun) {
       return std::unexpected(std::move(begun).error());
     }
@@ -433,7 +437,7 @@ Result<Image> finish_image(Image image, const ChunkOrder& order, std::size_t tra
 }
 
 // IHDR から IEND まで読み、IDAT を連結して返す。
-Result<Image> read_chunks(std::span<const std::uint8_t> bytes) {
+Result<Image> read_chunks(std::span<const std::uint8_t> bytes, std::uint64_t max_pixels) {
   Reader reader(bytes);
   const std::optional<std::span<const std::uint8_t>> signature = reader.take(kSignature.size());
   if (!signature) {
@@ -452,7 +456,7 @@ Result<Image> read_chunks(std::span<const std::uint8_t> bytes) {
     if (!chunk) {
       return std::unexpected(std::move(chunk).error());
     }
-    Result<bool> done = handle_chunk(image, order, *chunk);
+    Result<bool> done = handle_chunk(image, order, *chunk, max_pixels);
     if (!done) {
       return std::unexpected(std::move(done).error());
     }
@@ -736,8 +740,8 @@ Result<Bitmap> decode_pixels(const Image& image) {
 
 }  // namespace
 
-Result<Bitmap> decode(std::span<const std::uint8_t> bytes) {
-  Result<Image> image = read_chunks(bytes);
+Result<Bitmap> decode(std::span<const std::uint8_t> bytes, std::uint64_t max_pixels) {
+  Result<Image> image = read_chunks(bytes, max_pixels);
   if (!image) {
     return std::unexpected(std::move(image).error());
   }

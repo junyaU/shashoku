@@ -207,30 +207,58 @@ TEST(RasterTarget, DeviceSizeIsCssSizeTimesScaleRoundedUp) {
   }
 }
 
-TEST(RasterTarget, HugeDeviceSizeIsInvalidOption) {
+// 大きすぎる出力は LimitExceeded（不正な値ではなく「上限を超えた」なので。A25）。
+TEST(RasterTarget, HugeDeviceSizeExceedsTheLimit) {
   Target wide;
   wide.width = 1.0e9F;  // 1 辺が 2^26 を超える
   wide.height = 1;
-  EXPECT_EQ(must_fail({}, wide).kind, ErrorKind::InvalidOption);
+  EXPECT_EQ(must_fail({}, wide).kind, ErrorKind::LimitExceeded);
 
   Target big;
   big.width = 20000;  // 20000 * 20000 = 4e8 > 2^26
   big.height = 20000;
-  EXPECT_EQ(must_fail({}, big).kind, ErrorKind::InvalidOption);
+  EXPECT_EQ(must_fail({}, big).kind, ErrorKind::LimitExceeded);
 
   Target scaled;
   scaled.width = 1000;
   scaled.height = 1000;
   scaled.scale = 1000;  // 1e6 px 角
-  EXPECT_EQ(must_fail({}, scaled).kind, ErrorKind::InvalidOption);
+  EXPECT_EQ(must_fail({}, scaled).kind, ErrorKind::LimitExceeded);
 }
 
 // 2^26 ピクセルを 1 つでも超えたら拒否する（ぴったりは通すが、テストで 256MB は確保しない）。
-TEST(RasterTarget, JustOverThePixelLimitIsInvalidOption) {
+TEST(RasterTarget, JustOverThePixelLimitExceedsTheLimit) {
   Target t;
   t.width = 8192;
   t.height = 8193;  // 8192 * 8193 = 2^26 + 8192
-  EXPECT_EQ(must_fail({}, t).kind, ErrorKind::InvalidOption);
+  EXPECT_EQ(must_fail({}, t).kind, ErrorKind::LimitExceeded);
+}
+
+// 上限は呼び出し側が決める（api は RenderLimits::device_pixels を渡す）。
+// ちょうどは通り、1 画素でも超えたら LimitExceeded。ピクセルは確保されない。
+TEST(RasterTarget, MaxDevicePixelsIsAField) {
+  Target exact;
+  exact.width = 40;
+  exact.height = 10;
+  exact.max_device_pixels = 400;
+  const Bitmap b = must_rasterize({}, exact);
+  EXPECT_EQ(b.width, 40U);
+  EXPECT_EQ(b.height, 10U);
+
+  Target over = exact;
+  over.max_device_pixels = 399;
+  const Error error = must_fail({}, over);
+  EXPECT_EQ(error.kind, ErrorKind::LimitExceeded);
+  EXPECT_NE(error.message.find("40 x 10 = 400"), std::string::npos) << error.message;
+  EXPECT_NE(error.message.find("the limit of 399"), std::string::npos) << error.message;
+
+  // scale 込みで数える（40 x 10 @2 = 1600 px）。
+  Target scaled = exact;
+  scaled.scale = 2;
+  scaled.max_device_pixels = 1599;
+  EXPECT_EQ(must_fail({}, scaled).kind, ErrorKind::LimitExceeded);
+  scaled.max_device_pixels = 1600;
+  EXPECT_EQ(must_rasterize({}, scaled).rgba.size(), std::size_t{1600} * 4);
 }
 
 TEST(RasterTarget, LargeButAllowedSizeIsAccepted) {

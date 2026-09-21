@@ -9,9 +9,12 @@
 
 #include <gtest/gtest.h>
 
+#include "core/result.hpp"
 #include "raster/glyph_source.hpp"
+#include "shashoku/error.hpp"
 #include "text/font_store.hpp"
 #include "text/freetype_glyph_source.hpp"
+#include "text/shaped_text_checks.hpp"
 #include "text/shaper.hpp"
 #include "text/test_fonts.hpp"
 #include "text/text_measurer.hpp"
@@ -50,13 +53,14 @@ void draw(GrayImage& image, const ShapedText& shaped, raster::GlyphSource& glyph
   for (const ShapedGlyph& glyph : shaped.glyphs) {
     const auto origin_x = static_cast<int>(std::lround(pen_x + glyph.x_offset));
     const auto origin_y = static_cast<int>(std::lround(pen_y + glyph.y_offset));
-    const raster::GlyphBitmap bitmap =
+    const Result<raster::GlyphBitmap> bitmap =
         glyphs.rasterize(glyph.font, glyph.glyph_id, pixel_size, glyph.sideways);
-    for (std::uint32_t row = 0; row < bitmap.height; ++row) {
-      for (std::uint32_t column = 0; column < bitmap.width; ++column) {
-        image.blend(origin_x + bitmap.left + static_cast<int>(column),
-                    origin_y - bitmap.top + static_cast<int>(row),
-                    bitmap.coverage[static_cast<std::size_t>(row) * bitmap.width + column]);
+    ASSERT_TRUE(bitmap.has_value()) << to_string(bitmap.error());
+    for (std::uint32_t row = 0; row < bitmap->height; ++row) {
+      for (std::uint32_t column = 0; column < bitmap->width; ++column) {
+        image.blend(origin_x + bitmap->left + static_cast<int>(column),
+                    origin_y - bitmap->top + static_cast<int>(row),
+                    bitmap->coverage[static_cast<std::size_t>(row) * bitmap->width + column]);
       }
     }
     if (vertical) {
@@ -95,7 +99,7 @@ TEST(TextDebugOutput, WritesAHorizontalLine) {
 
   TextStyle style;
   style.font_size = 24.0F;
-  const ShapedText shaped = shaper.shape(U"こんにちは、世界のみんな。ABC😀", style);
+  const ShapedText shaped = shape_ok(shaper, U"こんにちは、世界のみんな。ABC😀", style);
 
   GrayImage image{520, 40, std::vector<std::uint8_t>(520UL * 40)};
   draw(image, shaped, glyphs, 4.0F, 28.0F, style.font_size, false);
@@ -113,7 +117,7 @@ TEST(TextDebugOutput, WritesAVerticalLine) {
   TextStyle style;
   style.font_size = 24.0F;
   style.direction = Direction::Vertical;
-  const ShapedText shaped = shaper.shape(U"「縦書き」のテスト（ABC）ー。", style);
+  const ShapedText shaped = shape_ok(shaper, U"「縦書き」のテスト（ABC）ー。", style);
 
   GrayImage image{40, 420, std::vector<std::uint8_t>(40UL * 420)};
   draw(image, shaped, glyphs, 20.0F, 6.0F, style.font_size, true);

@@ -2,6 +2,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <random>
 #include <span>
 #include <string>
@@ -90,6 +91,16 @@ std::string describe(std::span<const Item> items, const Breaks& breaks, std::siz
   return out;
 }
 
+// 位置 i（items[i-1] と items[i] の間）で break_anywhere の強制分割が起こりうるか。
+// 両側のアイテムがともに anywhere のときだけ（ARCHITECTURE.md A23）。
+bool anywhere_between(std::span<const Item> items, const Config& config, std::size_t i) {
+  if (i == 0 || i >= items.size()) {
+    return false;
+  }
+  return items[i - 1].break_anywhere.value_or(config.break_anywhere) &&
+         items[i].break_anywhere.value_or(config.break_anywhere);
+}
+
 void check_invariants(std::span<const Item> items, const Config& config, float width) {
   const LineBreaker breaker(config);
   const Breaks breaks = breaker.break_lines(items, width);
@@ -130,22 +141,24 @@ void check_invariants(std::span<const Item> items, const Config& config, float w
     if (!line.overflows) {
       EXPECT_LE(line.width, width + kTolerance);
     }
-    // 分割位置は break_opportunities() が true の位置（break_anywhere を除く）
-    if (i > 0 && !config.break_anywhere) {
+    // 分割位置は break_opportunities() が true の位置（break_anywhere の発動を除く）
+    const bool anywhere_here = anywhere_between(items, config, line.begin);
+    if (i > 0 && !anywhere_here) {
       EXPECT_TRUE(opportunities[line.begin]);
     }
-    if (config.break_anywhere || line.overflows || line.content_end == line.begin) {
+    if (line.overflows || line.content_end == line.begin) {
       continue;
     }
     // 製品の存在理由: 行頭に句読点・終わり括弧が絶対に出ない。
     // ただし直前の行が強制改行で終わっていれば、その位置の改行は LB4 で必ず起きる
     // （非適合化できない規則なので禁則より強い）。
-    if (i > 0 && !breaks.lines[i - 1].forced && items[line.begin].kind == ItemKind::Text) {
+    if (i > 0 && !anywhere_here && !breaks.lines[i - 1].forced &&
+        items[line.begin].kind == ItemKind::Text) {
       EXPECT_FALSE(contains(kAlwaysLineStartProhibited, items[line.begin].cp))
           << "行頭禁則の文字が行頭に出た: " << describe(items, breaks, i);
     }
     // 行末に始め括弧が残らない（最終行と強制改行で終わる行は「次の行」がないので除く）
-    if (i + 1 < breaks.lines.size() && !line.forced &&
+    if (i + 1 < breaks.lines.size() && !line.forced && !anywhere_between(items, config, line.end) &&
         items[line.content_end - 1].kind == ItemKind::Text) {
       EXPECT_FALSE(contains(kAlwaysLineEndProhibited, items[line.content_end - 1].cp))
           << "行末禁則の文字が行末に出た: " << describe(items, breaks, i);
@@ -161,6 +174,77 @@ TEST(LineBreakProperty, InvariantsUnderRandomInput) {
 
   for (int iteration = 0; iteration < 400; ++iteration) {
     const std::vector<Item> items = random_items(rng, length(rng));
+    const float available = width(rng);
+    for (const Strictness strictness :
+         {Strictness::Strict, Strictness::Normal, Strictness::Loose}) {
+      for (const OverflowPolicy overflow :
+           {OverflowPolicy::Oidashi, OverflowPolicy::Oikomi, OverflowPolicy::Burasage}) {
+        for (const bool anywhere : {false, true}) {
+          Config config;
+          config.strictness = strictness;
+          config.overflow = overflow;
+          config.break_anywhere = anywhere;
+          SCOPED_TRACE("iteration " + std::to_string(iteration) + " strictness " +
+                       std::to_string(static_cast<int>(strictness)) + " overflow " +
+                       std::to_string(static_cast<int>(overflow)) + " anywhere " +
+                       std::to_string(static_cast<int>(anywhere)) + " width " +
+                       std::to_string(available));
+          check_invariants(items, config, available);
+        }
+      }
+    }
+  }
+}
+
+// アイテムごとのポリシー（ARCHITECTURE.md A23）を「span 相当の連続した範囲」に振る。
+// 範囲の切り方も値もランダムなので、入れ子・隣接・Config との食い違いが一通り出る。
+void sprinkle_policies(std::mt19937& rng, std::vector<Item>& items) {
+  std::uniform_int_distribution<std::size_t> run(1, 6);
+  std::uniform_int_distribution<int> choice(0, 4);
+  std::size_t i = 0;
+  while (i < items.size()) {
+    const std::size_t end = std::min(items.size(), i + run(rng));
+    std::optional<Strictness> strictness;
+    switch (choice(rng)) {
+      case 1:
+        strictness = Strictness::Strict;
+        break;
+      case 2:
+        strictness = Strictness::Normal;
+        break;
+      case 3:
+        strictness = Strictness::Loose;
+        break;
+      default:
+        break;  // nullopt: Config に従う
+    }
+    std::optional<bool> anywhere;
+    switch (choice(rng)) {
+      case 1:
+        anywhere = true;
+        break;
+      case 2:
+        anywhere = false;
+        break;
+      default:
+        break;
+    }
+    for (std::size_t j = i; j < end; ++j) {
+      items[j].strictness = strictness;
+      items[j].break_anywhere = anywhere;
+    }
+    i = end;
+  }
+}
+
+TEST(LineBreakProperty, InvariantsWithPerItemPolicies) {
+  std::mt19937 rng = seeded_rng(20260925);
+  std::uniform_int_distribution<std::size_t> length(0, 40);
+  std::uniform_real_distribution<float> width(1.0F, 220.0F);
+
+  for (int iteration = 0; iteration < 200; ++iteration) {
+    std::vector<Item> items = random_items(rng, length(rng));
+    sprinkle_policies(rng, items);
     const float available = width(rng);
     for (const Strictness strictness :
          {Strictness::Strict, Strictness::Normal, Strictness::Loose}) {

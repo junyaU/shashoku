@@ -9,6 +9,7 @@
 #include <gtest/gtest.h>
 
 #include "core/geometry.hpp"
+#include "layout/engine.hpp"  // layout_without_memo（メモの有無で出力が変わらないことの検査）
 #include "layout/test_support.hpp"
 
 // 性質テスト（DESIGN.md §10-4）。種を固定した乱数でランダムなスタイル付きツリーを作り、
@@ -269,10 +270,21 @@ void check_seed(std::uint32_t seed, bool vertical) {
       vertical ? build_vertical(std::move(children)) : build(std::move(children));
   const Options options = vertical ? vertical_options(400, inline_size) : make_options(inline_size);
 
+  // 豆腐（A31）も不変条件の対象にする。kWords に必ず出てくる文字を欠落させて、
+  // どの木でも記録が出るようにする（記録が空だと (6) が何も確かめない）
+  constexpr std::u32string_view kMissing = U"漢b「";
+
   FakeMeasurer measurer;
+  measurer.missing_chars = kMissing;
   const ImageLookup images = image_table({{.src = "p", .id = 1, .width = 24, .height = 12}});
   const auto tree = run_layout(root, options, measurer, images);
   ASSERT_TRUE(tree.has_value()) << "seed " << seed << ": " << to_string(tree.error());
+
+  // (7) 豆腐の記録は (位置, コードポイント) の狭義単調増加（重複なし・決定的な順序）
+  for (std::size_t i = 1; i < tree->missing_glyphs.size(); ++i) {
+    EXPECT_TRUE(tree->missing_glyphs[i - 1] < tree->missing_glyphs[i])
+        << "seed " << seed << " 豆腐 #" << i;
+  }
 
   // (2) 入力のクラスタはちょうど 1 回ずつどこかの行に現れる（空白の畳み込みぶんを除く）
   std::string source;
@@ -288,9 +300,23 @@ void check_seed(std::uint32_t seed, bool vertical) {
 
   // (5) 同じ入力 → 同じ出力
   FakeMeasurer again;
+  again.missing_chars = kMissing;
   const auto twice = run_layout(root, options, again, images);
   ASSERT_TRUE(twice.has_value());
   EXPECT_EQ(dump_json(*tree), dump_json(*twice)) << "seed " << seed;
+
+  // (6) 計測のメモ（A29）が効いても出力は 1 ビットも変わらない。
+  // ダンプの float は「元の値に戻せる最短表現」なので、この比較はビット比較と同じ。
+  // メモのキーに足りないものがあれば（= 条件が違うのに使い回せば）ここで落ちる。
+  // ダンプには豆腐の記録も入るので、メモの有無で警告が変わらないこともここで固定される（A31）
+  FakeMeasurer plain;
+  plain.missing_chars = kMissing;
+  const auto without_memo = layout_without_memo(root, options, plain, images);
+  ASSERT_TRUE(without_memo.has_value()) << "seed " << seed;
+  EXPECT_EQ(dump_json(*tree), dump_json(*without_memo)) << "seed " << seed;
+  EXPECT_EQ(tree->missing_glyphs, without_memo->missing_glyphs) << "seed " << seed;
+  // メモは仕事を減らすだけ（増やすことはない）
+  EXPECT_LE(measurer.shape_calls, plain.shape_calls) << "seed " << seed;
 }
 
 TEST(LayoutProperty, RandomTreesKeepTheInvariants) {

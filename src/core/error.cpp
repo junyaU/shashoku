@@ -33,6 +33,10 @@ std::string_view to_string(ErrorKind kind) noexcept {
       return "image-not-found";
     case ErrorKind::InvalidOption:
       return "invalid-option";
+    case ErrorKind::LimitExceeded:
+      return "limit-exceeded";
+    case ErrorKind::OutOfMemory:
+      return "out-of-memory";
     case ErrorKind::Internal:
       return "internal";
   }

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <functional>
 #include <optional>
 #include <string>
@@ -32,11 +33,16 @@ inline constexpr float kDescentRatio = 0.12F;
 
 class FakeMeasurer final : public text::TextMeasurer {
  public:
-  text::ShapedText shape(std::u32string_view text, const text::TextStyle& style) override;
-  text::FontMetrics metrics(const text::TextStyle& style) override;
+  Result<text::ShapedText> shape(std::u32string_view text, const text::TextStyle& style) override;
+  Result<text::FontMetrics> metrics(const text::TextStyle& style) override;
 
   // フォールバックの再現。ここに入れた文字だけ font = 1 を返す
   std::u32string fallback_chars;
+  // 豆腐の再現。ここに入れた文字のクラスタは missing = true になる（issue #9）
+  std::u32string missing_chars;
+  // 失敗の注入（A30 / issue #3）。ここの文字を含む区間の shape() がエラーを返す
+  std::u32string fail_on;
+  bool fail_metrics = false;
   // メトリクスの比率。既定は 0.88 / 0.12（dump の文字列固定テストだけ切りのいい値に変える）
   float ascent_ratio = kAscentRatio;
   float descent_ratio = kDescentRatio;
@@ -62,6 +68,7 @@ struct Tree {
   std::string image_src;  // <img> のみ
   std::optional<float> attr_width;
   std::optional<float> attr_height;
+  SourceLocation location;  // 既定は 0:1:1。at() で与える
 };
 
 [[nodiscard]] Tree text(std::string_view content);
@@ -80,6 +87,9 @@ struct Tree {
 // 任意のタグ・display のノード（img / ruby / flex などのエラー系テスト用）。
 [[nodiscard]] Tree element(std::string_view tag, style::Display display,
                            std::vector<Tree> children = {}, StyleFn style = nullptr);
+// ノードに入力位置を与える（豆腐の警告と断片のダンプ。A31）。行は 1、桁は offset + 1 に
+// するので、offset の大小がそのまま報告順になる。子の位置は変えない。
+[[nodiscard]] Tree at(Tree node, std::uint32_t offset);
 
 // 合成ルート "#root"（display: block）を作る。
 [[nodiscard]] style::StyledNode build(std::vector<Tree> children, StyleFn style = nullptr);
@@ -105,6 +115,9 @@ struct ImageEntry {
                                          text::TextMeasurer& measurer);
 [[nodiscard]] Result<BoxTree> run_layout(const style::StyledNode& root, const Options& options,
                                          text::TextMeasurer& measurer, const ImageLookup& images);
+// 計測カウンタ（counters.hpp）つき。計算量の回帰テスト用（issue #10-3）。
+[[nodiscard]] Result<BoxTree> run_layout(const style::StyledNode& root, const Options& options,
+                                         text::TextMeasurer& measurer, Counters& counters);
 // 幅だけ指定する短縮形。
 [[nodiscard]] Result<BoxTree> run_layout(const style::StyledNode& root, float viewport_width,
                                          text::TextMeasurer& measurer);

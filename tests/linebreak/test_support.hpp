@@ -35,6 +35,9 @@ inline constexpr float kEm = 16.0F;
 
 // 分割可能位置を '|' で可視化する。"あ、い" → "あ、|い"。
 [[nodiscard]] std::string mark_opportunities(std::string_view utf8, const Config& config = {});
+// アイテムごとのポリシー（Item::strictness / Item::break_anywhere）を設定した列を渡す版。
+[[nodiscard]] std::string mark_opportunities(std::span<const Item> items,
+                                             const Config& config = {});
 
 // Config を 1 項目だけ変えて作る（素の集成初期化は -Wmissing-field-initializers に掛かる）。
 [[nodiscard]] Config with_strictness(Strictness strictness);

@@ -7,6 +7,7 @@
 
 #include "core/color.hpp"
 #include "core/ids.hpp"
+#include "shashoku/error.hpp"
 #include "style/computed_style.hpp"
 
 // ③ レイアウトの出力（ARCHITECTURE.md §3.8）= ⑤a paint の入力。
@@ -89,6 +90,11 @@ struct TextFragment {
   // デバッグ用の元テキスト（UTF-8）。描画には使わない。
   // 1 クラスタの途中でフォントが変わって断片が分かれた場合、2 つめ以降は空になる。
   std::string text;
+  // 断片の**先頭のグリフ**が属するテキストノードの先頭の位置（A31 / issue #9）。
+  // 「この断片は HTML のどこから来たか」をダンプで引くためのもので、描画には使わない。
+  // 断片は位置では切らない（位置で切ると DrawGlyphs が無意味に分かれる。A27）ので、
+  // 1 つの断片が複数のノードにまたがることがある。
+  SourceLocation location;
 
   bool operator==(const TextFragment&) const = default;
 };
@@ -162,11 +168,39 @@ struct BlockBox {
   bool operator==(const BlockBox&) const = default;
 };
 
+// 豆腐（どのフォントにもグリフがなかった文字）1 件（A31 / issue #9 / DESIGN.md §6-6）。
+// 報告の粒度は「(コードポイント, テキストノード) の組ごとに 1 件」: 同じノードに同じ絵文字が
+// 5 個あっても 1 件、別のノードなら別件。api が Warning に変換する。
+struct MissingGlyph {
+  char32_t codepoint = 0;
+  // その文字を含むテキストノードの先頭（StyledNode::location）。文字単位の桁ではない
+  // （文字参照や空白の畳み込みを遡らないと出せないため。A31）。
+  SourceLocation location;
+
+  bool operator==(const MissingGlyph&) const = default;
+  // 報告順（入力位置の昇順 → コードポイントの昇順）。決定的であること。
+  [[nodiscard]] bool operator<(const MissingGlyph& other) const {
+    if (location.offset != other.location.offset) {
+      return location.offset < other.location.offset;
+    }
+    if (location.line != other.location.line) {
+      return location.line < other.location.line;
+    }
+    if (location.column != other.location.column) {
+      return location.column < other.location.column;
+    }
+    return codepoint < other.codepoint;
+  }
+};
+
 struct BoxTree {
   WritingMode writing_mode = WritingMode::HorizontalTb;
   float viewport_width = 0;              // 物理 px。paint が論理 → 物理の変換に使う
   std::optional<float> viewport_height;  // 物理 px（縦書きでは必須）
   BlockBox root;
+  // 豆腐の記録。上の operator< の順（入力位置 → コードポイント）に並び、重複はない。
+  // paint は読まない（絵には影響しない）。api が Warning にし、dump_json が出す。
+  std::vector<MissingGlyph> missing_glyphs;
 
   // 内容の block 方向の大きさ（api が画像の高さを決めるのに使う。ARCHITECTURE.md §3.10）。
   [[nodiscard]] float content_block_size() const { return root.rect.block_end(); }

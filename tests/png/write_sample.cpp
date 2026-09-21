@@ -1,6 +1,6 @@
 // encode の出力を外部の実装（pngcheck）に検査させるための小さな書き出しツール。
-//   png_write_sample <pattern> <output.png>
-// CTest からは tests/png/pngcheck.cmake 経由で呼ばれる。
+//   png_write_sample <pattern> <output.png> [圧縮レベル 0-9]
+// CTest からは tests/png/pngcheck.cmake 経由で呼ばれる（全レベルを通す。A33）。
 
 #include <algorithm>
 #include <cstddef>
@@ -8,6 +8,7 @@
 #include <fstream>
 #include <ios>
 #include <iostream>
+#include <optional>
 #include <span>
 #include <string_view>
 #include <vector>
@@ -52,7 +53,58 @@ Bitmap make_gradient(std::uint32_t width, std::uint32_t height) {
   return bitmap;
 }
 
+// フィルタ選択の最適化（A33）の前後でバイト列が一致することを確かめるための大きめの絵。
+// 5 種のフィルタがどれも選ばれるように、傾き・平坦・ノイズ・極端な縦横比を混ぜてある。
+std::optional<Bitmap> make_large_sample(std::string_view pattern) {
+  if (pattern == "big-gradient") {
+    return make_gradient(1200, 630);
+  }
+  if (pattern == "solid-big") {
+    return Bitmap{1200, 630, Color{0x12, 0x26, 0x3F, 0xFF}};
+  }
+  if (pattern == "photo") {
+    // 写真風: なめらかな 2 次元の傾きに弱いノイズを乗せる（Paeth が勝ちやすい絵）。
+    Bitmap bitmap(800, 600);
+    Rng rng(4649);
+    for (std::uint32_t y = 0; y < bitmap.height; ++y) {
+      for (std::uint32_t x = 0; x < bitmap.width; ++x) {
+        const int base = 40 + static_cast<int>((x / 3U) % 160U) + static_cast<int>((y / 5U) % 60U);
+        const int noise = static_cast<int>(rng.byte() % 11U) - 5;
+        const auto v = static_cast<std::uint8_t>(std::clamp(base + noise, 0, 255));
+        bitmap.set_pixel(
+            x, y,
+            Color{v, static_cast<std::uint8_t>(255 - v), static_cast<std::uint8_t>(v / 2), 0xFF});
+      }
+    }
+    return bitmap;
+  }
+  if (pattern == "wide") {
+    // 幅が極端に広い絵（1 行が 16 KB を超える）。
+    Bitmap bitmap(4096, 3);
+    for (std::uint32_t y = 0; y < bitmap.height; ++y) {
+      for (std::uint32_t x = 0; x < bitmap.width; ++x) {
+        const auto v = static_cast<std::uint8_t>((x * 7U + (y * 53U)) & 0xFFU);
+        bitmap.set_pixel(x, y, Color{v, static_cast<std::uint8_t>(x & 0xFFU), 0x10, 0xFF});
+      }
+    }
+    return bitmap;
+  }
+  if (pattern == "tall") {
+    // 高さだけが大きい絵（行の本数が多く、行ごとの固定費が効く）。
+    Bitmap bitmap(3, 4096);
+    Rng rng(20260920);
+    for (std::uint8_t& v : bitmap.rgba) {
+      v = rng.byte();
+    }
+    return bitmap;
+  }
+  return std::nullopt;
+}
+
 Bitmap make_sample(std::string_view pattern) {
+  if (std::optional<Bitmap> large = make_large_sample(pattern); large) {
+    return std::move(*large);
+  }
   if (pattern == "tiny") {
     return {1, 1, Color{0x12, 0x34, 0x56, 0x78}};
   }
@@ -88,14 +140,32 @@ Bitmap make_sample(std::string_view pattern) {
   return make_gradient(120, 80);
 }
 
+// "0"〜"9" だけを読む（from_chars を引っ張ってくるほどの用は無い）。
+std::optional<int> parse_level(std::string_view text) {
+  if (text.size() != 1 || text[0] < '0' || text[0] > '9') {
+    return std::nullopt;
+  }
+  return text[0] - '0';
+}
+
 int run(std::span<char*> args) {
-  if (args.size() != 3) {
-    std::cerr << "usage: png_write_sample <pattern> <output.png>\n";
+  if (args.size() != 3 && args.size() != 4) {
+    std::cerr << "usage: png_write_sample <pattern> <output.png> [compression level 0-9]\n";
     return 2;
   }
 
+  int level = shashoku::png::kDefaultCompressionLevel;
+  if (args.size() == 4) {
+    const std::optional<int> parsed = parse_level(args[3]);
+    if (!parsed) {
+      std::cerr << "compression level must be 0-9: " << args[3] << "\n";
+      return 2;
+    }
+    level = *parsed;
+  }
+
   const Bitmap bitmap = make_sample(args[1]);
-  const shashoku::Result<std::vector<std::uint8_t>> encoded = shashoku::png::encode(bitmap);
+  const shashoku::Result<std::vector<std::uint8_t>> encoded = shashoku::png::encode(bitmap, level);
   if (!encoded) {
     std::cerr << to_string(encoded.error()) << "\n";
     return 1;

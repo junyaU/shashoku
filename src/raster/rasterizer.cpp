@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <optional>
 #include <span>
 #include <string>
@@ -570,6 +571,9 @@ Result<void> Canvas::draw_glyphs(const DrawGlyphs& cmd, float scale, GlyphSource
     return {};
   }
   const float pixel_size = cmd.size * scale;
+  if (!finite(pixel_size) || pixel_size <= 0.0F) {
+    return {};  // size * scale があふれた（非有限の寸法を持つコマンドは無視する）
+  }
   for (const GlyphInstance& g : cmd.glyphs) {
     if (!finite(g.origin.x) || !finite(g.origin.y)) {
       continue;
@@ -580,22 +584,28 @@ Result<void> Canvas::draw_glyphs(const DrawGlyphs& cmd, float scale, GlyphSource
     if (std::fabs(ox) > kMaxOrigin || std::fabs(oy) > kMaxOrigin) {
       continue;
     }
-    const GlyphBitmap bmp = glyphs.rasterize(cmd.font, g.glyph_id, pixel_size, cmd.sideways);
-    if (bmp.width == 0U || bmp.height == 0U) {
-      continue;  // 空白グリフ
+    // 失敗は握りつぶさずに伝播する（glyph_source.hpp: 空のビットマップは「描くものが
+    // ないグリフ」だけを意味する。issue #3）。
+    const Result<GlyphBitmap> bmp =
+        glyphs.rasterize(cmd.font, g.glyph_id, pixel_size, cmd.sideways);
+    if (!bmp) {
+      return std::unexpected(bmp.error());
     }
     const std::size_t expected =
-        static_cast<std::size_t>(bmp.width) * static_cast<std::size_t>(bmp.height);
-    if (bmp.coverage.size() != expected) {
+        static_cast<std::size_t>(bmp->width) * static_cast<std::size_t>(bmp->height);
+    if (bmp->coverage.size() != expected) {
       return fail(ErrorKind::Internal,
                   "raster: GlyphSource returned a malformed bitmap for glyph " +
                       std::to_string(g.glyph_id) + " (coverage " +
-                      std::to_string(bmp.coverage.size()) + " bytes, expected " +
+                      std::to_string(bmp->coverage.size()) + " bytes, expected " +
                       std::to_string(expected) + ")");
     }
+    if (bmp->width == 0U || bmp->height == 0U) {
+      continue;  // 空白グリフ（成功して空のビットマップ）
+    }
     // glyph_source.hpp: 左上ピクセルのデバイス座標は (origin.x + left, origin.y - top)。
-    blit_glyph(bmp, static_cast<std::int64_t>(ox) + bmp.left,
-               static_cast<std::int64_t>(oy) - bmp.top, cmd.color);
+    blit_glyph(*bmp, static_cast<std::int64_t>(ox) + bmp->left,
+               static_cast<std::int64_t>(oy) - bmp->top, cmd.color);
   }
   return {};
 }
@@ -689,8 +699,9 @@ Result<void> Canvas::run(const DisplayList& list, float scale, GlyphSource& glyp
 // ターゲットの検証
 // ===========================================================================
 
-// これを超えるデバイスピクセルは受け付けない（2^26 = 67108864）。
-constexpr std::int64_t kMaxDevicePixels = 1LL << 26;
+// 1 辺の**絶対**上限。Bitmap::width / height が std::uint32_t なので、これを超えると
+// 型に収まらない（実装の都合による上限で、Target::max_device_pixels では緩められない）。
+constexpr std::int64_t kMaxDeviceSide = 0xFFFFFFFFLL;
 
 Result<std::pair<std::uint32_t, std::uint32_t>> device_size(const Target& target) {
   if (!finite(target.scale) || target.scale <= 0.0F) {
@@ -705,11 +716,11 @@ Result<std::pair<std::uint32_t, std::uint32_t>> device_size(const Target& target
   }
   const float fw = std::ceil(target.width * target.scale);
   const float fh = std::ceil(target.height * target.scale);
-  const auto limit = static_cast<float>(kMaxDevicePixels);
-  if (fw > limit || fh > limit) {
-    return fail(ErrorKind::InvalidOption, "raster: device size " + to_text(fw) + " x " +
-                                              to_text(fh) + " px exceeds the limit of " +
-                                              std::to_string(kMaxDevicePixels) + " px per side");
+  const auto side_limit = static_cast<float>(kMaxDeviceSide);
+  if (fw > side_limit || fh > side_limit) {
+    return fail(ErrorKind::LimitExceeded, "raster: device size " + to_text(fw) + " x " +
+                                              to_text(fh) + " px exceeds the absolute limit of " +
+                                              std::to_string(kMaxDeviceSide) + " px per side");
   }
   const auto w = static_cast<std::int64_t>(fw);
   const auto h = static_cast<std::int64_t>(fh);
@@ -718,10 +729,21 @@ Result<std::pair<std::uint32_t, std::uint32_t>> device_size(const Target& target
                                               std::to_string(w) + " x " + std::to_string(h) +
                                               " px");
   }
-  if (w * h > kMaxDevicePixels) {
-    return fail(ErrorKind::InvalidOption, "raster: device size " + std::to_string(w) + " x " +
-                                              std::to_string(h) + " px exceeds the limit of " +
-                                              std::to_string(kMaxDevicePixels) + " pixels");
+  // ピクセルバッファを確保する前に判定する（A25 の検査点 (c)）。
+  const std::uint64_t pixels = static_cast<std::uint64_t>(w) * static_cast<std::uint64_t>(h);
+  if (pixels > target.max_device_pixels) {
+    return fail(ErrorKind::LimitExceeded, "raster: device size " + std::to_string(w) + " x " +
+                                              std::to_string(h) + " = " + std::to_string(pixels) +
+                                              " px exceeds the limit of " +
+                                              std::to_string(target.max_device_pixels) + " pixels");
+  }
+  // 絶対上限: Bitmap::rgba は 1 画素 4 バイトなので、画素数 x 4 が std::size_t に収まること。
+  // max_device_pixels を極端に緩めたときに、掛け算が黙って一周するのを防ぐ。
+  if (pixels > std::numeric_limits<std::size_t>::max() / 4) {
+    return fail(ErrorKind::LimitExceeded,
+                "raster: device size " + std::to_string(w) + " x " + std::to_string(h) + " = " +
+                    std::to_string(pixels) +
+                    " px exceeds the absolute limit of size_t/4 pixels (4 bytes per pixel)");
   }
   return std::pair{static_cast<std::uint32_t>(w), static_cast<std::uint32_t>(h)};
 }

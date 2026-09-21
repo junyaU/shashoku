@@ -120,6 +120,10 @@ std::vector<std::string> line_texts_full(std::span<const Item> items, const Brea
 
 std::string mark_opportunities(std::string_view utf8, const Config& config) {
   const std::vector<Item> items = items_of(utf8);
+  return mark_opportunities(items, config);
+}
+
+std::string mark_opportunities(std::span<const Item> items, const Config& config) {
   const LineBreaker breaker(config);
   const std::vector<bool> opportunities = breaker.break_opportunities(items);
   std::string out;

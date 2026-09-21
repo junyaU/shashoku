@@ -237,7 +237,7 @@ issue #6）。上限は**入力の一部**なので純粋関数の性質は壊�
 | | 場所 | 見るもの |
 |---|---|---|
 | (a) | 入力を受けた時点（パースより前） | `html_bytes` / `images` |
-| (b) | パース・計算値化のあと（api が DOM とスタイル付きツリーを 1 回ずつ辿る） | `nesting_depth` / `dom_nodes` / `text_code_points` / `style_rules` / `font_size_device_px` / `scale` |
+| (b) | パース・計算値化のあと（api が DOM とスタイル付きツリーを 1 回ずつ辿る） | `nesting_depth` / `dom_nodes` / `text_code_points` / `style_rules` / `font_size_device_px` / `length_px`（A-new） / `scale` |
 | (c) | 大きな確保の直前（確保する前に判定する） | `image_pixels` / `total_image_pixels` / `device_pixels` |
 
 既定値と根拠（「OG 画像 1200x630 @2x・数千文字・画像数枚には十分広く、事故は止まる」）:
@@ -251,6 +251,7 @@ issue #6）。上限は**入力の一部**なので純粋関数の性質は壊�
 | `text_code_points` | 50,000 | 「数千文字」の 10 倍以上。行分割と配置が入力に比例して効く |
 | `style_rules` | 2,000 | セレクタの照合は 規則数 x 要素数。`dom_nodes` との積で決めた |
 | `font_size_device_px` | 2,048 | グリフのビットマップは pixel_size の 2 乗。2048^2 = 4 MB で頭打ちになる。見出しは @2x でも 300 px 程度。実行ごとのグリフキャッシュ（A34）1 項目の上界もこれで決まる |
+| `length_px` | 2^24 = 16,777,216 | 長さ・座標の絶対値（A-new）。出力の絶対上限（1 辺 2^32-1 px）より十分小さく、`dom_nodes` = 20,000 段ぶん足しても 3.4x10^11 で float の上限 3.4x10^38 に遠く届かない。float が整数を 1 刻みで表せる上限でもある |
 | `scale` | 256 | 既存値の据え置き。「1.0 のつもりが 1000」を弾く |
 | `image_pixels` | 2^24 | 4096x4096（RGBA で 64 MB）。OG に貼る素材には十分 |
 | `total_image_pixels` | 2^25 | 128 MB。「1 枚 2^26 px x 枚数無制限」だったのを塞ぐ |
@@ -607,6 +608,55 @@ PNG エンコードで、そこは #7 の対象外**。
   後者は `tsan` プリセット（`SHASHOKU_SANITIZE_THREAD`）でも回す。**普段の完了条件には入れない**:
   依存ライブラリまで再ビルドになるので `dev` / `asan` と並べると重い
 
+**A-new. 各段は「自分が出す数値が有限で上限以内であること」を保証する。A25 の「入力の
+個数・サイズ」とは別の保証として並べる。** `padding: 1e38em` を渡すと `em x font-size` が
+float をあふれて `inf` になり、style も layout も paint も何も言わないまま、raster が
+「非有限な寸法のコマンドは無視する」（§3.3）で捨てていた。結果、**その要素だけが絵から
+消えた PNG が終了コード 0 で返る**（警告 0 件）。DESIGN.md §3-6「fail loudly」に反する。
+`em` の乗算を通る 12 プロパティのうち、止まっていたのは `font-size` だけだった（issue #19）。
+
+単独の条件分岐の不足ではなく**段の契約の抜け**である。A25 の `RenderLimits` が保証して
+いたのは「入力の個数・サイズ」で、「計算結果が有効であること」はどの段も保証していなかった。
+A25 を書き換えるのではなく、別の保証として並べる。
+
+**「有限」だけでは足りない**ことは実測が示している: `padding: 3e38px` は style では有限で、
+layout の加算で `inf` になる。そこで `RenderLimits` に**長さ・座標の絶対値の上限**
+`length_px`（既定 2^24 = 16,777,216 px。根拠は A25 の表）を新設し、「有限かつ上限以内」を
+要求する。上限は入力の一部なので純粋関数の性質は壊れない（A25 と同じ理屈）。
+検査に使うのは比較と `isfinite` だけなので A9 の許可リスト内。
+
+決めたこと:
+
+- **② style の出口**（実装済み）: `resolve_length()` / `resolve_dimension()` /
+  `resolve_line_height()` が `Result` を返し、宣言の位置つきで `LimitExceeded` にする。
+  カスケードのあとに計算値をもう一度まとめて検査する（`check_computed_lengths()`）ので、
+  継承で入ってきた値と、プロパティを足したときの掛け忘れもここで捕まる。
+  `line-height` の倍率は倍率のまま継承するため、「倍率 x **その要素の** font-size」は
+  この段でしか見られない（親で収まっていても子の font-size で超えうる）。
+  `<img>` の `width` / `height` 属性も layout に渡る長さなので同じ上限で見る
+- **`font-size` は `length_px` の対象外。** A25 の `font_size_device_px` が scale 込みで
+  より厳しく見ており、要素の位置で報告している。二重に検査すると、同じ入力のエラーの位置が
+  宣言の側に移るだけで得るものがない。ただし**非有限な font-size は style が止める**
+  （`em` の基準が壊れたまま残りのプロパティを解決すると、原因ではないプロパティを指す
+  エラーが出るため）。種類と位置は従来どおり `LimitExceeded` + 要素の位置
+- **`%` と flex の比は style では判定できない**（A5: 包含ブロックが要る）。`width: 1e38%` は
+  同じ HTML でもビューポート幅で結果が変わる（200 px なら描けて 1000 px なら消える）。
+  **③ layout の出口で BoxTree を 1 回走査する**のが残りの半分で、issue #19 の第 2 段階
+- **`ErrorKind` は `LimitExceeded` に一本化する。** パーサは以前 `1e39px`（float にできない数値）を
+  `UnsupportedValue`（the number is out of range）で返していたが、`1e38em` が `LimitExceeded` に
+  なると**ほぼ同じ入力が別の種類**になる。利用者から見てこの区別は説明しづらい。まだリリース前で
+  互換性のコストが小さいので、「数値が範囲外」は `LimitExceeded` に寄せた
+  （**これは既存のエラーの種類を変える互換性の変更**）。`UnsupportedValue` は今までどおり
+  「単位・キーワードが対応外」の意味だけに使う。`font-weight: 1e39` は「100..900 の値でない」
+  なので `UnsupportedValue` のまま
+- メッセージは A25 の流儀（どの上限を・いくつに対して・いくつだったか、`RenderLimits` の
+  どのフィールドで緩められるか）。float で表せない値はその旨と掛け算の内訳を添える
+  （`` `padding-left` computes to inf (1e+38em x font-size 16 px) … ``）
+- **§3.3 の「非有限な寸法を持つコマンドは無視する」はそのまま残す。** ラスタライザの防御としては
+  正しい（落ちない・UB を踏まない）。前段で止まるので到達しなくなるだけ。
+  **却下した案**: raster で非有限を見つけたときに警告を出す。段としては最後で「どの入力が
+  原因か」の情報がもう無く、fail loudly の「原因の入力位置つき」を満たせない
+
 ---
 
 ## 2. モジュールと依存
@@ -873,7 +923,8 @@ std::string dump_json(const Node& root);
 ```cpp
 namespace shashoku::style {
 // ルートの ComputedStyle は初期値
-Result<StyledNode> resolve(const html::Node& root, std::size_t max_style_rules = kMaxStyleRules);
+Result<StyledNode> resolve(const html::Node& root, std::size_t max_style_rules = kMaxStyleRules,
+                           float max_length_px = kMaxLengthPx);
 std::string dump_json(const StyledNode& root);
 }
 ```
@@ -900,6 +951,15 @@ std::string dump_json(const StyledNode& root);
   （`img` を除く）。`writing-mode` の途中変更も `UnsupportedLayout`（A1）
 - `<style>` から読んだ規則が `max_style_rules` を超えたら `LimitExceeded`（位置つき）。
   セレクタの照合は「規則数 x 要素数」なので、規則の数そのものに上限が要る（A25）
+- **出力の不変条件（A-new）**: 返る木の `ComputedStyle` に入っている長さは、`font-size` を除いて
+  すべて**有限で、絶対値が `max_length_px` 以内**である。`em` の乗算の結果（`1e38em x 16px`）も、
+  px で直接書いた値（`3e38px`）も、同じ上限で止める。超えたら `LimitExceeded` + **宣言の位置**
+  （`<style>` の中なら宣言そのもの、`style` 属性なら属性の位置）。`line-height` の倍率は
+  「倍率 x その要素の font-size」が上限以内であることを、カスケードのあとに見る。
+  `<img>` の `width` / `height` 属性も同じ上限。
+  **対象外が 2 つある**: (1) `%` と `auto` は包含ブロックが要るので layout が解決する（A5）ので、
+  ここでは検査できない。(2) `font-size` は A25 の `font_size_device_px`（scale 込みでより厳しい）が
+  api で止める。ただし非有限な `font-size` だけはここで止める（`LimitExceeded` + 要素の位置）
 
 ### 3.8 layout（③）
 

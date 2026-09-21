@@ -67,6 +67,7 @@ TEST(RenderLimitsDefaults, DefaultsAreTheDocumentedOnes) {
   EXPECT_EQ(limits.text_code_points, 50000U);
   EXPECT_EQ(limits.style_rules, 2000U);
   EXPECT_EQ(limits.font_size_device_px, 2048.0F);
+  EXPECT_EQ(limits.length_px, 16777216.0F);  // 2^24
   EXPECT_EQ(limits.scale, 256.0F);
   EXPECT_EQ(limits.image_pixels, std::uint64_t{1} << 24U);
   EXPECT_EQ(limits.total_image_pixels, std::uint64_t{1} << 25U);

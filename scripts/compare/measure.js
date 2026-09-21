@@ -135,6 +135,51 @@ window.__shkMeasure = function (opts) {
     return items;
   }
 
+  // ルビ組は DOM から直接取る（座標から組を推測しない）。
+  // base は `<ruby>` の中で `<rt>` / `<rp>` に入っていないテキスト、rt は `<rt>` のテキスト。
+  function rubyGroups(block) {
+    var groups = [];
+    var rubies = block.tagName.toLowerCase() === 'ruby'
+      ? [block] : Array.prototype.slice.call(block.querySelectorAll('ruby'));
+    rubies.forEach(function (ruby) {
+      var base = [], annotation = [];
+      (function visit(node, inRt) {
+        for (var c = node.firstChild; c; c = c.nextSibling) {
+          if (c.nodeType === Node.TEXT_NODE) {
+            if (c.data.trim() === '') continue;
+            var range = document.createRange();
+            range.selectNodeContents(c);
+            (inRt ? annotation : base).push(box(range.getBoundingClientRect()));
+            if (!inRt) {
+              // 末尾クラスタの開始も取る（送りの中央かインクの中央かを読み取るため）
+              var last = document.createRange();
+              var segs = Array.from(segmenter.segment(c.data));
+              var s = segs[segs.length - 1];
+              last.setStart(c, s.index);
+              last.setEnd(c, s.index + s.segment.length);
+              base[base.length - 1].last_cluster_start = box(
+                last.getBoundingClientRect()).inline_start;
+            }
+          } else if (c.nodeType === Node.ELEMENT_NODE) {
+            var tag = c.tagName.toLowerCase();
+            if (tag === 'rp' || display(c) === 'none') continue;
+            visit(c, inRt || tag === 'rt');
+          }
+        }
+      })(ruby, false);
+      if (base.length === 0 || annotation.length === 0) return;
+      groups.push({
+        base_advance: [Math.min.apply(null, base.map(function (b) { return b.inline_start; })),
+                       Math.max.apply(null, base.map(function (b) { return b.inline_end; }))],
+        base_last_cluster_start: base[base.length - 1].last_cluster_start,
+        rt_box: [Math.min.apply(null, annotation.map(function (b) { return b.inline_start; })),
+                 Math.max.apply(null, annotation.map(function (b) { return b.inline_end; }))],
+        text: ruby.textContent.replace(/\s+/g, '')
+      });
+    });
+    return groups;
+  }
+
   // 行の切れ目は「inline 座標が戻り、かつ block 座標が進んだところ」で見る。
   // inline が戻っただけで切ると、ルビ組で親文字の箱が注記の幅まで広がったときに
   // 誤検出する（実測: 縦書きのケース 2 で、親文字の箱の終端 160 のあとに続きの文字が 152 から始まる）。
@@ -201,7 +246,8 @@ window.__shkMeasure = function (opts) {
         tag: el.tagName.toLowerCase(),
         rect: box(el.getBoundingClientRect()),
         clip: clip,
-        lines: groupLines(items)
+        lines: groupLines(items),
+        ruby_groups: rubyGroups(el)
       };
     }),
     fonts: Array.from(document.fonts).map(function (f) {

@@ -308,7 +308,47 @@ def parse_box_dump(dump, font_infos):
         info = font_infos[index] if index < len(font_infos) else font_infos[0]
         return info["ascent"], info["descent"]
 
+    ruby_groups = []
+
+    def collect_ruby_groups(line):
+        """断片の並びからルビ組を切り出す。
+
+        box ダンプには組の境目が出ないので、**「注記の直前の text 断片から後ろ向きに伸ばし、
+        親文字の送りの中心が注記の中心と一致したところで止める」**で切る。shashoku は
+        短い方を中央に置く（A-new-2）ので、中心が一致するのは組をちょうど覆ったときだけ。
+        """
+        line_baseline = line["baseline"]
+        texts = [f for f in line["fragments"] if f.get("type") == "text"]
+        for i, frag in enumerate(texts):
+            if frag["baseline"] >= line_baseline - 0.01:
+                continue  # 注記ではない
+            rt_start = frag["inline_start"]
+            rt_end = rt_start + frag["inline_size"]
+            rt_center = (rt_start + rt_end) / 2.0
+            base = []
+            for prev in reversed(texts[:i]):
+                if prev["baseline"] < line_baseline - 0.01:
+                    break  # 別の組の注記に当たった
+                base.insert(0, prev)
+                start = base[0]["inline_start"]
+                end = max(f["inline_start"] + f["inline_size"] for f in base)
+                if abs((start + end) / 2.0 - rt_center) < 0.05:
+                    break
+            if not base:
+                continue
+            start = base[0]["inline_start"]
+            end = max(f["inline_start"] + f["inline_size"] for f in base)
+            last = base[-1]
+            last_glyphs = last.get("glyphs") or [[0, last["inline_start"], 0, 0]]
+            ruby_groups.append({
+                "text": "".join(f["text"] for f in base) + frag["text"],
+                "base_advance": [start, end],
+                "base_last_cluster_start": last_glyphs[-1][1],
+                "rt_box": [rt_start, rt_end],
+            })
+
     def convert_line(line):
+        collect_ruby_groups(line)
         line_baseline = line["baseline"]
         items, ruby_items = [], []
         for frag in line["fragments"]:
@@ -399,7 +439,8 @@ def parse_box_dump(dump, font_infos):
         block_end = float(vh) if vh else root_rect[1] + root_rect[3]
     viewport = {"inline_start": 0.0, "inline_end": inline_end,
                 "block_start": 0.0, "block_end": block_end}
-    return {"vertical": vertical, "viewport": viewport, "blocks": blocks, "notes": notes}
+    return {"vertical": vertical, "viewport": viewport, "blocks": blocks, "notes": notes,
+            "ruby_groups": ruby_groups}
 
 
 # ---------------------------------------------------------------- 4 つの判定
@@ -444,57 +485,121 @@ def self_overlap(side):
     return worst, where
 
 
-def cluster_steps(line):
-    """クラスタごとの送り（次のクラスタとの inline 距離）。最後は箱の幅。"""
-    items = [it for it in sorted(line["items"], key=lambda it: it["inline_start"])]
+def cluster_steps(line, key="items", internal_only=False):
+    """クラスタごとの送り（次のクラスタとの inline 距離）。最後は箱の幅。
+
+    key を "ruby" にすると `<rt>` の側を見る。親文字（items）と注記（ruby）は
+    字間の扱いが違う（shashoku は `<rt>` に letter-spacing を適用しない。A37）ので、
+    判定でも分けて数える。
+
+    `internal_only` を立てると最後のクラスタ（= 箱の幅）を落とす。注記の側はこれが要る:
+    **Chrome の `<rt>` の Range が返すのは「割り当てられた枡」で、グリフの送りではない**
+    （実測: 1 文字の注記 `x` の箱が親文字の送り 108.91 px いっぱいに広がる）。
+    クラスタ間の送りだけなら、両者とも「字間が入っているか」を同じ意味で表す。
+    """
+    items = sorted(line[key], key=lambda it: it["inline_start"])
     steps = []
     for i, it in enumerate(items):
-        nxt = items[i + 1]["inline_start"] if i + 1 < len(items) else it["inline_end"]
+        if i + 1 == len(items):
+            if internal_only:
+                break
+            nxt = it["inline_end"]
+        else:
+            nxt = items[i + 1]["inline_start"]
         steps.append((it["text"] if it["kind"] == "text" else "<img>", nxt - it["inline_start"]))
     return steps
+
+
+def compare_steps(a_lines, b_lines, key, notes, internal_only=False):
+    """2 つの側のクラスタの送りを行ごとに突き合わせ、(最大の差, どこで, 比べられたか) を返す。"""
+    worst, worst_at = 0.0, None
+    comparable = len(a_lines) == len(b_lines)
+    if not comparable:
+        return worst, worst_at, False
+    for i, ((_, la), (_, lb)) in enumerate(zip(a_lines, b_lines)):
+        sa = cluster_steps(la, key, internal_only)
+        sb = cluster_steps(lb, key, internal_only)
+        if [t for t, _ in sa] != [t for t, _ in sb]:
+            comparable = False
+            notes.append("%d 行目（%s）: クラスタの並びが違う（%d / %d 個）"
+                         % (i + 1, key, len(sa), len(sb)))
+            continue
+        for (text, x), (_, y) in zip(sa, sb):
+            if abs(x - y) > worst:
+                worst, worst_at = abs(x - y), "%d 行目 %r: %.2f / %.2f" % (i + 1, text, x, y)
+    return worst, worst_at, comparable
+
+
+def ruby_centering(side):
+    """ルビ組ごとに「親文字の送りの箱」と「注記の箱」の中心のずれを測る。
+
+    shashoku は注記を**親文字の送り**（末尾の字間を含む）の中央に置く（A37）。
+    Chrome がインクの中央に置くのか送りの中央に置くのかを見るための値で、
+    `rt_center − base_center` を px で返す。組の切り出しは座標から推測せず、
+    shashoku は box ダンプの断片の並びから、Chrome は DOM の `<ruby>` から取る。
+    """
+    out = []
+    for group in side.get("ruby_groups", []):
+        base_start, base_end = group["base_advance"]
+        rt_start, rt_end = group["rt_box"]
+        out.append({
+            "text": group.get("text", ""),
+            # 親文字の「送り」の箱。末尾の字間を含む（A37）
+            "base_advance": [round(base_start, 3), round(base_end, 3)],
+            # 末尾クラスタの開始。インクの終わりはここ + そのグリフの送りなので、
+            # 「送りの中央」と「インクの中央」のどちらに合わせているかが読み取れる
+            "base_last_cluster_start": round(group.get("base_last_cluster_start", 0), 3),
+            "rt_box": [round(rt_start, 3), round(rt_end, 3)],
+            "rt_center_minus_base_center": round(
+                (rt_start + rt_end) / 2.0 - (base_start + base_end) / 2.0, 3),
+        })
+    return out
 
 
 def judge_overlap(shk, chrome):
     shk_over, shk_where = self_overlap(shk)
     ch_over, ch_where = self_overlap(chrome)
+    notes = []
+    a, b = all_lines(shk), all_lines(chrome)
+    # 親文字（items）と注記（ruby）は分けて数える。shashoku は `<rt>` に letter-spacing を
+    # 適用しない（A37）ので、両者を混ぜると「#16 が直ったこと」と「A37 の意図した差」が
+    # 同じ 1 つの数字に潰れてしまう。
+    base_worst, base_at, base_ok = compare_steps(a, b, "items", notes)
+    rt_worst, rt_at, rt_ok = compare_steps(a, b, "ruby", notes, internal_only=True)
     detail = {
         "shashoku_self_overlap": round(shk_over, 3),
         "shashoku_where": shk_where,
         "chrome_self_overlap": round(ch_over, 3),
         "chrome_where": ch_where,
-        "step_diffs": [],
+        "step_diffs": notes,
+        "base_max_step_diff": round(base_worst, 3),
+        "base_max_step_diff_at": base_at,
+        "rt_max_step_diff": round(rt_worst, 3),
+        "rt_max_step_diff_at": rt_at,
+        "ruby_centering_shashoku": ruby_centering(shk),
+        "ruby_centering_chrome": ruby_centering(chrome),
     }
-    a, b = all_lines(shk), all_lines(chrome)
-    worst, worst_at = 0.0, None
-    comparable = len(a) == len(b)
-    if comparable:
-        for i, ((_, la), (_, lb)) in enumerate(zip(a, b)):
-            sa, sb = cluster_steps(la), cluster_steps(lb)
-            if [t for t, _ in sa] != [t for t, _ in sb]:
-                comparable = False
-                detail["step_diffs"].append(
-                    "%d 行目: クラスタの並びが違う（%d / %d 個）" % (i + 1, len(sa), len(sb)))
-                continue
-            for (text, x), (_, y) in zip(sa, sb):
-                if abs(x - y) > worst:
-                    worst, worst_at = abs(x - y), "%d 行目 %r: %.2f / %.2f" % (i + 1, text, x, y)
-    detail["max_step_diff"] = round(worst, 3)
-    detail["max_step_diff_at"] = worst_at
 
     # 0.1 px までは丸めの差（Chrome の LayoutUnit は 1/64 px、shashoku は A8 の丸め）。
     # Chrome 側の「重なり」は判定に使わない: ルビ組では親文字の Range の箱が注記の幅まで
     # 広がり、続きの文字と重なって見える（実測: ケース 2 で 8 px）。判定は
     #   (1) shashoku が本当に字を重ねていないか
-    #   (2) 両者の字送りが合っているか
-    # の 2 つで行い、Chrome 側の重なりは詳細に残すだけにする。
+    #   (2) 親文字の字送りが合っているか
+    #   (3) 注記の字送りが合っているか
+    # の 3 つで行い、Chrome 側の重なりは詳細に残すだけにする。
     suffix = "（Chrome 側 %.2f px は ruby の箱）" % ch_over if ch_over > 0.1 else ""
+    rt_note = ""
+    if rt_ok and rt_worst > TOL_INLINE:
+        rt_note = " / rt %.2f px" % rt_worst
     if shk_over > 0.1:
         return "diff", "shashoku で %.2f px 重なる%s" % (shk_over, suffix), detail
-    if not comparable:
+    if not base_ok:
         return "unknown", "クラスタの並びが違い比較不能", detail
-    if worst > TOL_INLINE:
-        return "diff", "字送りの差 %.2f px%s" % (worst, suffix), detail
-    return "same", "字送りの差 %.2f px%s" % (worst, suffix), detail
+    if base_worst > TOL_INLINE:
+        return "diff", "親文字 %.2f px%s%s" % (base_worst, rt_note, suffix), detail
+    if rt_note:
+        return "diff", "親文字 %.2f px%s%s" % (base_worst, rt_note, suffix), detail
+    return "same", "親文字 %.2f px%s" % (base_worst, suffix), detail
 
 
 def overflow_amounts(side):
@@ -818,13 +923,19 @@ def shashoku_args(ctx, html, font_infos, width, height, images):
     return args
 
 
-def run_shashoku_dump(ctx, html, font_infos, width, height, images=None, stage="box"):
+def try_shashoku_dump(ctx, html, font_infos, width, height, images=None, stage="box"):
+    """(returncode, stdout, stderr) をそのまま返す。入力を拒否させたいケース用。"""
     args = shashoku_args(ctx, html, font_infos, width, height, images)
     args += ["--dump-stage", stage]
     proc = subprocess.run(args, capture_output=True, text=True)
-    if proc.returncode != 0:
-        raise RuntimeError("shashoku が失敗した (exit %d):\n%s" % (proc.returncode, proc.stderr))
-    return json.loads(proc.stdout)
+    return proc.returncode, proc.stdout, proc.stderr.strip()
+
+
+def run_shashoku_dump(ctx, html, font_infos, width, height, images=None, stage="box"):
+    code, out, err = try_shashoku_dump(ctx, html, font_infos, width, height, images, stage)
+    if code != 0:
+        raise RuntimeError("shashoku が失敗した (exit %d):\n%s" % (code, err))
+    return json.loads(out)
 
 
 def run_shashoku_png(ctx, html, font_infos, width, height, out_png, images=None):
@@ -848,7 +959,63 @@ def format_table(rows):
     return "\n".join(out)
 
 
-MARK = {"same": "OK", "diff": "差", "unknown": "??", "error": "失敗"}
+MARK = {"same": "OK", "diff": "差", "unknown": "??", "error": "失敗", "expected": "期待"}
+
+
+def handle_expect_error(ctx, case, entry, rows, results, case_dir, src,
+                        font_infos, width, height, images, expect_error, args):
+    """shashoku が入力を拒否するのが正しいケースを扱う（cases.json の expect_error）。
+
+    ここは「組版の比較」ではなく「入力を拒否できたか」の検査。Chrome 側は参考として
+    測り、飽和させて描いた結果を記録する（#19 のケース 20）。
+    """
+    code, _, err = try_shashoku_dump(ctx, src, font_infos, width, height, images)
+    ok = code != 0 and expect_error in err
+    entry["shashoku_exit"] = code
+    entry["shashoku_stderr"] = err
+    if ok:
+        cell = "入力を拒否（期待どおり）"
+        summary = "shashoku は入力を拒否した（期待どおり）: %s" % err.splitlines()[0]
+        verdict = "expected"
+    elif code != 0:
+        cell = "別のエラーで止まった"
+        summary = "エラーにはなったが %s ではない: %s" % (expect_error, err.splitlines()[0])
+        verdict = "diff"
+    else:
+        cell = "拒否されず exit 0"
+        summary = "%s で止まるはずが exit 0 で通った" % expect_error
+        verdict = "diff"
+        entry["errors"].append(summary)
+
+    chrome_note = None
+    if not args.no_chrome:
+        try:
+            page = os.path.join(case_dir, "chrome.html")
+            with open(src, encoding="utf-8") as f:
+                fragment = f.read()
+            with open(page, "w", encoding="utf-8") as f:
+                f.write(build_chrome_page(fragment, font_infos, width, height,
+                                          False, ctx.measure_js, images or {}))
+            shot = os.path.join(case_dir, "chrome.png")
+            chrome_raw = run_chrome(ctx.chrome, page, ctx.profile, width, height or 400)
+            with open(os.path.join(case_dir, "chrome.json"), "w", encoding="utf-8") as f:
+                json.dump(chrome_raw, f, ensure_ascii=False, indent=1)
+            screenshot(ctx.chrome, page, ctx.profile, width, height or 400, shot)
+            chrome = {"vertical": chrome_raw["vertical"], "viewport": chrome_raw["viewport"],
+                      "blocks": chrome_raw["blocks"], "notes": []}
+            chrome_note = {
+                "root_rect": chrome_raw.get("root_rect"),
+                "lines": [line_text(ln) for _, ln in all_lines(chrome)],
+            }
+        except Exception as exc:  # noqa: BLE001
+            entry["errors"].append("chrome: %s" % exc)
+
+    for name in JUDGMENTS:
+        entry["judgments"][name] = verdict
+        entry["details"][name] = {"summary": summary,
+                                  "detail": {"chrome": chrome_note} if chrome_note else {}}
+    rows.append([case["id"], case["title"]] + ["%s %s" % (MARK[verdict], cell)] * 4)
+    results.append(entry)
 
 
 def main():
@@ -933,6 +1100,15 @@ def main():
         images = ctx.images if case.get("images") else None
 
         entry = {"case": case, "judgments": {}, "details": {}, "errors": []}
+
+        # 「shashoku が入力を拒否するのが正しい」ケース（cases.json の expect_error）。
+        # 比較の対象にはせず、拒否できたかどうかと、Chrome が同じ入力をどう扱うかを記録する。
+        expect_error = case.get("expect_error")
+        if expect_error:
+            handle_expect_error(ctx, case, entry, rows, results, case_dir, src,
+                                font_infos, width, height, images, expect_error, args)
+            continue
+
         try:
             dump = run_shashoku_dump(ctx, src, font_infos, width, height, images)
             with open(os.path.join(case_dir, "box.json"), "w", encoding="utf-8") as f:
@@ -982,7 +1158,9 @@ def main():
             chrome = {"vertical": chrome_raw["vertical"],
                       "viewport": chrome_raw["viewport"],
                       "blocks": chrome_raw["blocks"],
-                      "notes": chrome_raw.get("warnings", [])}
+                      "notes": chrome_raw.get("warnings", []),
+                      "ruby_groups": [g for blk in chrome_raw["blocks"]
+                                      for g in blk.get("ruby_groups", [])]}
         except Exception as exc:  # noqa: BLE001
             entry["errors"].append("chrome: %s" % exc)
             rows.append([case["id"], case["title"]] + ["失敗"] * 4)
@@ -1047,7 +1225,8 @@ def write_reports(out_dir, rows, results, font_report):
         lines.append("")
     lines.append(format_table(rows))
     lines.append("")
-    lines.append("凡例: OK = 差なし / 差 = 差あり / ?? = 比較不能 / 失敗 = 実行できず")
+    lines.append("凡例: OK = 差なし / 差 = 差あり / ?? = 比較不能 / 期待 = 拒否されるのが正しい入力 /"
+                 " 失敗 = 実行できず")
     lines.append("")
     lines.append("-" * 60)
     for entry in results:
@@ -1065,11 +1244,13 @@ def write_reports(out_dir, rows, results, font_report):
                 continue
             info = entry["details"][name]
             lines.append("  [%s] %s %s" % (name, MARK[entry["judgments"][name]], info["summary"]))
-            if entry["judgments"][name] != "same":
-                for key, value in info["detail"].items():
-                    if value in (None, [], 0, 0.0):
-                        continue
-                    lines.append("      %s: %s" % (key, value))
+            for key, value in info["detail"].items():
+                if value in (None, [], 0, 0.0):
+                    continue
+                # ルビの中央寄せは差が無くても記録する（#15 の「Chrome がどこに置くか」）。
+                if entry["judgments"][name] == "same" and not key.startswith("ruby_centering"):
+                    continue
+                lines.append("      %s: %s" % (key, value))
     text = "\n".join(lines) + "\n"
     with open(os.path.join(out_dir, "report.txt"), "w", encoding="utf-8") as f:
         f.write(text)
@@ -1087,6 +1268,7 @@ def write_html_report(out_dir, rows, results, font_report):
              "th,td{border:1px solid #ccc;padding:4px 8px;font-size:13px;text-align:left}",
              ".same{background:#e8f5e9}.diff{background:#ffebee}",
              ".unknown{background:#fff8e1}.error{background:#eceff1}",
+             ".expected{background:#e3f2fd}",
              "figure{margin:0 0 8px 0}img{border:1px solid #ddd;vertical-align:top}",
              ".pair{display:flex;gap:16px;align-items:flex-start;overflow-x:auto}",
              "pre{background:#f7f7f7;padding:8px;font-size:12px;overflow-x:auto}",

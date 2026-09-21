@@ -5,7 +5,9 @@
     "fonts は shashoku の --font に渡す順（= Chrome 側の font-family の順）。",
     "  jp = NotoSansJP-Regular.otf / jp-bold = NotoSansJP-Bold.otf / latin = NotoSans-Regular.ttf",
     "height を書くと shashoku の --height と Chrome の --window-size の高さに使う。",
-    "省略すると shashoku が内容に合わせた高さを使い、Chrome にもその高さを渡す。"
+    "省略すると shashoku が内容に合わせた高さを使い、Chrome にもその高さを渡す。",
+    "expect_error を書くと『shashoku がそのエラーで止まるのが正しい』ケースになる。",
+    "  組版は比較せず、拒否できたかと、Chrome が同じ入力をどう扱うかだけを記録する。"
   ],
   "cases": [
     {
@@ -127,7 +129,8 @@
       "title": "有限性 × 極端な長さ",
       "width": 400, "height": 200, "fonts": ["jp"],
       "watch": ["欠落"],
-      "note": "--height を外すと exit 1。判定は「有限の PNG が出るか」で別立てにする"
+      "expect_error": "limit-exceeded",
+      "note": "#19 の修正で、shashoku は非有限になる入力を拒否するのが正しくなった。組版は比較せず、拒否できたかと、Chrome が飽和させて描いた結果を記録する"
     },
     {
       "id": 21, "file": "21-ruby-longer-than-base.html",

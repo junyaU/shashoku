@@ -190,5 +190,54 @@ TEST(StyleLengthLimit, ImageAttributesAreBounded) {
   EXPECT_EQ(styled.error().kind, ErrorKind::LimitExceeded) << styled.error().message;
 }
 
+// ---- パーサが弾く範囲（float にできない数値）--------------------------------
+
+// `1e39px` は float にできないのでパーサが弾く。種類は limit-exceeded に寄せてある
+// （利用者から見て `1e39px` と `1e38em` が別種なのは説明しづらい。A-new）。
+TEST(StyleLengthLimit, OutOfRangeNumbersAreLimitExceeded) {
+  const std::vector<std::string_view> kCases = {
+      "padding: 1e39px", "padding: 1e400px", "padding: 1e39em",
+      "width: 1e39%",    "line-height: 1e39", "flex-grow: 1e39",
+      "flex-shrink: 1e39",
+  };
+  for (const std::string_view css : kCases) {
+    SCOPED_TRACE(css);
+    const Error error = style_failure(css);
+    EXPECT_EQ(error.kind, ErrorKind::LimitExceeded) << error.message;
+    EXPECT_TRUE(error.location.has_value());
+  }
+}
+
+// メッセージの誤り（issue #19）: 範囲外を「負の数」と言わない。
+TEST(StyleLengthLimit, OutOfRangeMessagesDoNotSayNegative) {
+  const Error line_height = style_failure("line-height: 1e39");
+  EXPECT_EQ(line_height.message.find("negative"), std::string::npos) << line_height.message;
+  EXPECT_NE(line_height.message.find("range"), std::string::npos) << line_height.message;
+
+  const Error grow = style_failure("flex-grow: 1e39");
+  EXPECT_EQ(grow.message.find("non-negative"), std::string::npos) << grow.message;
+  EXPECT_NE(grow.message.find("range"), std::string::npos) << grow.message;
+}
+
+// 本当に負の値は従来どおり「負の数は不可」と言う（UnsupportedValue のまま）。
+TEST(StyleLengthLimit, ActuallyNegativeValuesKeepTheirMessage) {
+  const Error line_height = style_failure("line-height: -1");
+  EXPECT_EQ(line_height.kind, ErrorKind::UnsupportedValue) << line_height.message;
+  EXPECT_NE(line_height.message.find("negative"), std::string::npos) << line_height.message;
+
+  const Error grow = style_failure("flex-grow: -1");
+  EXPECT_EQ(grow.kind, ErrorKind::UnsupportedValue) << grow.message;
+  EXPECT_NE(grow.message.find("non-negative"), std::string::npos) << grow.message;
+}
+
+// `inf` / `nan` という字句は数値にならない（従来どおり UnsupportedValue）。
+TEST(StyleLengthLimit, InfAndNanIdentifiersAreStillUnsupportedValues) {
+  for (const std::string_view css : {"padding: infpx", "padding: inf", "padding: nan"}) {
+    SCOPED_TRACE(css);
+    const Error error = style_failure(css);
+    EXPECT_EQ(error.kind, ErrorKind::UnsupportedValue) << error.message;
+  }
+}
+
 }  // namespace
 }  // namespace shashoku::style

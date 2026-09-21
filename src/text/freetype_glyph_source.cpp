@@ -181,14 +181,16 @@ Result<raster::GlyphBitmap> FreeTypeGlyphSource::rasterize(FontId font, GlyphId 
   }
   // pixel_size の有限性・正値は呼び出し側の責務（glyph_source.hpp）。破られたらバグ。
   if (!std::isfinite(pixel_size) || pixel_size <= 0.0F) {
-    return fail(ErrorKind::Internal,
-                std::format("cannot rasterize the glyph ({}): pixel_size must be finite and greater than 0",
-                            where(font, glyph_id, pixel_size)));
+    return fail(
+        ErrorKind::Internal,
+        std::format("cannot rasterize the glyph ({}): pixel_size must be finite and greater than 0",
+                    where(font, glyph_id, pixel_size)));
   }
   if (pixel_size > kMaxPixelSize) {
-    return fail(ErrorKind::FontLoad,
-                std::format("cannot rasterize the glyph ({}): pixel_size exceeds the limit of {} px",
-                            where(font, glyph_id, pixel_size), kMaxPixelSize));
+    return fail(
+        ErrorKind::FontLoad,
+        std::format("cannot rasterize the glyph ({}): pixel_size exceeds the limit of {} px",
+                    where(font, glyph_id, pixel_size), kMaxPixelSize));
   }
 
   // 小数のピクセルサイズは 26.6 固定小数のまま FreeType に渡す（A8 の丸めは呼び出し側）。

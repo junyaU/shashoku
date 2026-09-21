@@ -79,6 +79,73 @@ jobs:
       - name: Test
         run: ctest --preset ${{ matrix.preset }}
 
+  # 配布物（#20）と同じ設定で作ったバイナリを検査するジョブ。release.yml は
+  # タグを push したときしか走らないので、壊れたことに気づくのはここ。
+  dist:
+    name: 配布と同じ設定（静的リンク + 既定フォント）
+    runs-on: ubuntu-24.04
+    env:
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
+      CCACHE_MAXSIZE: 400M
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            ninja-build ccache clang-18 libc++-18-dev libc++abi-18-dev
+      - name: Cache dependency sources and test fonts
+        uses: actions/cache@v5
+        with:
+          path: |
+            build/_deps/*-src
+            build/_deps/*-subbuild
+            build/_assets
+          key: deps-${{ hashFiles('cmake/Dependencies.cmake', 'cmake/TestAssets.cmake') }}
+      - name: Cache ccache
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/ccache
+          key: ccache-dist-${{ github.run_id }}
+          restore-keys: ccache-dist-
+      - name: Configure
+        run: cmake --preset dist $DEPS_ARGS
+      - name: Build
+        run: cmake --build --preset dist
+      # ゴールデン 16 枚と、examples の「そのまま貼れる 1 行」5 本（Cli.examples）を含む全件。
+      - name: Test
+        run: ctest --preset dist
+      - name: Check that the executable is standalone
+        run: |
+          set -eu
+          bin=build/dist/tools/shashoku/shashoku
+          file "$bin"
+          if readelf -d "$bin" | grep -q NEEDED; then
+            echo "::error::動的依存が残っています（-static が効いていません）"
+            readelf -d "$bin"
+            exit 1
+          fi
+      # ビルドツールを何も入れていない素の Ubuntu で、置いたその場で動くこと。
+      - name: Run in bare Ubuntu containers
+        run: |
+          set -eu
+          mkdir -p dist/shashoku container_out
+          cp build/dist/tools/shashoku/shashoku dist/shashoku/
+          cp -R examples dist/shashoku/examples
+          for image in ubuntu:22.04 ubuntu:24.04; do
+            tag="${image/:/-}"
+            docker run --rm \
+              -v "$PWD/dist/shashoku:/opt/shashoku:ro" \
+              -v "$PWD/container_out:/out" \
+              -w /opt/shashoku "$image" \
+              ./shashoku examples/og_card.html --image icon=examples/icon.png \
+                -o "/out/$tag.png" --width 1200 --height 630
+            head -c 8 "container_out/$tag.png" | od -An -tx1 | tr -d ' \n' \
+              | grep -qx "89504e470d0a1a0a"
+            echo "$image: OK ($(stat -c%s "container_out/$tag.png") B)"
+          done
+
   lint:
     name: clang-format + clang-tidy
     runs-on: ubuntu-24.04

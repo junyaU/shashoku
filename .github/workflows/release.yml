@@ -1,0 +1,131 @@
+name: Release
+
+# `v*` のタグを push したときだけ走る（#20）。ここで作るものが配布物のすべて:
+# linux-x86_64 の実行ファイル 1 つ（完全静的リンク + 既定フォントの埋め込み）と、
+# サンプル・README・ライセンスを入れた tar.gz、その SHA256。
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write  # gh release create のため
+
+env:
+  ARCHIVE_DIR: shashoku-linux-x86_64
+
+jobs:
+  release:
+    name: linux-x86_64
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            ninja-build clang-18 libc++-18-dev libc++abi-18-dev
+
+      # dist = Release + SHASHOKU_STATIC_CLI + 既定フォントの埋め込み。
+      - name: Configure
+        run: cmake --preset dist
+
+      - name: Build
+        run: cmake --build --preset dist
+
+      # 配布するのと同じ設定でビルドしたバイナリで、ゴールデン画像を含む全件を通す
+      # （README「決定性」の保証範囲は「同じ版・同じ依存」で語っているため。A32）。
+      - name: Test
+        run: ctest --preset dist
+
+      - name: Check that the executable is standalone
+        run: |
+          set -eu
+          bin=build/dist/tools/shashoku/shashoku
+          file "$bin"
+          if readelf -d "$bin" | grep -q NEEDED; then
+            echo "::error::動的依存が残っています（-static が効いていません）"
+            readelf -d "$bin"
+            exit 1
+          fi
+          "$bin" --version
+
+      - name: Assemble the archive
+        run: |
+          set -eu
+          dir="$ARCHIVE_DIR"
+          rm -rf "dist/$dir"
+          mkdir -p "dist/$dir"
+          cp build/dist/tools/shashoku/shashoku "dist/$dir/shashoku"
+          strip "dist/$dir/shashoku"
+          cp -R examples "dist/$dir/examples"
+          cp LICENSE THIRD_PARTY_LICENSES "dist/$dir/"
+          cp docs/dist/README.md "dist/$dir/README.md"
+          # 同じタグからは同じ tar.gz が出るようにする（所有者・時刻・並び順・gzip の
+          # タイムスタンプを固定する。shashoku 自身の決定性と同じ考え方）。
+          stamp=$(git log -1 --format=%ct HEAD)
+          tar -C dist --owner=0 --group=0 --numeric-owner --sort=name \
+              --mtime="@$stamp" -cf - "$dir" | gzip -9n > "$dir.tar.gz"
+          sha256sum "$dir.tar.gz" > "$dir.tar.gz.sha256"
+          cat "$dir.tar.gz.sha256"
+
+      # ビルドツールを何も入れていない素の Ubuntu で、展開して 1 コマンドで PNG が
+      # 出ることを確かめる（#20 の受け入れ条件）。22.04 は glibc が古い側の下限。
+      - name: Run in bare Ubuntu containers
+        run: |
+          set -eu
+          mkdir -p container_out
+          for image in ubuntu:22.04 ubuntu:24.04; do
+            tag="${image/:/-}"
+            docker run --rm \
+              -v "$PWD/dist/$ARCHIVE_DIR:/opt/shashoku:ro" \
+              -v "$PWD/container_out:/out" \
+              -w /opt/shashoku "$image" \
+              ./shashoku examples/og_card.html --image icon=examples/icon.png \
+                -o "/out/$tag.png" --width 1200 --height 630
+            # PNG のシグネチャ（89 50 4E 47 0D 0A 1A 0A）で始まること
+            head -c 8 "container_out/$tag.png" | od -An -tx1 | tr -d ' \n' \
+              | grep -qx "89504e470d0a1a0a"
+            echo "$image: OK ($(stat -c%s "container_out/$tag.png") B)"
+          done
+
+      - name: Write the release notes
+        run: |
+          set -eu
+          sha=$(cut -d' ' -f1 "$ARCHIVE_DIR.tar.gz.sha256")
+          {
+            echo '### 試す（ビルドもフォントの用意も要りません）'
+            echo
+            echo '```bash'
+            echo "curl -LO https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/$ARCHIVE_DIR.tar.gz"
+            echo "tar xf $ARCHIVE_DIR.tar.gz && cd $ARCHIVE_DIR"
+            echo './shashoku examples/og_card.html --image icon=examples/icon.png -o og.png --width 1200 --height 630'
+            echo '```'
+            echo
+            echo '実行ファイルは 1 つだけで、依存ライブラリも既定フォント（Noto Sans JP Regular / Bold）も'
+            echo '中に入っています（linux-x86_64・完全静的リンク）。`--font` を書けばそちらが優先されます。'
+            echo
+            echo '### 版'
+            echo
+            echo '```'
+            build/dist/tools/shashoku/shashoku --version
+            echo '```'
+            echo
+            echo "### SHA256"
+            echo
+            echo '```'
+            echo "$sha  $ARCHIVE_DIR.tar.gz"
+            echo '```'
+            echo
+            echo "組めなかった HTML があれば、[試用報告](https://github.com/$GITHUB_REPOSITORY/issues/new/choose) から教えてください。"
+          } > release_notes.md
+          cat release_notes.md
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --title "shashoku $GITHUB_REF_NAME" \
+            --notes-file release_notes.md \
+            "$ARCHIVE_DIR.tar.gz" "$ARCHIVE_DIR.tar.gz.sha256"

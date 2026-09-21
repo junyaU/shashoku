@@ -8,6 +8,7 @@
 #include <utility>
 #include <vector>
 
+#include "layout/check_geometry.hpp"
 #include "layout/engine.hpp"
 #include "layout/flex_layout.hpp"
 #include "layout/inline_layout.hpp"
@@ -304,6 +305,13 @@ Result<BoxTree> layout_root(const style::StyledNode& root, const Options& option
   // 豆腐の記録（A31）。同じ段落を計測と配置で何度組んでも重複しないよう LayoutEngine が
   // (位置, コードポイント) で重複を除いて溜めており、並びも決定的（入力位置 → コードポイント）。
   tree.missing_glyphs = engine.missing_glyphs();
+  // 段の出口の不変条件（A36）: 出す座標・寸法はすべて有限で上限以内。`%` の解決も
+  // 座標の足し算も flex の比も、この段でしか起きない（style では判定できない。A5）。
+  // ここで止めないと raster が「非有限な寸法のコマンドは無視する」（§3.3）で黙って捨て、
+  // その要素だけが消えた PNG が終了コード 0 で返る（issue #19）。
+  if (const Result<void> ok = check_geometry(tree, options.max_geometry_px); !ok) {
+    return std::unexpected(ok.error());
+  }
   return tree;
 }
 

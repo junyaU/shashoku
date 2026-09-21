@@ -80,9 +80,11 @@ TEST(GeometryLimit, Boundary) {
   const style::StyledNode root =
       build({block({}, [](style::ComputedStyle& s) { s.height = Dimension::px(100); })});
 
-  Options options = make_options(200);
+  // ビューポート幅も座標として見るので、上限より狭くしておく
+  Options options = make_options(50);
   options.max_geometry_px = 100;
-  EXPECT_TRUE(run_layout(root, options, measurer).has_value());
+  const Result<BoxTree> ok = run_layout(root, options, measurer);
+  EXPECT_TRUE(ok.has_value()) << (ok ? std::string{} : ok.error().message);
 
   options.max_geometry_px = 99;
   const Error error = layout_failure(root, options, measurer);
@@ -97,7 +99,7 @@ TEST(GeometryLimit, CoordinatesAreCheckedToo) {
       block({}, [](style::ComputedStyle& s) { s.height = Dimension::px(80); }),
       at(block({}, [](style::ComputedStyle& s) { s.height = Dimension::px(10); }), 30),
   });
-  Options options = make_options(200);
+  Options options = make_options(50);
   options.max_geometry_px = 85;  // 2 つめの block_start = 80 は通るが、block_end = 90 が超える
   const Error error = layout_failure(root, options, measurer);
   EXPECT_EQ(error.kind, ErrorKind::LimitExceeded) << error.message;

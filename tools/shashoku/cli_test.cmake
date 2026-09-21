@@ -128,6 +128,18 @@ elseif(CASE STREQUAL "unsupported_css")
   if(NOT stderr_text MATCHES "float")
     message(FATAL_ERROR "stderr に原因のプロパティ名がありません: ${stderr_text}")
   endif()
+  # 未対応と分かっているプロパティには代替案が一言つく（#20）。手がかりがゼロだと
+  # 試用の最初の 1 枚で詰まる。box-sizing は「既知の制限」の筆頭。
+  set(box_sizing_html "${WORK_DIR}/box_sizing.html")
+  file(WRITE "${box_sizing_html}"
+       "<div style=\"box-sizing: border-box; width: 200px\">あ</div>\n")
+  execute_process(
+    COMMAND "${CLI}" "${box_sizing_html}" --font "${font}" -o "${WORK_DIR}/never.png"
+    RESULT_VARIABLE status ERROR_VARIABLE stderr_text)
+  expect_equal("${status}" "1" "exit code for box-sizing")
+  if(NOT stderr_text MATCHES "`box-sizing` is not a supported property \\(content-box only")
+    message(FATAL_ERROR "box-sizing のエラーに代替案がありません: ${stderr_text}")
+  endif()
 
 elseif(CASE STREQUAL "dump_box")
   execute_process(

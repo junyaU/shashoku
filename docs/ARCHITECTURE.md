@@ -1141,6 +1141,13 @@ std::string dump_json(const StyledNode& root);
   `border-style`（solid / none）`border-color`、`flex`（`none` / `auto` / 1〜3 値）、
   `gap` `row-gap` `column-gap`、`background`（色のみ。`background-color` の別名）。
   一覧にないプロパティは `UnsupportedProperty`、値が対応外なら `UnsupportedValue`
+- **`UnsupportedProperty` の文面には代替案を一言添える**（#20。試用版で「未対応です」だけでは
+  次に何をすればよいか分からない）。`value_parser.cpp` の `kPropertyHints` に
+  **未対応だと分かっているものだけ**を載せ、`` `box-sizing` is not a supported property
+  (content-box only: subtract padding and border from `width` / `height`) `` のように
+  **先頭を変えず後ろに括弧で足す**（前方一致で見ているものがあるかもしれないため）。
+  表に無い名前（綴り間違いなど）には何も足さない。**載せてよいのは shashoku で実際に
+  同じ結果が出せると確かめた代替だけ**で、代替が無いもの（縦中横）は「未実装」とだけ言う
 - 単位: `px` `em`、`0`（単位なし）。`%` は `width` と `flex-basis` のみ。`line-height` は
   `normal` / 数値 / px / em。色: `#rgb #rgba #rrggbb #rrggbbaa`、`rgb()` `rgba()`、
   CSS の色名、`transparent`、`currentColor`（border-color のみ）

@@ -1,5 +1,6 @@
 #include "shashoku/error.hpp"
 
+#include <array>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -66,6 +67,54 @@ TEST(StyleError, UnsupportedPropertyMessageNamesTheProperty) {
   const Result<ComputedStyle> style = inline_style("float: left");
   ASSERT_FALSE(style.has_value());
   EXPECT_NE(style.error().message.find("float"), std::string::npos) << style.error().message;
+}
+
+// 「未対応です」だけでは次に何をすればよいか分からない（#20。試用版の体験に直接効く）。
+// **未対応だと分かっているプロパティ**には、代替の書き方を一言だけ後ろに足す。
+// 文面の**先頭は変えない**（前方一致で見ているものがあるかもしれないため、括弧で足すだけ）。
+// 添える内容は「shashoku で実際に同じ結果が出せること」を確かめたものだけにする。
+TEST(StyleError, KnownUnsupportedPropertiesCarryAWorkaround) {
+  struct Hint {
+    std::string_view css;
+    std::string_view property;
+    std::string_view needle;
+  };
+  const std::array<Hint, 9> cases{{
+      {"box-sizing: border-box", "box-sizing", "content-box"},
+      {"max-width: 200px", "max-width", "`width`"},
+      {"min-width: 200px", "min-width", "`width`"},
+      {"max-height: 200px", "max-height", "`height`"},
+      {"min-height: 200px", "min-height", "`height`"},
+      {"float: left", "float", "display: flex"},
+      {"position: absolute", "position", "display: flex"},
+      {"flex-wrap: wrap", "flex-wrap", "single-line"},
+      {"text-combine-upright: all", "text-combine-upright", "not implemented"},
+  }};
+  for (const Hint& test : cases) {
+    SCOPED_TRACE(test.css);
+    const Result<ComputedStyle> style = inline_style(test.css);
+    ASSERT_FALSE(style.has_value()) << "should have failed";
+    EXPECT_EQ(style.error().kind, ErrorKind::UnsupportedProperty);
+    const std::string& message = style.error().message;
+    // 先頭は今までどおり
+    const std::string head = "`" + std::string(test.property) + "` is not a supported property";
+    EXPECT_TRUE(message.starts_with(head)) << message;
+    EXPECT_NE(message.find(test.needle), std::string::npos) << message;
+  }
+}
+
+// 表に無い名前（綴り間違い・そもそも知らないプロパティ）には何も足さない。
+// 間違った助言をするくらいなら、何も言わないほうがよい。
+TEST(StyleError, UnknownPropertiesGetNoWorkaround) {
+  for (const std::string_view css :
+       {"floatt: left", "-webkit-line-clamp: 2", "grid-template-columns: 1fr 1fr",
+        "text-orientation: upright"}) {
+    SCOPED_TRACE(css);
+    const Result<ComputedStyle> style = inline_style(css);
+    ASSERT_FALSE(style.has_value()) << "should have failed";
+    EXPECT_EQ(style.error().kind, ErrorKind::UnsupportedProperty);
+    EXPECT_EQ(style.error().message.find('('), std::string::npos) << style.error().message;
+  }
 }
 
 // ---- 対応外の値・単位 -----------------------------------------------------------

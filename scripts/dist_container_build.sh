@@ -45,11 +45,21 @@ else
   install_toolchain
 fi
 
+# 版の 1 行目だけを出す。**`… | head -1` は使わない**: head は 1 行読んだ時点で終了するので、
+# まだ書いている側が SIGPIPE で死に、`set -o pipefail` がそれをパイプライン全体の失敗にする。
+# CI の dist ジョブが実際にこれで `exit 141`（128 + SIGPIPE）になった（複数行を出す
+# `ldd --version` が書き終わる前に head が閉じた）。パイプを使わずに受け取れば起きない。
+first_line() {
+  local out
+  out=$("$@") || return $?
+  printf '%s\n' "${out%%$'\n'*}"
+}
+
 echo "== 版"
-cmake --version | head -1
-ninja --version
-clang++-18 --version | head -1
-ldd --version | head -1
+first_line cmake --version
+first_line ninja --version
+first_line clang++-18 --version
+first_line ldd --version
 
 echo "== configure / build / test（dist プリセット = Release + 静的ランタイム + 既定フォント）"
 if command -v ccache > /dev/null; then

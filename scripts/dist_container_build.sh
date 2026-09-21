@@ -26,8 +26,10 @@ install_toolchain() {
     cmake ninja-build ccache
 
   # clang-18 / libc++-18 は 22.04 の apt には無いので apt.llvm.org の jammy-18 を足す。
+  # 取得は https にそろえる（署名の検証は効くので実害は小さいが、ca-certificates は
+  # 上で入れてあるので http にする理由が無い）。
   curl -fsSL https://apt.llvm.org/llvm-snapshot.gpg.key -o /etc/apt/trusted.gpg.d/apt-llvm.asc
-  echo "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-18 main" \
+  echo "deb https://apt.llvm.org/jammy/ llvm-toolchain-jammy-18 main" \
     > /etc/apt/sources.list.d/llvm-18.list
   apt-get update
   apt-get install -y --no-install-recommends clang-18 libc++-18-dev libc++abi-18-dev

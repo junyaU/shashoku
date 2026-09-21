@@ -5,10 +5,33 @@
 禁則処理・縦書き・ルビ・フォントフォールバックを備え、関数 1 個で PNG バイト列を返す C++23 ライブラリ。
 OG 画像のように「任意の日本語文字列を流し込んでも組版が壊れない」ことを保証するのが目的。
 
+## 試す（ビルドもフォントの用意も要りません）
+
+```bash
+curl -LO https://github.com/junyaU/shashoku/releases/latest/download/shashoku-linux-x86_64.tar.gz
+tar xf shashoku-linux-x86_64.tar.gz && cd shashoku-linux-x86_64
+./shashoku examples/og_card.html --image icon=examples/icon.png -o og.png --width 1200 --height 630
+```
+
+> ⚠️ **最初のリリース（v0.1.0）はまだ公開していません。** 上の URL は公開後に有効になります
+> （公開したものは [Releases](https://github.com/junyaU/shashoku/releases) に並びます）。
+> それまでは[ビルド](#ビルド)してください。
+> リリースは `v*` のタグを push すると **ドラフト**として作られ、中身を確かめてから
+> GitHub の Releases で "Publish release" を押して公開します。
+
+実行ファイルは 1 つだけで、依存ライブラリも**既定フォント**（Noto Sans JP Regular / Bold）も
+中に入っています。`--font` を書けばそちらが優先されます。
+版は `./shashoku --version`、ライセンスは `./shashoku --license` で出ます。
+[examples/](examples/) の HTML には**そのまま貼れる 1 行**が先頭コメントに書いてあります。
+
+**対応環境は linux-x86_64 / glibc 2.35 以降**（Ubuntu 22.04 以降、Debian 12 以降など）。
+C++ ランタイム（libc++ など）は静的リンク済みで、動的に要るのは libc と libm だけです。
+musl の環境（Alpine など）と、macOS / Windows / aarch64 では動きません。
+
 > 🚧 **Phase 8 まで実装済み**。HTML → PNG が一気通貫で動きます。
 > block / inline / flexbox レイアウト、禁則処理（追い出し・追い込み・ぶら下げ）、
 > `<style>` と単純セレクタ、`<img>`、**ルビ**、**縦書き**、フォントフォールバックと豆腐検出、
-> scale まで対応。残るは配布まわり（Phase 9）です。
+> scale まで対応。いまは配布（Phase 9）の試用版を用意しているところです。
 > 設計は [docs/DESIGN.md](docs/DESIGN.md) と [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) を参照。
 
 ![OG 画像の例](docs/images/og_card.png)
@@ -29,8 +52,8 @@ flexbox で「アイコン + タイトル + フッター」を組み、行頭に
 `<rp>` は解釈されますが描画されません。
 
 ```bash
-# 縦書きは block 方向が横なので --height が必須
-shashoku examples/vertical.html --font NotoSansJP-Regular.otf -o v.png --width 520 --height 560
+# 展開したディレクトリで。縦書きは block 方向が横なので --height が必須
+./shashoku examples/vertical.html -o v.png --width 520 --height 560
 ```
 
 ## 使い方
@@ -95,21 +118,25 @@ const auto result = shashoku::render(html, *fonts, *images, options);
 
 ### CLI
 
+以下は**アーカイブを展開したディレクトリ**（`shashoku` と `examples/` が並んでいる場所）で
+実行する形です。自分でビルドした場合は `./shashoku` を
+`build/dev/tools/shashoku/shashoku` のようなパスに読み替えてください。
+
 ```bash
-shashoku examples/hello.html --font NotoSansJP-Regular.otf -o out.png --width 600
-shashoku examples/og_card.html --font NotoSansJP-Bold.otf --font NotoSansJP-Regular.otf \
-  --image icon=icon.png -o og.png --width 1200 --height 630
-shashoku input.html --font A.otf --overflow burasage -o out.png   # あふれ処理を選ぶ
-shashoku input.html --font A.otf --scale 2 -o out@2x.png          # Retina 向け 2 倍
-shashoku input.html --font A.otf --trim-line-start -o out.png     # 行頭の括弧を天付きに
-shashoku input.html --font A.otf --dump-stage box                 # 中間表現を見る
+./shashoku examples/hello.html -o out.png --width 600
+./shashoku examples/og_card.html --image icon=examples/icon.png -o og.png --width 1200 --height 630
+./shashoku input.html --overflow burasage -o out.png      # あふれ処理を選ぶ
+./shashoku input.html --scale 2 -o out@2x.png             # Retina 向け 2 倍
+./shashoku input.html --trim-line-start -o out.png        # 行頭の括弧を天付きに
+./shashoku input.html --dump-stage box                    # 中間表現を見る
+./shashoku input.html --font A.otf --font B.otf -o out.png  # フォントを自分で指定する
 ```
 
 主なオプション:
 
 | オプション | 意味 |
 |---|---|
-| `--font <file>` | フォント（複数指定可。**指定順がフォールバック順**） |
+| `--font <file>` | フォント（複数指定可。**指定順がフォールバック順**）。省略すると埋め込みの既定フォント |
 | `--image <name>=<file>` | PNG 画像。`<img src="name">` で引く |
 | `--width` / `--height` / `--scale` | ビューポート（CSS px）と出力倍率。縦書きでは `--height` 必須 |
 | `--compression <N>` | PNG の圧縮レベル `0`〜`9`（既定 `6`）。`0` が最速、`9` が最小 |
@@ -119,8 +146,15 @@ shashoku input.html --font A.otf --dump-stage box                 # 中間表現
 | `--no-trim-line-end` | 行末の終わり括弧・句読点の後ろの空きを詰めない（既定は詰める） |
 | `--no-collapse-punctuation` | 連続する約物の間の空きを詰めない（既定は詰める。JLREQ 3.1.4） |
 | `--dump-stage` | `dom \| style \| box \| display-list \| svg` で中間表現を出す |
+| `--version` | 版を出す（shashoku・zlib・FreeType・HarfBuzz・**既定フォント**） |
+| `--license` | ライセンスを出す（MIT と第三者ソフトウェア） |
 
 終了コードは 0 成功 / 1 レンダリングエラー・入出力エラー / 2 引数の誤り。
+
+配布している実行ファイルには既定フォント（Noto Sans JP Regular / Bold）が入っていて、
+`--font` を書かなければそれを Regular → Bold の順に使います。**同じ OTF を
+`--font` で明示したときとバイト単位で同じ PNG** が出ます。既定フォントは CLI だけの
+機能で、ライブラリ（`render()`）は今までどおりバイト列しか受け取りません。
 
 ## 速さ
 
@@ -161,6 +195,7 @@ const auto result = shashoku::render(html, fonts, images, options);
 | `nesting_depth` / `dom_nodes` / `text_code_points` | 256 / 20,000 / 50,000 | 木の大きさと組む文字数 |
 | `style_rules` | 2,000 | セレクタの照合は「規則数 × 要素数」 |
 | `font_size_device_px` | 2,048 | グリフのビットマップは font-size の 2 乗で増えます（`font-size: 30000px` の 1 文字だけで 1.2 GB でした） |
+| `length_px` | 2^24 px | 1 要素あたりの長さの絶対値。`padding: 1e38em` のように計算値が float をあふれる入力を、位置つきのエラーで止めます。組み上がった座標には「これ × `dom_nodes`」が掛かるので、縦に長い文書は通ります |
 | `scale` / `device_pixels` | 256 / 2^26 px | 出力画像そのもの |
 
 > **⚠️ `0` は「無制限」ではありません**（文字どおり 0 です）。事実上外したいときは型の最大値を入れてください。
@@ -244,10 +279,13 @@ shashoku は純粋関数です（[DESIGN.md §3-5](docs/DESIGN.md)）。グロ�
 - **別のフォントファイル**: 同じ「Noto Sans JP」でも版が違えばグリフの輪郭が変わります。
   ゴールデン画像を持つなら、フォントもハッシュで固定してください（このリポジトリは
   `cmake/TestAssets.cmake` でそうしています）
+- **既定フォントの版**: `--font` を省いたときに使われる埋め込みフォントの版が変われば、
+  同じ HTML からでも出力は変わります。どの版で組んだかは `shashoku --version` が出します
+  （リリースごとにコミット SHA で固定しています）
 
 ## 既知の制限
 
-- **ルビ**: 親文字とルビの幅が違うときは 1:2:1 で配分するだけで、**隣の文字へのはみ出し（ルビの掛け）はしません**。**縦中横**（`text-combine-upright`）もありません
+- **ルビ**: 親文字とルビの幅が違うときは**短い方を中央に置くだけ**で、**JIS X 4051 / JLREQ 3.3.2 の 1:2:1 の配分も、隣の文字へのはみ出し（ルビの掛け）もしません**。`<rt>` に `letter-spacing` は効きません（ARCHITECTURE.md A37）。**縦中横**（`text-combine-upright`）もありません
 - **flexbox**: 単一行のみ（`flex-wrap` なし）。`align-self` `order` `flex-flow` なし
 - **ボックス**: `box-sizing` は content-box のみ。`max-width` / `min-width` なし。枠線と角丸は **4 辺・4 隅共通のみ**（`border-top` や隅ごとの半径は不可）。マージンの相殺は**隣り合う兄弟ブロック間だけ**（親子間はしません）
 - **画像**: **PNG のみ**（JPEG / SVG / WebP は非対応）。URL もファイルパスも解釈せず、バイト列で渡します
@@ -260,6 +298,10 @@ grid・float・table・`position` / アニメーション / メディアクエ�
 ブラウザとのピクセル一致（目標は「正しい日本語組版」であって「Chrome の再現」ではありません）。
 
 詳細は [DESIGN.md §4](docs/DESIGN.md)。
+
+ピクセル一致は目指しませんが、**組み合わせで情報が落ちていないか**を見るために Chrome（headless）と
+構造を突き合わせる仕組みはあります（欠落 / 重なり / 改行位置 / はみ出しの 4 つ）。
+ローカル専用で CI には入れていません: [docs/chrome_compare.md](docs/chrome_compare.md)。
 
 ## ビルド
 
@@ -276,7 +318,32 @@ cmake --build --preset dev
 ctest --preset dev
 ```
 
+ビルドすると既定フォントも一緒に落ちてきます（`cmake/TestAssets.cmake` が
+コミット SHA と SHA256 を固定して取得します）。CLI は `build/dev/tools/shashoku/shashoku` です。
+
 GCC を使う場合は 13 以上: `CXX=g++-14 cmake --preset gcc`
 
 プリセットは `dev`（Debug）/ `asan`（ASan + UBSan）/ `tsan`（ThreadSanitizer。共有資源を複数の
-スレッドから使うテスト用）/ `release` / `gcc`。`asan` と `tsan` は併用できません。
+スレッドから使うテスト用）/ `release` / `dist`（配布物と同じ設定。Release + CLI の C++ ランタイムを
+静的リンク）/ `gcc`。`asan` と `tsan` は併用できません。
+
+主な CMake オプション:
+
+| オプション | 既定 | 意味 |
+|---|---|---|
+| `SHASHOKU_BUILD_TESTS` / `SHASHOKU_BUILD_TOOLS` | ON | テスト / CLI をビルドする |
+| `SHASHOKU_EMBED_DEFAULT_FONT` | ON | CLI に既定フォントを埋め込む（OFF なら `--font` が必須） |
+| `SHASHOKU_STATIC_RUNTIME` | OFF | CLI に C++ ランタイム（libc++ / libc++abi / libunwind / libgcc）を静的リンクする（配布用。glibc は動的のまま） |
+
+配布物は **`ubuntu:22.04` のコンテナの中で**作ります（`scripts/dist_container_build.sh`）。
+glibc を動的にしているので、**ビルド機の glibc の版がそのまま「動く環境の下限」になる**ためです。
+できたバイナリは `scripts/check_dist_binary.sh` が検査します（動的依存が glibc だけであること、
+要求する glibc のシンボル版が 2.35 以下であること）。これは docker 無しでも回せます。
+
+## ライセンス
+
+shashoku 本体は [MIT License](LICENSE)。配布する実行ファイルに組み込まれる
+zlib / FreeType（FTL を選択）/ HarfBuzz / Noto Sans JP（SIL OFL 1.1）のライセンス全文は
+[THIRD_PARTY_LICENSES](THIRD_PARTY_LICENSES) にあります（`shashoku --license` でも出ます）。
+
+This software is based in part on the work of the FreeType Team.

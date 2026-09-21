@@ -124,6 +124,40 @@ std::optional<PropertyName> lookup_property(std::string_view name) {
   return std::nullopt;
 }
 
+// 未対応と**分かっている**プロパティには、次に何をすればよいかを一言だけ添える（#20）。
+// 「未対応です」だけでは手がかりがゼロで、試用の最初の 1 枚で詰まるため。
+//
+// ここに書いてよいのは、**shashoku で実際に同じ結果が出せると確かめた**代替だけ
+// （tests/style/error_test.cpp の文面の検査と、CLI の `--dump-stage box` で 1 つずつ確認済み）。
+// 表に無い名前（綴り間違い・そもそも知らないプロパティ）には何も足さない:
+// 間違った助言をするくらいなら、何も言わないほうがよい。
+// 代替が無いもの（縦中横）は「未実装」とだけ言う。
+struct HintEntry {
+  std::string_view name;
+  std::string_view hint;
+};
+
+constexpr auto kPropertyHints = std::to_array<HintEntry>({
+    {"box-sizing", "content-box only: subtract padding and border from `width` / `height`"},
+    {"flex-wrap", "single-line flex only: use one flex container per row"},
+    {"float", "no floats: use `display: flex` to put boxes side by side"},
+    {"max-height", "no min/max resolution: use a fixed `height`"},
+    {"max-width", "no min/max resolution: use a fixed `width`"},
+    {"min-height", "no min/max resolution: use a fixed `height`"},
+    {"min-width", "no min/max resolution: use a fixed `width`"},
+    {"position", "no positioning: use `display: flex` with `justify-content` / `align-items`"},
+    {"text-combine-upright", "tate-chu-yoko is not implemented"},
+});
+
+std::string_view hint_for(std::string_view name) {
+  for (const HintEntry& entry : kPropertyHints) {
+    if (entry.name == name) {
+      return entry.hint;
+    }
+  }
+  return {};
+}
+
 // ---- longhand への展開表（inherit / initial の配布に使う）--------------------
 
 constexpr std::array<PropertyId, 4> kMarginSides = {PropertyId::MarginTop, PropertyId::MarginRight,
@@ -152,6 +186,19 @@ std::unexpected<Error> bad_value(const Ctx& ctx, std::string_view detail) {
               ctx.location);
 }
 
+// float にできない数値（`1e39px` / `1e400px`）。「数値が範囲外」は、em の乗算であふれる
+// `1e38em` と同じ `LimitExceeded` に寄せてある（ARCHITECTURE.md A36）: 利用者から見て
+// この 2 つが別の種類なのは説明しづらい。ここは float の表現範囲なので RenderLimits では
+// 緩められない（緩められるのは計算値の上限 length_px の方）。
+std::unexpected<Error> out_of_range(const Ctx& ctx) {
+  return fail(ErrorKind::LimitExceeded,
+              std::format("`{}: {}` is out of range (the number cannot be represented as a "
+                          "32-bit float; lengths must be finite and within "
+                          "RenderLimits::length_px)",
+                          ctx.name, ctx.raw),
+              ctx.location);
+}
+
 constexpr std::string_view kLengthHelp = "supported lengths: <number>px, <number>em, or 0";
 
 // ---- 値の部品 ----------------------------------------------------------------
@@ -176,7 +223,7 @@ Result<SpecLength> to_length(const Ctx& ctx, const ValueToken& token, bool allow
                      std::format("`{}` is not a supported unit ({})", token.unit, kLengthHelp));
   }
   if (!representable(token.number)) {
-    return bad_value(ctx, "the number is out of range");
+    return out_of_range(ctx);
   }
   if (token.number < 0 && !allow_negative) {
     return bad_value(ctx, "negative lengths are only allowed for `margin` and `letter-spacing`");
@@ -199,7 +246,7 @@ Result<SpecDimension> to_dimension(const Ctx& ctx, const ValueToken& token,
       return bad_value(ctx, "`%` is only supported for `width` and `flex-basis`");
     }
     if (!representable(token.number)) {
-      return bad_value(ctx, "the number is out of range");
+      return out_of_range(ctx);
     }
     if (token.number < 0) {
       return bad_value(ctx, "negative percentages are not allowed");
@@ -675,7 +722,12 @@ Result<void> parse_line_height(const Ctx& ctx, std::span<const ValueToken> token
     return {};
   }
   if (token.kind == ValueToken::Kind::Number && token.number != 0) {
-    if (!representable(token.number) || token.number < 0) {
+    // 「範囲外」と「負」は別のこと。まとめると `line-height: 1e39` が
+    // 「負の数は不可」と言ってしまう（issue #19）。
+    if (!representable(token.number)) {
+      return out_of_range(ctx);
+    }
+    if (token.number < 0) {
       return bad_value(ctx, "`line-height` must not be negative");
     }
     emit(out, ctx, PropertyId::LineHeight,
@@ -702,7 +754,11 @@ Result<void> parse_letter_spacing(const Ctx& ctx, std::span<const ValueToken> to
 
 Result<void> parse_flex_factor(const Ctx& ctx, const ValueToken& token, PropertyId property,
                                std::vector<Declaration>& out) {
-  if (token.kind != ValueToken::Kind::Number || !representable(token.number) || token.number < 0) {
+  // 範囲外（`flex-grow: 1e39`）を「非負の数を書け」と言わない（issue #19）。
+  if (token.kind == ValueToken::Kind::Number && !representable(token.number)) {
+    return out_of_range(ctx);
+  }
+  if (token.kind != ValueToken::Kind::Number || token.number < 0) {
     return bad_value(ctx, "expected a non-negative number");
   }
   emit(out, ctx, property, SpecNumber{.value = static_cast<float>(token.number)});
@@ -1004,8 +1060,13 @@ Result<void> parse_declaration(std::string_view name, std::string_view raw_value
                                std::vector<Declaration>& out) {
   const std::optional<PropertyName> property = lookup_property(name);
   if (!property) {
+    // 文面の**先頭は変えない**（前方一致で見ているスクリプトがあるかもしれないので、
+    // 分かっているものにだけ括弧で代替案を足す）。エラーの種類と位置も変えない。
+    const std::string_view hint = hint_for(name);
     return fail(ErrorKind::UnsupportedProperty,
-                std::format("`{}` is not a supported property", name), name_location);
+                hint.empty() ? std::format("`{}` is not a supported property", name)
+                             : std::format("`{}` is not a supported property ({})", name, hint),
+                name_location);
   }
 
   const Ctx ctx{.name = name, .raw = trim_css_space(raw_value), .location = value_location};

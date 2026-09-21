@@ -109,6 +109,8 @@ TEST(TextFontStore, RejectsTruncatedFont) {
   EXPECT_EQ(store.size(), 0U);
 }
 
+// エラーメッセージの言語（英語）は tests/text/message_language_test.cpp が見張る。
+
 TEST(TextFontStore, FailedLoadDoesNotDisturbEarlierFonts) {
   FontStore store;
   const FontId jp = *store.load(noto_sans_jp_regular());

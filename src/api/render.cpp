@@ -17,6 +17,7 @@
 #include "core/bitmap.hpp"
 #include "core/color.hpp"
 #include "core/ids.hpp"
+#include "core/number_text.hpp"
 #include "core/result.hpp"
 #include "html/dom.hpp"
 #include "html/parser.hpp"
@@ -52,6 +53,13 @@ static_assert(RenderLimits{}.nesting_depth == html::kMaxNestingDepth,
               "RenderLimits::nesting_depth と html::kMaxNestingDepth の既定値が食い違っている");
 static_assert(RenderLimits{}.style_rules == style::kMaxStyleRules,
               "RenderLimits::style_rules と style::kMaxStyleRules の既定値が食い違っている");
+static_assert(RenderLimits{}.length_px == style::kMaxLengthPx,
+              "RenderLimits::length_px と style::kMaxLengthPx の既定値が食い違っている");
+// layout の出口の上限（A36）は「1 要素あたりの長さ x 要素数」で導く。導出の式が 2 か所で
+// 別々に動かないよう、既定値の一致をここで確かめる。
+static_assert(RenderLimits{}.length_px * static_cast<float>(RenderLimits{}.dom_nodes) ==
+                  layout::kMaxGeometryPx,
+              "layout::kMaxGeometryPx が RenderLimits::length_px x dom_nodes と食い違っている");
 static_assert(RenderLimits{}.image_pixels == png::kMaxPixels,
               "RenderLimits::image_pixels と png::kMaxPixels の既定値が食い違っている");
 static_assert(RenderLimits{}.device_pixels == raster::kMaxDevicePixels,
@@ -94,7 +102,7 @@ linebreak::Config to_internal(const LineBreakConfig& config) {
   linebreak::Config out;
   out.strictness = to_internal(config.strictness);
   out.overflow = to_internal(config.overflow);
-  // break_anywhere は CSS の overflow-wrap から layout が決める（ここでは既定のまま）。
+  // wrap（A35）は CSS の overflow-wrap から layout がアイテムごとに決める（ここでは既定のまま）。
   out.collapse_punctuation_spacing = config.collapse_punctuation_spacing;
   out.trim_line_end = config.trim_line_end;
   out.trim_line_start = config.trim_line_start;
@@ -113,8 +121,9 @@ Result<void> validate(const RenderOptions& options) {
                 std::format("viewport height must be positive (got {})", *options.viewport_height));
   }
   if (!std::isfinite(options.scale) || options.scale <= 0) {
-    return fail(ErrorKind::InvalidOption,
-                std::format("scale must be a positive finite number (got {})", options.scale));
+    return fail(
+        ErrorKind::InvalidOption,
+        std::format("scale must be a positive finite number (got {})", number_text(options.scale)));
   }
   if (options.scale > options.limits.scale) {
     return fail(ErrorKind::LimitExceeded, std::format("scale is {}, which exceeds the limit of {} "
@@ -255,7 +264,8 @@ Result<void> check_computed_limits(const style::StyledNode& root, float scale,
         return fail(ErrorKind::LimitExceeded,
                     std::format("font-size {} px x scale {} = {} device px, which exceeds the "
                                 "limit of {} (raise RenderLimits::font_size_device_px to allow it)",
-                                node.style.font_size, scale, device_px, limits.font_size_device_px),
+                                number_text(node.style.font_size), number_text(scale),
+                                number_text(device_px), number_text(limits.font_size_device_px)),
                     node.location);
       }
     }
@@ -412,6 +422,11 @@ Result<layout::BoxTree> run_layout(const style::StyledNode& styled, const Render
     layout_options.viewport_height = static_cast<float>(*options.viewport_height);
   }
   layout_options.line_break = to_internal(options.line_break);
+  // 出口の検査の上限（A36）。「1 要素あたりの長さ x 要素数」で導くので、この 2 つの上限を
+  // 守った文書では絶対に発動しない。どちらかを極端に緩めて積が inf になったら、
+  // 出口の検査は「有限であること」だけを見る（それでも黙って消える事故は止まる）。
+  layout_options.max_geometry_px =
+      options.limits.length_px * static_cast<float>(options.limits.dom_nodes);
 
   // 名前 → 画像（A12）。追加順の線形探索: 決定的で、数十枚までなら十分速い。
   const layout::ImageLookup lookup =
@@ -438,6 +453,15 @@ Result<float> output_height(const layout::BoxTree& tree, const RenderOptions& op
     return fail(ErrorKind::InvalidOption, "viewport height is required in vertical writing mode");
   }
   const float height = std::ceil(tree.content_block_size());
+  // 非有限な内容高さは③ layout の出口（A36）が位置つきで止めるので、ここには届かない。
+  // 届いたら layout の不変条件が破れている = shashoku 側のバグなので、
+  // 「高さが 0」と言い切らずに Internal で報告する（issue #19 のメッセージの誤り 3 件目）。
+  if (!std::isfinite(height)) {
+    return fail(ErrorKind::Internal,
+                std::format("the laid out content height is {}, which is not a finite number "
+                            "(layout should have rejected it; please report this input)",
+                            number_text(height)));
+  }
   if (!(height > 0)) {
     return fail(ErrorKind::InvalidOption,
                 "nothing to render: the content height is 0 and no viewport height was given");
@@ -478,7 +502,8 @@ Result<RenderResult> render_impl(std::string_view html, const ResourceSource& so
   if (const Result<void> ok = check_dom_limits(*dom, options.limits); !ok) {
     return std::unexpected(ok.error());
   }
-  const Result<style::StyledNode> styled = style::resolve(*dom, options.limits.style_rules);
+  const Result<style::StyledNode> styled =
+      style::resolve(*dom, options.limits.style_rules, options.limits.length_px);
   if (!styled) {
     return std::unexpected(styled.error());
   }
@@ -549,7 +574,8 @@ Result<std::string> dump_impl(std::string_view html, const ResourceSource& sourc
   if (stage == DumpStage::Dom) {
     return html::dump_json(*dom);
   }
-  const Result<style::StyledNode> styled = style::resolve(*dom, options.limits.style_rules);
+  const Result<style::StyledNode> styled =
+      style::resolve(*dom, options.limits.style_rules, options.limits.length_px);
   if (!styled) {
     return std::unexpected(styled.error());
   }

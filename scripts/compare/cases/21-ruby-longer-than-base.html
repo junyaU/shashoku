@@ -1,0 +1,4 @@
+<!-- ケース 21: ルビ × letter-spacing × ルビの方が長い（親文字 1 文字）。
+     親文字が末尾の字間込みの幅で中央寄せされるので、インクが字間の半分だけ行頭側に寄る。
+     Chrome も同じ挙動かもしれないので、誤りと決めつけず Chrome の値を見てから判断する。 -->
+<div style="font-size:32px; letter-spacing:16px"><ruby>A<rt>ながいルビ</rt></ruby>いろは</div>

@@ -5,4 +5,5 @@ shashoku_add_test(core_test
     json_writer_test.cpp
     bitmap_test.cpp
     geometry_test.cpp
+    number_text_test.cpp
   LIBS shashoku::core)

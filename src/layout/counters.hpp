@@ -39,6 +39,9 @@ struct Counters {
   // 登録のたびに既存のスタイルを線形探索していると、色違いの span が S 個ある段落で
   // ここが S² に膨らむ（issue #10 の L1 からの申し送り）。二分探索なら S×log S。
   std::uint64_t style_probes = 0;
+  // 出口の検査（A36）が見た箱・行・断片・グリフの数。1 つにつき 1 回だけ見るので、
+  // ここは木の大きさに線形でなければならない（走査は paint 1 回ぶんの費用）。
+  std::uint64_t geometry_nodes = 0;
   // 行分割器の中の作業量（A24）。linebreak は何にも依存しないので自前のカウンタを持っており、
   // layout は break_lines() / min_content_width() / break_opportunities() にこれを渡して
   // 足し込む。layout 側の線形性（A22）と合わせて「1 つの IFC の仕事は N に線形」を検査する。

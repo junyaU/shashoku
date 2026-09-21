@@ -1,0 +1,169 @@
+{
+  "_comment": [
+    "Chrome 比較の入力一覧。1〜21 は #15 のコメントの組み合わせのケース（1 ケース = 1 HTML の断片）、",
+    "22〜25 は examples/（= ゴールデンの入力。#15 本文の受け入れ条件）。",
+    "fonts は shashoku の --font に渡す順（= Chrome 側の font-family の順）。",
+    "  jp = NotoSansJP-Regular.otf / jp-bold = NotoSansJP-Bold.otf / latin = NotoSans-Regular.ttf",
+    "height を書くと shashoku の --height と Chrome の --window-size の高さに使う。",
+    "省略すると shashoku が内容に合わせた高さを使い、Chrome にもその高さを渡す。",
+    "expect_error を書くと『shashoku がそのエラーで止まるのが正しい』ケースになる。",
+    "  組版は比較せず、拒否できたかと、Chrome が同じ入力をどう扱うかだけを記録する。"
+  ],
+  "cases": [
+    {
+      "id": 1, "file": "01-ruby-letter-spacing-h.html",
+      "title": "ルビ × letter-spacing（横）",
+      "width": 400, "fonts": ["jp"], "known_bug": "#16",
+      "watch": ["重なり", "字間"]
+    },
+    {
+      "id": 2, "file": "02-ruby-letter-spacing-v.html",
+      "title": "ルビ × letter-spacing（縦）",
+      "width": 300, "height": 400, "fonts": ["jp"], "known_bug": "#16",
+      "watch": ["重なり", "ルビの側"]
+    },
+    {
+      "id": 3, "file": "03-ruby-mixed-size.html",
+      "title": "ルビ × 親文字内のサイズ混在",
+      "width": 300, "fonts": ["jp"], "known_bug": "#17",
+      "watch": ["欠落"]
+    },
+    {
+      "id": 4, "file": "04-ruby-kinsoku.html",
+      "title": "ルビ × 禁則",
+      "width": 200, "fonts": ["jp"],
+      "watch": ["改行位置"]
+    },
+    {
+      "id": 5, "file": "05-ruby-justify.html",
+      "title": "ルビ × text-align: justify",
+      "width": 220, "fonts": ["jp"],
+      "watch": ["改行位置", "字間の配分"]
+    },
+    {
+      "id": 6, "file": "06-ruby-flex.html",
+      "title": "ルビ × flex",
+      "width": 400, "fonts": ["jp"],
+      "watch": ["改行位置", "はみ出し"]
+    },
+    {
+      "id": 7, "file": "07-ruby-br-rp.html",
+      "title": "ルビ × <br> × <rp>",
+      "width": 300, "fonts": ["jp"],
+      "watch": ["欠落", "改行位置"]
+    },
+    {
+      "id": 8, "file": "08-flex-overflow-wrap-anywhere.html",
+      "title": "flex × overflow-wrap: anywhere",
+      "width": 200, "fonts": ["jp"], "known_bug": "#18",
+      "watch": ["はみ出し"]
+    },
+    {
+      "id": 9, "file": "09-flex-japanese-long.html",
+      "title": "flex × 和文の長文",
+      "width": 288, "fonts": ["jp"],
+      "watch": ["改行位置", "はみ出し"]
+    },
+    {
+      "id": 10, "file": "10-flex-img-stretch.html",
+      "title": "flex × <img>（stretch）",
+      "width": 400, "fonts": ["jp"], "images": true,
+      "watch": ["欠落", "重なり"]
+    },
+    {
+      "id": 11, "file": "11-mixed-size-line-height.html",
+      "title": "サイズ混在 × line-height",
+      "width": 400, "fonts": ["jp"],
+      "watch": ["欠落", "行高"]
+    },
+    {
+      "id": 12, "file": "12-mixed-size-letter-spacing.html",
+      "title": "サイズ混在 × letter-spacing",
+      "width": 500, "fonts": ["jp"],
+      "watch": ["重なり", "字間"]
+    },
+    {
+      "id": 13, "file": "13-letter-spacing-punctuation.html",
+      "title": "letter-spacing × 約物のアキ詰め",
+      "width": 240, "fonts": ["jp"],
+      "watch": ["改行位置", "はみ出し"]
+    },
+    {
+      "id": 14, "file": "14-letter-spacing-justify.html",
+      "title": "letter-spacing × justify",
+      "width": 240, "fonts": ["jp"],
+      "watch": ["はみ出し", "字間の配分"]
+    },
+    {
+      "id": 15, "file": "15-vertical-ruby-latin.html",
+      "title": "縦書き × ルビ × 欧文の横倒し",
+      "width": 300, "height": 420, "fonts": ["jp"],
+      "watch": ["ルビの側", "重なり", "改行位置"]
+    },
+    {
+      "id": 16, "file": "16-vertical-img.html",
+      "title": "縦書き × <img>",
+      "width": 300, "height": 420, "fonts": ["jp"], "images": true,
+      "watch": ["重なり", "改行位置"]
+    },
+    {
+      "id": 17, "file": "17-vertical-flex.html",
+      "title": "縦書き × flex",
+      "width": 400, "height": 200, "fonts": ["jp"],
+      "watch": ["改行位置", "はみ出し"]
+    },
+    {
+      "id": 18, "file": "18-img-inline-line-height.html",
+      "title": "<img> × インライン × 行高",
+      "width": 400, "fonts": ["jp"], "images": true,
+      "watch": ["欠落", "行高"]
+    },
+    {
+      "id": 19, "file": "19-fallback-spacing-weight.html",
+      "title": "フォールバック × 字間 × font-weight",
+      "width": 500, "fonts": ["latin", "jp"],
+      "watch": ["欠落", "重なり", "改行位置"]
+    },
+    {
+      "id": 20, "file": "20-finiteness-huge-padding.html",
+      "title": "有限性 × 極端な長さ",
+      "width": 400, "height": 200, "fonts": ["jp"],
+      "watch": ["欠落"],
+      "expect_error": "limit-exceeded",
+      "note": "#19 の修正で、shashoku は非有限になる入力を拒否するのが正しくなった。組版は比較せず、拒否できたかと、Chrome が飽和させて描いた結果を記録する"
+    },
+    {
+      "id": 21, "file": "21-ruby-longer-than-base.html",
+      "title": "ルビ × letter-spacing × ルビの方が長い",
+      "width": 400, "fonts": ["jp"],
+      "watch": ["重なり", "中央寄せ"]
+    },
+
+    {
+      "_comment": "22〜25 は examples/ とゴールデンの入力（#15 本文の受け入れ条件）。",
+      "id": 22, "file": "../../../examples/hello.html",
+      "title": "examples/hello.html",
+      "width": 600, "fonts": ["jp", "jp-bold"],
+      "watch": ["改行位置", "はみ出し"]
+    },
+    {
+      "id": 23, "file": "../../../examples/ruby.html",
+      "title": "examples/ruby.html",
+      "width": 460, "fonts": ["jp", "jp-bold"],
+      "watch": ["欠落", "重なり", "改行位置"]
+    },
+    {
+      "id": 24, "file": "../../../examples/vertical.html",
+      "title": "examples/vertical.html",
+      "width": 520, "height": 560, "fonts": ["jp", "jp-bold"],
+      "watch": ["ルビの側", "改行位置"]
+    },
+    {
+      "id": 25, "file": "../../../examples/og_card.html",
+      "title": "examples/og_card.html",
+      "width": 1200, "height": 630, "fonts": ["jp-bold", "jp"], "images": true,
+      "watch": ["欠落", "はみ出し"],
+      "note": "<img src=\"icon\"> を使う。比較スクリプトが作る box.png を当てる"
+    }
+  ]
+}

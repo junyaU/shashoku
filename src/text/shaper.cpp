@@ -17,6 +17,7 @@
 #include <hb-ot.h>
 
 #include "core/ids.hpp"
+#include "core/number_text.hpp"
 #include "core/result.hpp"
 #include "shashoku/error.hpp"
 #include "text/char_properties.hpp"
@@ -32,8 +33,10 @@ constexpr int kFixedOne = 64;
 constexpr char32_t kTofu = 0x25A1;  // □
 
 // エラーメッセージに必ず「どのフォントの何が原因か」を入れる（DESIGN.md §3-6 fail loudly）。
+// 値は number_text() を通す: NaN の符号ビットは CPU によって違うので、そのまま出すと
+// 同じ入力でも文面が環境で変わる（core/number_text.hpp）。
 [[nodiscard]] std::string where(FontId font, float font_size) {
-  return std::format("FontId {}, {} px", font, font_size);
+  return std::format("FontId {}, {} px", font, number_text(font_size));
 }
 
 [[nodiscard]] float to_px(hb_position_t value) {
@@ -167,9 +170,7 @@ struct ShaperImpl {
     const FontEntry* font_entry = entry(font);
     if (font_entry == nullptr) {
       return fail(ErrorKind::Internal,
-                  std::format("シェーピングできません (FontId {}): FontStore にその FontId が"
-                              "ありません",
-                              font));
+                  std::format("cannot shape (FontId {}): no such FontId in the FontStore", font));
     }
     if (shaping_fonts.size() <= font) {
       shaping_fonts.resize(std::size_t{font} + 1, nullptr);
@@ -179,9 +180,7 @@ struct ShaperImpl {
       if (created == hb_font_get_empty()) {
         // hb_font_create は確保に失敗すると空のフォント（不変の共有オブジェクト）を返す。
         return fail(ErrorKind::OutOfMemory,
-                    std::format("シェーピングできません (FontId {}): HarfBuzz のフォントを"
-                                "作れませんでした",
-                                font));
+                    std::format("cannot shape (FontId {}): cannot create the HarfBuzz font", font));
       }
       hb_ot_font_set_funcs(created);  // メトリクスは hb-ot から読む（A7）
       shaping_fonts[font] = created;
@@ -288,8 +287,8 @@ Result<FontMetrics> ShaperImpl::font_metrics(FontId font, float font_size) {
   hb_font_extents_t extents{};
   if (hb_font_get_h_extents(*hb_font, &extents) == 0) {
     return fail(ErrorKind::FontLoad,
-                std::format("メトリクスを読めません ({}): フォントに水平方向の寸法"
-                            "（hhea / OS/2）がありません",
+                std::format("cannot read the metrics ({}): the font has no horizontal extents "
+                            "(hhea / OS/2)",
                             where(font, font_size)));
   }
   FontMetrics result;
@@ -312,19 +311,20 @@ Result<std::vector<hb_codepoint_t>> ShaperImpl::probe_glyphs(const FontEntry& en
   // （バッファの方は 1 スレッド専用なので、Shaper が自分で持っている）。A34。
   entry.font.shape_for_probe(probe_buffer);
   if (hb_buffer_allocation_successful(probe_buffer) == 0) {
-    return fail(ErrorKind::OutOfMemory,
-                std::format("縦組み用グリフを調べられません (U+{:04X}): HarfBuzz が作業領域を"
-                            "確保できませんでした",
-                            static_cast<std::uint32_t>(cp)));
+    return fail(
+        ErrorKind::OutOfMemory,
+        std::format("cannot probe the vertical glyph (U+{:04X}): HarfBuzz could not allocate "
+                    "its buffer",
+                    static_cast<std::uint32_t>(cp)));
   }
 
   unsigned int count = 0;
   const hb_glyph_info_t* infos = hb_buffer_get_glyph_infos(probe_buffer, &count);
   if (count > 0 && infos == nullptr) {
-    return fail(ErrorKind::Internal,
-                std::format("縦組み用グリフを調べられません (U+{:04X}): HarfBuzz がグリフ情報を"
-                            "返しませんでした",
-                            static_cast<std::uint32_t>(cp)));
+    return fail(
+        ErrorKind::Internal,
+        std::format("cannot probe the vertical glyph (U+{:04X}): HarfBuzz returned no glyph info",
+                    static_cast<std::uint32_t>(cp)));
   }
   std::vector<hb_codepoint_t> ids;
   ids.reserve(count);
@@ -343,10 +343,10 @@ Result<bool> ShaperImpl::has_vertical_form(FontId font, char32_t cp) {
   }
   const FontEntry* font_entry = entry(font);
   if (font_entry == nullptr) {
-    return fail(ErrorKind::Internal,
-                std::format("縦組み用グリフを調べられません (FontId {}): FontStore にその "
-                            "FontId がありません",
-                            font));
+    return fail(
+        ErrorKind::Internal,
+        std::format("cannot probe the vertical glyph (FontId {}): no such FontId in the FontStore",
+                    font));
   }
   const Result<std::vector<hb_codepoint_t>> horizontal =
       probe_glyphs(*font_entry, cp, HB_DIRECTION_LTR);
@@ -440,10 +440,10 @@ Result<void> ShaperImpl::shape_run(std::u32string_view text, std::size_t begin, 
   // hb_buffer_create 自体の失敗もここで捕まる（確保に失敗すると successful = false の
   // 空のバッファが返るため、コンストラクタが Result を返せなくても握りつぶさずに済む）。
   if (hb_buffer_allocation_successful(buffer) == 0) {
-    return fail(ErrorKind::OutOfMemory,
-                std::format("シェーピングできません ({}): HarfBuzz が作業領域を確保できません"
-                            "でした（{} 文字）",
-                            where(plan.font, style.font_size), end - begin));
+    return fail(
+        ErrorKind::OutOfMemory,
+        std::format("cannot shape ({}): HarfBuzz could not allocate its buffer ({} code points)",
+                    where(plan.font, style.font_size), end - begin));
   }
 
   unsigned int count = 0;
@@ -451,8 +451,7 @@ Result<void> ShaperImpl::shape_run(std::u32string_view text, std::size_t begin, 
   const hb_glyph_position_t* positions = hb_buffer_get_glyph_positions(buffer, &count);
   if (count > 0 && (infos == nullptr || positions == nullptr)) {
     return fail(ErrorKind::Internal,
-                std::format("シェーピングできません ({}): HarfBuzz がグリフ情報を返しません"
-                            "でした（{} グリフ）",
+                std::format("cannot shape ({}): HarfBuzz returned no glyph info ({} glyphs)",
                             where(plan.font, style.font_size), count));
   }
 
@@ -673,13 +672,12 @@ void normalize_clusters(ShapedText& out, std::size_t text_length) {
 // Internal で落とす（フォントが 1 つも無い FontStore は api が NoFonts で弾いている）。
 Result<void> check_contract(const std::vector<FontId>& stack, const TextStyle& style) {
   if (stack.empty()) {
-    return fail(ErrorKind::Internal,
-                "シェーピングできません: FontStore にフォントが 1 つも読み込まれていません");
+    return fail(ErrorKind::Internal, "cannot shape: no fonts are loaded in the FontStore");
   }
   if (!std::isfinite(style.font_size)) {
-    return fail(ErrorKind::Internal,
-                std::format("シェーピングできません: font_size は有限であること (got {})",
-                            style.font_size));
+    // 値の表記は number_text() を通す（NaN の符号は CPU で変わる。core/number_text.hpp）。
+    return fail(ErrorKind::Internal, std::format("cannot shape: font_size must be finite (got {})",
+                                                 number_text(style.font_size)));
   }
   return {};
 }

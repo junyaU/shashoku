@@ -176,8 +176,8 @@ O(N×L) になる（issue #4）。`InlineFormatter` は placement をメンバ�
 テキスト（インラインボックス）に適用される継承プロパティなので、段落の途中の `<span>` で値が
 変わりうる。`linebreak::Config` を 1 組だけ持つ形では、その指定が段の境界（layout → linebreak）で
 黙って落ちていた（issue #2）。`linebreak::Item` に `std::optional<Strictness> strictness` と
-`std::optional<bool> break_anywhere` を持たせ、nullopt なら `Config` の値を使う
-（すべて nullopt なら出力は従来と完全に同じ）。
+`std::optional<Wrap> wrap`（当初は `std::optional<bool> break_anywhere`。A35 で 3 値にした）を
+持たせ、nullopt なら `Config` の値を使う（すべて nullopt なら出力は従来と完全に同じ）。
 CSS Text Level 3 の「Line Breaking Details」（2026-09 時点の TR では §5.5。本書の他の引用が使っている
 版とは節番号がずれている）は *「which elements' line-break, word-break, and overflow-wrap properties
 control the determination of soft wrap opportunities at such boundaries is undefined in this level」*
@@ -189,18 +189,22 @@ control the determination of soft wrap opportunities at such boundaries is undef
   解決済みのクラスに対して従来どおり働く。例外は loose の「直前が ID ならハイフン ‐ – の前で
   割ってよい」だけで、これは 2 アイテムにまたがる。**行頭に来る側（= 後ろのアイテム = ハイフン
   自身）の値で決める**
-- **`break_anywhere` の緊急分割は、位置の両側のアイテムがともに true のときだけ許す。**
-  つまり anywhere を指定した要素の内部でだけ割れ、要素の境界では割れない。指定していない語が
-  隣接のせいで割れるより、指定した範囲だけが割れる方が説明しやすい。発動条件（分割可能位置が
-  1 つもない行でだけ。§3.4 (5)）と優先順（分離禁則 > 行頭・行末禁則、クラスタ内部では割らない）は
-  `Config` のときと同じ。両側が true の位置が 1 つもなければ、A4「禁則 > 幅」で割らずにはみ出す
-- `break_anywhere` は `min_content_width()` に影響しない（`Config` のときからの挙動。CSS の
+- **`wrap` の緊急分割は、位置の両側のアイテムがともに `Normal` 以外のときだけ許す。**
+  つまり anywhere / break-word を指定した要素の内部でだけ割れ、要素の境界では割れない。
+  指定していない語が隣接のせいで割れるより、指定した範囲だけが割れる方が説明しやすい。
+  発動条件（分割可能位置が 1 つもない行でだけ。§3.4 (5)）と優先順（分離禁則 >
+  行頭・行末禁則、クラスタ内部では割らない）は `Config` のときと同じ。両側が `Normal` 以外の
+  位置が 1 つもなければ、A4「禁則 > 幅」で割らずにはみ出す
+- ~~`break_anywhere` は `min_content_width()` に影響しない（`Config` のときからの挙動。CSS の
   `break-word` 相当）。CSS Text 3 §5.4 は `anywhere` を min-content に効かせると定めているが、
   現行の `Config::break_anywhere` は `anywhere` と `break-word` を 1 つのフラグにまとめているので
-  区別しない。区別が要るようになったら `Config` の意味論の問題として別に決める
+  区別しない。区別が要るようになったら `Config` の意味論の問題として別に決める~~
+  → **A35 で撤回**（issue #18）。この割り切りのせいで `overflow-wrap: anywhere` を指定した
+  flex アイテムが親からはみ出していた。いまは `Wrap` の 3 値を持ち、`Anywhere` だけが
+  `min_content_width()` に効く
 
 layout 側がこの口に何を入れるかは A28。`Config` は**段落の既定値**として残っていて、値を持たない
-`Item` にだけ効く（約物のアキ・あふれ処理など、`strictness` / `break_anywhere` 以外の設定は
+`Item` にだけ効く（約物のアキ・あふれ処理など、`strictness` / `wrap` 以外の設定は
 `Config` にしかない）。
 
 **A24. 行分割の仕事は N に線形。「行ごとに段落の残りを舐める」を作らない。** 狭い版面では
@@ -237,7 +241,7 @@ issue #6）。上限は**入力の一部**なので純粋関数の性質は壊�
 | | 場所 | 見るもの |
 |---|---|---|
 | (a) | 入力を受けた時点（パースより前） | `html_bytes` / `images` |
-| (b) | パース・計算値化のあと（api が DOM とスタイル付きツリーを 1 回ずつ辿る） | `nesting_depth` / `dom_nodes` / `text_code_points` / `style_rules` / `font_size_device_px` / `scale` |
+| (b) | パース・計算値化のあと（api が DOM とスタイル付きツリーを 1 回ずつ辿る） | `nesting_depth` / `dom_nodes` / `text_code_points` / `style_rules` / `font_size_device_px` / `length_px`（A36） / `scale` |
 | (c) | 大きな確保の直前（確保する前に判定する） | `image_pixels` / `total_image_pixels` / `device_pixels` |
 
 既定値と根拠（「OG 画像 1200x630 @2x・数千文字・画像数枚には十分広く、事故は止まる」）:
@@ -251,6 +255,7 @@ issue #6）。上限は**入力の一部**なので純粋関数の性質は壊�
 | `text_code_points` | 50,000 | 「数千文字」の 10 倍以上。行分割と配置が入力に比例して効く |
 | `style_rules` | 2,000 | セレクタの照合は 規則数 x 要素数。`dom_nodes` との積で決めた |
 | `font_size_device_px` | 2,048 | グリフのビットマップは pixel_size の 2 乗。2048^2 = 4 MB で頭打ちになる。見出しは @2x でも 300 px 程度。実行ごとのグリフキャッシュ（A34）1 項目の上界もこれで決まる |
+| `length_px` | 2^24 = 16,777,216 | 長さ・座標の絶対値（A36）。出力の絶対上限（1 辺 2^32-1 px）より十分小さく、`dom_nodes` = 20,000 段ぶん足しても 3.4x10^11 で float の上限 3.4x10^38 に遠く届かない。float が整数を 1 刻みで表せる上限でもある |
 | `scale` | 256 | 既存値の据え置き。「1.0 のつもりが 1000」を弾く |
 | `image_pixels` | 2^24 | 4096x4096（RGBA で 64 MB）。OG に貼る素材には十分 |
 | `total_image_pixels` | 2^25 | 128 MB。「1 枚 2^26 px x 枚数無制限」だったのを塞ぐ |
@@ -337,16 +342,19 @@ issue #6）。上限は**入力の一部**なので純粋関数の性質は壊�
 |---|---|
 | テキスト（1 クラスタ） | **クラスタ先頭の文字**が属する要素の計算値（A27 の装飾と同じ規則） |
 | `<img>`（Atomic） | その `<img>` 自身の計算値 |
-| ルビ組（Atomic） | 親文字の**先頭の文字**が属する要素の計算値 |
+| ルビ組（Atomic） | 親文字の**先頭の文字**が属する要素の計算値（幾何には使わない。A37） |
 | `<br>`（ForcedBreak） | その `<br>` 自身の計算値（必ず改行するので結果には効かない） |
 
-- `line-break: auto` はエンジンの既定に解決する（A17）。`overflow-wrap` は `anywhere` /
-  `break-word` のどちらも `break_anywhere = true`（A23 の最後）
+- `line-break: auto` はエンジンの既定に解決する（A17）。`overflow-wrap` は 3 値をそのまま
+  `linebreak::Wrap`（`Normal` / `BreakWord` / `Anywhere`）に写す。どちらも緊急分割を許すが、
+  min-content に効くのは `anywhere` だけ（A35。CSS Text 3 §5.4）
 - **ルビ組の内部（親文字の途中・`<rt>`）の指定は効かない。** 組は Atomic 1 個で、その内部には
   分割可能位置が存在しないため（§3.8 のルビ）。「指定を読み落としている」のではなく
-  「効かせる場所がない」。1 文字だけの要素に `line-break` を書いても何も起きないのと同じ
+  「効かせる場所がない」。1 文字だけの要素に `line-break` を書いても何も起きないのと同じ。
+  **これは行分割ポリシーの話に限る。** 組の代表の文字から幾何の寸法（ascent / font-size /
+  letter-spacing）を取ってはいけない（#16 / #17 で実際に壊れていた。A37）
 - **`linebreak::Config` は段落の既定値として残す。** いまは (c) がすべての `Item` に値を入れるので
-  `strictness` / `break_anywhere` については使われないが、約物のアキ・あふれ処理（`overflow` /
+  `strictness` / `wrap` については使われないが、約物のアキ・あふれ処理（`overflow` /
   `trim_line_end` / `collapse_punctuation_spacing`）は `Config` にしかない
 - 継承プロパティのうち、layout が「インライン要素の値」ではなく「段落のブロックの値」だけを
   読んでよいのは `text-align`（CSS ではブロックコンテナに適用。インライン要素に書いても
@@ -607,6 +615,298 @@ PNG エンコードで、そこは #7 の対象外**。
   後者は `tsan` プリセット（`SHASHOKU_SANITIZE_THREAD`）でも回す。**普段の完了条件には入れない**:
   依存ライブラリまで再ビルドになるので `dev` / `asan` と並べると重い
 
+**A35. `overflow-wrap` は `linebreak` でも 3 値で持つ。`anywhere` だけが `min_content_width()` に
+効く。緊急分割の条件と禁則の優先順は変えない。**（issue #18。A23 の最後の割り切りを撤回する）
+
+CSS Text 3 §5.4 は 2 値を **min-content に効くかどうか**で区別している:
+
+> **anywhere**: An otherwise unbreakable sequence of characters may be broken at an arbitrary point
+> if there are no otherwise-acceptable break points in the line. …
+> **break-word**: As for `anywhere` except that soft wrap opportunities introduced by `break-word`
+> are **not** considered when calculating min-content intrinsic sizes.
+
+min-content は flex アイテムの自動最小サイズ（Flexbox §4.5。`min-width: auto` の content size
+suggestion は主軸の min-content サイズ）に使われるので、1 つの bool に潰すと
+`overflow-wrap: anywhere` を指定した flex の子が「1 行ぶんの幅」より縮まず、親からはみ出す
+（実測: 親 32px に子 82.21875px。同じ内容をブロックに置けば正しく 3 行になるので、
+**flex を通したときだけ指定が効かない**）。DESIGN.md §3-6「fail loudly」にも触れる:
+指定は受理され、エラーも警告も出ないまま黙って無視されていた。
+
+決めたこと:
+
+- **`linebreak` に CSS の 3 値に対応する `enum class Wrap { Normal, BreakWord, Anywhere }` を置き、
+  `Config::wrap` / `Item::wrap` にする。** `style::OverflowWrap` は持ち込まない
+  （`linebreak` は何にも依存しない。DESIGN.md §3-4）。値は**弱い順**に並べ、位置の両側の
+  アイテムの弱い方がその位置で何ができるかを決める（A23 の境界の規則を 3 値に読み替えただけ）
+- **`break_lines()` は 1 ビットも変えない。** 緊急分割の発動条件（分割可能位置が 1 つもない行
+  でだけ）、候補の判定（クラスタ境界。`anywhere_candidate()`）、位置選びの優先順
+  （分離禁則 > 行頭・行末禁則 > 最後の逃げ場）はそのまま。変えたのは `min_content_width()` の
+  区間の切り方だけで、`BreakWord` と `Anywhere` は実配置では完全に同じ振る舞いをする
+- **`min_content_width()` は、分割可能位置に加えて「両側がともに `Anywhere` のクラスタ境界」でも
+  区間を切る。** 切ってよい位置の判定は緊急分割と同じ `anywhere_candidate()` を使う
+  （クラスタ内部・ZWJ の吸収では割らない）
+- **禁則は min-content では守らない。** §5.4 は "broken at an arbitrary point" としか言わず、
+  禁則を守れとは書いていない。緊急分割には「守れる位置が 1 つもなければ破る」という最後の
+  逃げ場があるので、こう定義しても **`min_content_width()` の不変条件「この幅なら必ず収まる」は
+  保てる**（`tests/linebreak/property_test.cpp` の `MinContentWidthNeverOverflows` と
+  `min_content_test.cpp` の `TableWidthsAreAchievable` で検査する）。禁則の優先順そのものは
+  緊急分割のまま変えない
+- **`max_content` は変わらない。** `kUnbounded` では緊急分割の経路を通らない
+- **メモ化（A29）の鍵は変えない。** `IntrinsicKey` は `SubtreeId`（`ComputedStyle` のポインタを
+  含む）+ `%` の基準なので `overflow-wrap` の違いは既に鍵に入っている。`PreparedParagraph` も
+  ポリシーを `Item` に持つ。計算量も O(N) のまま（区間が細かくなるだけ。`anywhere_scan` に計上する）
+- **採らなかった案**: `bool` を残して `anywhere_in_min_content` をもう 1 本足す形。差分は小さいが、
+  bool 2 本の組み合わせに意味のない状態（緊急分割は不可・min-content には効く）ができて
+  契約が読みにくくなる
+- **範囲外**（この判断では直さない）: `min-width` の対応、`word-wrap`（`overflow-wrap` の
+  legacy name alias。CSS Text 3 §5.4 は必須としているが現状は `unsupported-property`）、
+  `anywhere_candidate()` が `Item::no_break_before` を見ないこと（rank 3/4 の候補にはなるので
+  実害はないが、緊急分割の候補判定としては見るのが筋）
+
+**A36. 各段は「自分が出す数値が有限で上限以内であること」を保証する。A25 の「入力の
+個数・サイズ」とは別の保証として並べる。** `padding: 1e38em` を渡すと `em x font-size` が
+float をあふれて `inf` になり、style も layout も paint も何も言わないまま、raster が
+「非有限な寸法のコマンドは無視する」（§3.3）で捨てていた。結果、**その要素だけが絵から
+消えた PNG が終了コード 0 で返る**（警告 0 件）。DESIGN.md §3-6「fail loudly」に反する。
+`em` の乗算を通る 12 プロパティのうち、止まっていたのは `font-size` だけだった（issue #19）。
+
+単独の条件分岐の不足ではなく**段の契約の抜け**である。A25 の `RenderLimits` が保証して
+いたのは「入力の個数・サイズ」で、「計算結果が有効であること」はどの段も保証していなかった。
+A25 を書き換えるのではなく、別の保証として並べる。
+
+**「有限」だけでは足りない**ことは実測が示している: `padding: 3e38px` は style では有限で、
+layout の加算で `inf` になる。そこで `RenderLimits` に**長さ・座標の絶対値の上限**
+`length_px`（既定 2^24 = 16,777,216 px。根拠は A25 の表）を新設し、「有限かつ上限以内」を
+要求する。上限は入力の一部なので純粋関数の性質は壊れない（A25 と同じ理屈）。
+検査に使うのは比較と `isfinite` だけなので A9 の許可リスト内。
+
+決めたこと:
+
+- **② style の出口**（実装済み）: `resolve_length()` / `resolve_dimension()` /
+  `resolve_line_height()` が `Result` を返し、宣言の位置つきで `LimitExceeded` にする。
+  カスケードのあとに計算値をもう一度まとめて検査する（`check_computed_lengths()`）ので、
+  継承で入ってきた値と、プロパティを足したときの掛け忘れもここで捕まる。
+  `line-height` の倍率は倍率のまま継承するため、「倍率 x **その要素の** font-size」は
+  この段でしか見られない（親で収まっていても子の font-size で超えうる）。
+  `<img>` の `width` / `height` 属性も layout に渡る長さなので同じ上限で見る
+- **`font-size` は `length_px` の対象外。** A25 の `font_size_device_px` が scale 込みで
+  より厳しく見ており、要素の位置で報告している。二重に検査すると、同じ入力のエラーの位置が
+  宣言の側に移るだけで得るものがない。ただし**非有限な font-size は style が止める**
+  （`em` の基準が壊れたまま残りのプロパティを解決すると、原因ではないプロパティを指す
+  エラーが出るため）。種類と位置は従来どおり `LimitExceeded` + 要素の位置
+- **③ layout の出口**（実装済み。`check_geometry()`）: `%` と flex の比は style では判定できない
+  （A5: 包含ブロックが要る）。`width: 1e38%` は同じ HTML でもビューポート幅で結果が変わっていた
+  （200 px なら `2e38` で有限、1000 px なら `inf`）。そこで `layout()` の最後に BoxTree を
+  前順に 1 回辿り、**座標・寸法・行・断片・グリフ位置がすべて有限かつ上限以内**であることを
+  確かめる。違反は `LimitExceeded` + **その箱の入力位置**（断片なら断片の位置）。
+  費用は O(N) で paint の走査 1 回ぶん
+- **layout の上限は `length_px x dom_nodes`（既定 2^24 x 20,000 = 3.36x10^11）にする。**
+  座標は長さの足し算なので、`length_px` をそのまま使うと**常識的な文書が落ちる**
+  （高さ 1000 px のブロックを 20,000 個積むと 2x10^7 で 2^24 を超える）。一方で「有限であること」
+  だけでは足りない（`width: 1e38%` @200 の `2e38` が通ってしまい、**幅によってエラーになったり
+  ならなかったりする**）。そこで**新しい制約を足すのではなく、既存の 2 つの上限から導く**:
+  1 要素あたりの長さが `length_px` 以内で要素が `dom_nodes` 個以下なら、どれだけ足し込んでも
+  この値を超えない。つまり**②の検査を通った文書がこの上限で落ちることはありえない**。
+  落ちたということは、`%` の解決や flex の比のように「入力の長さに比例しない計算」が
+  壊れたということで、それこそが報告すべき事故。`RenderLimits` に新しいフィールドは足さない
+  （api が同じ式で計算して `layout::Options::max_geometry_px` に渡す。導出が 2 か所で
+  別々に動かないよう `static_assert` で固定）。float の上限 3.4x10^38 からも 27 桁離れている
+- **`BlockBox` に入力位置を足した**（`TextFragment::location`（A31）と同じ考え方）。
+  出口の検査が「どの要素の座標が壊れたか」を言うために要る。`--dump-stage box` にも出す
+  （ダンプできない中間表現を作らない。DESIGN.md §3-3）。**paint は読まないので絵は 1 ビットも
+  変わらない**（`examples/*.html` の PNG と display-list ダンプがバイト一致することで確かめた）
+- **flex の比の計算そのものは直さない。** `factor / factors.scaled` が `inf/inf` = NaN になる式は
+  `distribute_once()` の中にあるが、そこを `Result` にしても保証は強くならない。NaN が入る先は
+  そのアイテムの箱なので、出口の検査でも位置は同じ精度で付く。検査を個々の計算に散らさず
+  段の出口に 1 か所置いたのは、**あとから計算を足したときに検査を書き忘れても
+  不変条件が破れない**ようにするため
+- **`ErrorKind` は `LimitExceeded` に一本化する。** パーサは以前 `1e39px`（float にできない数値）を
+  `UnsupportedValue`（the number is out of range）で返していたが、`1e38em` が `LimitExceeded` に
+  なると**ほぼ同じ入力が別の種類**になる。利用者から見てこの区別は説明しづらい。まだリリース前で
+  互換性のコストが小さいので、「数値が範囲外」は `LimitExceeded` に寄せた
+  （**これは既存のエラーの種類を変える互換性の変更**）。`UnsupportedValue` は今までどおり
+  「単位・キーワードが対応外」の意味だけに使う。`font-weight: 1e39` は「100..900 の値でない」
+  なので `UnsupportedValue` のまま
+- メッセージは A25 の流儀（どの上限を・いくつに対して・いくつだったか、`RenderLimits` の
+  どのフィールドで緩められるか）。float で表せない値はその旨と掛け算の内訳を添える
+  （`` `padding-left` computes to inf (1e+38em x font-size 16 px) … ``）
+- **§3.3 の「非有限な寸法を持つコマンドは無視する」はそのまま残す。** ラスタライザの防御としては
+  正しい（落ちない・UB を踏まない）。前段で止まるので到達しなくなるだけ。
+  **却下した案**: raster で非有限を見つけたときに警告を出す。段としては最後で「どの入力が
+  原因か」の情報がもう無く、fail loudly の「原因の入力位置つき」を満たせない
+- 同じ理由で、**JSON / SVG ダンプが非有限を `null` / `0` に潰す**のも直していない。
+  ②③ の出口で止まるので、ダンプに非有限が現れることがなくなった（`--dump-stage svg` が
+  「PNG に描かれないグリフを原点に描く」食い違いも、ダンプ自体が出なくなることで消える）
+- **自動高さ（`--height` なし）のときの「the content height is 0」**は、内容高さが `NaN` のときにも
+  出ていた（`!(height > 0)` が NaN でも真になる）。③ の出口が先に止めるので到達しなくなったが、
+  万一届いたら layout の不変条件が破れている = shashoku 側のバグなので、`Internal` で
+  「有限でない」と報告する。本当に高さ 0 のときのメッセージは従来どおり
+
+**A37. ルビ組の「代表の文字」は行分割ポリシー専用。組の内部は通常のインライン内容として
+組み、幾何は親文字の全クラスタから出す。**（issue #16 / #17）A28 は「ルビ組の
+`linebreak::Item` の `line-break` / `overflow-wrap` に、親文字の先頭の文字の計算値を使う」と
+決めただけなのに、`RubyPiece::base_style` が**計測・配置・行の高さの代表**まで兼ねていた。
+そのため 2 つの壊れ方が同時に起きていた:
+
+| 症状 | 原因 |
+|---|---|
+| `letter-spacing` が計測（行分割器に渡す送り）には入るのに、親文字の配置には入らない（#16） | 親文字だけが「装飾ごとの区間をグリフの送りで並べ、最後に字間をまとめて足す」別実装だった |
+| 親文字の 2 文字目以降の `font-size` / `line-height` が行の高さに効かず、大きい文字が画像の外で切れる（#17） | 行の高さもルビの張り出しも、代表の文字 1 つから出していた |
+
+決めたこと:
+
+- **`RubyPiece::base` はクラスタの列**（`RubyCluster` = `ItemSource` + letter-spacing 込みの送り）。
+  中身は通常テキストのアイテムと同じで、配置も同じ関数（`place_cluster()`）を通る。
+  装飾ごとの「区間」という概念は捨てた（断片を切るのは `FragmentWriter` の仕事。A27）。
+  これで**計測と配置が同じ数値を使う**ようになり、一方向パイプライン（DESIGN.md §3-1）の
+  「前段の出した数値を後段が別計算しない」が組の内部でも成り立つ
+- **幾何に使う値は名前で「最大」だと分かるようにする**（`max_base_ascent` /
+  `max_base_font_size`）。行の高さは親文字の**全クラスタ**のスタイルで `extend_line_height()` を
+  回して求める（CSS 2.1 §10.8。注釈側は行の高さに参加しない — CSS Ruby 1 §3.4）
+- **`base_style` は行分割ポリシーの代表としてだけ残す**（A28 のまま）。`linebreak::Item::em`
+  （約物のアキに使う値）も代表のまま: 幾何ではなく行分割器への入力だから
+- **`<rt>` に `letter-spacing` は適用しない。** 和文のルビは親文字に対する配分で決まる
+  （JLREQ 3.3「ルビ文字列の配置」）ので、親文字の字間がルビ文字の間にも入ると、ルビが
+  親文字より広がって別の語のように見える。継承した値も明示した値も効かない。効かないことを
+  テストで固定してある（`tests/layout/ruby_test.cpp` の `LetterSpacingInsideRtIsNotApplied`）
+- **親文字の一部を覆う `background-color` は、通常テキストと同じ矩形を出す。** 組は
+  `linebreak::Item` 1 個なので、アイテム単位の二分探索では組の内部で始まる / 終わるスコープを
+  取りこぼしていた（黙って消えていた）。クラスタまで降りて解決する。組**ぜんぶ**を覆う
+  スコープは従来どおり組の箱の矩形（中央寄せのずらしを含む）
+- ルビ文字は「組の送り」の中央に置く（従来どおり）。親文字側の送りは末尾の字間を含むので、
+  `letter-spacing` があるとルビの中心は親文字の**グリフの**中心より字間の半分だけ後ろに来る。
+  これは親文字を 1 つのインラインボックスとして中央に揃えた結果で、通常テキストの送りの
+  扱いと一貫している（Chrome との突き合わせは #15）
+
+**A38. 既定フォントは CLI 層だけの機能。ライブラリはバイト列しか受け取らない。**（issue #20）
+試用版の目的は「準備なしで 1 枚出せる」ことなので、`--font` を省けるようにする必要がある。
+ただし `render()` / `dump()` にフォントの探索経路を持たせると、**同じ HTML から機種ごとに違う PNG**
+が出うる（DESIGN.md §3-5 の純粋関数、§4「外部リソースを取りに行かない」に正面から反する）。
+そこで既定フォントは `tools/shashoku/` に閉じ込め、公開 API（`include/shashoku/`）も
+`render()` / `dump()` の署名も変えない（A12: 画像とフォントはバイト列で渡す）。
+
+- **持ち方はバイナリへの埋め込み**（Noto Sans JP Regular + Bold、約 11.2 MiB）。
+  `.incbin` で `.rodata` に置く（C の配列初期化子に展開すると 50 MB 超のソースになる）。
+  実行ファイルの隣に置く方式は「バイナリだけコピーされる」と分かりにくく失敗する。
+  **システムフォントの探索も実行時のダウンロードもしない**（上と同じ理由）
+- **サブセット化はしない**。「任意の日本語文字列を流し込んでも組版が壊れない」が製品の約束
+  （README 冒頭）なので、字種を削るとその約束を破る
+- **`--font` を書けばそちらが優先**。既定フォントは黙って足されない（欧文フォントだけを
+  渡したら和文は豆腐になり、警告が出る = 利用者が見ている集合と実際の集合が食い違わない）
+- **順序は Regular → Bold**。`--font <Regular> --font <Bold>` と書いたときと
+  **バイト単位で同じ PNG** が出ることを `Cli.default_font` が検査する（og_card で
+  `font-weight: 700` の選び方まで見る）。この 2 本は同じ family で太さが違うだけなので
+  順序を入れ替えても結果は変わらないが、約束として順序を固定しておく
+- **版の固定**: 埋め込むフォントは `cmake/TestAssets.cmake` がコミット SHA と SHA256 で
+  固定して取得する（テスト用フォントと同じ実体。`SHASHOKU_BUILD_TESTS=OFF` でも和文 2 本は取る）。
+  **フォントの版が変われば同じ HTML から違う PNG が出る**ので、`shashoku --version` が
+  shashoku・zlib・FreeType・HarfBuzz・既定フォントの版を出し、README の「保証しないもの」にも書いた（A32）
+- 埋め込みは `SHASHOKU_EMBED_DEFAULT_FONT`（既定 ON）で切れる。OFF のときは `--font` が必須に戻る
+
+**A39. 配布物は「C++ ランタイムだけ静的、glibc は動的」。完全静的リンクは却下した。
+リンク方法は出力を変えない。**（issue #20。2026-09-21 にユーザーが決定）
+release ビルドの動的依存は `libc++.so.1` / `libc++abi.so.1` / `libunwind.so.1` / `libm` /
+`libgcc_s` / `libc` で、**素の Ubuntu に無いのは前の 3 つ（と `libgcc_s` の版）だけ**。
+`-static-libstdc++ -static-libgcc` で C++ ランタイムを取り込めば、残る動的依存は glibc だけになる。
+実測で NEEDED は `libm.so.6` と `libc.so.6` の 2 つになり、libc++abi と libunwind は
+追加の指定なしで静的に入った（clang-18 + libc++ 18）。
+
+- **完全静的（`-static`）は却下した。** NEEDED が消えてどの Linux でも動くのは魅力だが、
+  glibc（LGPL-2.1+）を実行ファイルに取り込むことになり、LGPL が再配布に求める
+  「受け取った人が別版の glibc と再リンクできる手段の提供」に触れうる。配布物のための
+  法務上の負担を、試用版の段階で背負う価値は無いと判断した
+- 代わりに**前提が 1 つ増えた**: 動的に要る glibc の版は「ビルド機の版以上」なので、
+  **ubuntu:22.04 のコンテナでビルドする**（= glibc 2.35 以降が前提。Ubuntu 22.04 /
+  Debian 12 以降）。**musl の環境（Alpine など）では動かない**。「どの Linux でも動く」とは
+  言えなくなったので、README と配布物の README に前提を明記する
+- **この前提は静かに壊れる**（新しいランナーでビルドすると、要求する glibc のシンボル版だけが
+  上がって「古いディストリで GLIBC_2.39 not found」になる。絵もテストも変わらないので気づけない）。
+  だから 2 つを機械で押さえる:
+  1. **ビルドは必ず ubuntu:22.04 のコンテナの中**（`scripts/dist_container_build.sh` を
+     `docker run ... ubuntu:22.04` で呼ぶ。CI の `dist` ジョブと release.yml の両方）。
+     22.04 には clang-18 / libc++-18 が無いので apt.llvm.org の jammy-18 を足す。
+     CMake は 22.04 の 3.22.1 で足りる（`cmake_minimum_required` と同じ）
+  2. **`scripts/check_dist_binary.sh`** が NEEDED と**要求する glibc のシンボル版の最大**
+     （既定の上限 2.35）を検査する。`readelf --dyn-syms` の `@GLIBC_x.y` を集めて最大を取る
+     （`2.4 < 2.35` を正しく比べるため major / minor は整数で見る）
+- workflow のシェルは `scripts/` に切り出してある（workflow に埋め込むと**ローカルで一度も
+  動かせない**）。`check_dist_binary.sh` / `pack_dist.sh` / `release_notes.sh` は docker 無しで
+  回せる。`dist_container_build.sh` は `SHASHOKU_SKIP_TOOLCHAIN=1` で apt の部分だけ飛ばせる
+- **`cmake/CompilerOptions.cmake`（`-ffp-contract=off` など決定性のフラグ）は変えない。**
+  変えるのは CLI のリンク方法だけで、浮動小数点の丸めには触れない。実測でも、`dist` と
+  通常の release の CLI で examples 5 本 + 禁則 3 方式の PNG がバイト単位で一致した
+- 保証範囲（A32）は「同じ版・同じ依存」で語っているので、**配布するのと同じ設定でビルドした
+  バイナリでゴールデン 16 枚を通す**。`dist` プリセット（Release + `SHASHOKU_STATIC_RUNTIME`）を
+  用意し、CI の `dist` ジョブと release.yml の両方で `ctest --preset dist` を回す。
+  どちらのジョブも `readelf -d` の NEEDED が libc / libm / ld-linux 以外なら失敗する
+- 対応環境は **linux-x86_64 だけ**。決定性を CI で検査しているのが x86-64 Linux の 2 つの
+  ツールチェーンだけで、aarch64 では**ゴールデン 16 枚を検査していない**（= 絵を保証しない
+  成果物になる）。macOS / Windows / aarch64 は Phase 9c
+- **ライセンス表示**: 静的に取り込む libc++ / libc++abi / libunwind は
+  Apache-2.0 WITH LLVM-exception なので `THIRD_PARTY_LICENSES` の 5 節に全文を転載した。
+  glibc は取り込まないので転載しない
+- サイズ（strip 前）: 通常の release（動的・フォント無し）3.1 MiB /
+  `dist`（C++ ランタイム静的・フォント埋め込み）13.0 MiB（strip 後 12.3 MiB）。
+  参考: 完全静的だと 14.0 MiB だった
+
+**A40. Chrome との比較は「ページ内で測って DOM に書き出す」方式にする。判定は
+欠落 / 重なり / 改行位置 / はみ出しの 4 つだけで、座標は論理座標にそろえて比べる。**（issue #15）
+
+`scripts/compare/`。**ローカル専用で CI には入れない**（製品のビルドを Chrome に依存させない）。
+使い方と差の分類は [chrome_compare.md](chrome_compare.md)。
+
+- **依存を増やさない。** Playwright も Puppeteer も Node も使わない。python3 の標準ライブラリだけで
+  動かす。CDP のクライアント（WebSocket）は標準ライブラリに無いので、**ページ内の JavaScript で
+  `document.fonts.ready` を待ってから `Range.getClientRects()` で測り、結果を base64 にして
+  DOM に書き出す**。`chrome.exe --headless --screenshot --dump-dom` の標準出力から取り出す
+  （`--screenshot` は `--dump-dom` より**前**に置く。後ろだと PNG が書かれない）
+- **Chrome 側を論理座標に直してから比べる。** #15 の本文は「縦書きは `display-list` を使うのが楽」
+  としているが、Chrome の物理座標を論理（縦書きなら inline = y、block = −x）に直せば
+  横書きと同じ 1 本のコードで済む。`box` ダンプに一本化した
+- **比べない値を先に決める**: グリフ単位の x（A8 の丸めで必ず差が出る）、block 方向の絶対座標
+  （`line-height: normal` の作り方が違う。Chrome は ascent / descent を整数 px に丸めるので、
+  16px の行で 24 px、shashoku は 23.171875 px）、ピクセルの色
+- **ルビの注記は「欠落」の判定から外す。** ルビは行の上（縦なら右）の帯に置かれ、その帯と注記の
+  インラインボックスの関係は両者で作りが違う（実測: Chrome では注記が親ブロックの箱から 4 px 出る）。
+  混ぜるとルビのケースが全部「差」になる。広がり自体は別項目で報告する
+- **Chrome 側の「重なり」も判定に使わない。** ルビ組では親文字の `Range` の箱が注記の幅まで広がり、
+  続きの文字と重なって見える（実測 8 px）。判定は (1) shashoku が字を重ねていないか、
+  (2) 両者の字送りが合っているか、の 2 つで行う
+- **はみ出しは祖先の箱との共通部分で測る。** flex アイテムは自分の箱が親より広くなることがあり
+  （#18 の再現入力では行も箱も 82.2 px で、親の 32 px はどこにも出てこない）、自分の箱だけ見ると
+  はみ出しが 0 に見える
+- **紙面はウィンドウではなく CSS で決める。** WSL から Windows の `chrome.exe` を呼ぶと
+  `--window-size` が当てにならない（幅は 500 px 未満にならず、`--dump-dom` のときは
+  `window.innerWidth` が 0 になる）。`#shk-root` を `position: absolute; left: 0; top: 0` で
+  物理的な左上に固定し、幅（縦書きは高さも）を指定する
+- **同じフォントで描かれたことを確かめる手段を持つ。** `document.fonts` の `status` だけでは
+  「ある文字だけシステムフォントに落ちた」を見逃すので、同じ文字列の幅を shashoku と突き合わせる
+- **`--user-data-dir` は実行ごとの使い捨て**（`<out>/chrome-profile-<pid>`、終了時に消す）。
+  ユーザーの普段のプロファイルには触らない
+
+**A41. ルビ組で短い方は「中央に置く」だけ。親文字を伸ばして長い方に合わせない。
+これは判断ではなく、1:2:1 の配分とルビの掛けが未対応であることの帰結。**（issue #15）
+
+§3.8 の「幅は max(親文字, ルビ)、短い方を中央に置く」を、Chrome 比較で出てくる差の
+出どころとして書き起こしたもの。ルビのあるケース（#15 のケース 4 / 5 / 7 / 21）が
+すべて「重なり（字送り）」の差になるので、**その差が何なのかを指せる番号が要る**。
+
+Chrome は CSS Ruby の既定（`ruby-align: space-around`）で**親文字の側を均等に広げて**注記の幅に
+合わせる。実測（ケース 5、`<ruby>写植<rt>しゃしょく</rt></ruby>`、16px、字間なし）: 親文字の字送りが
+shashoku は 16.00 px（そのまま）、Chrome は 20.00 px（注記の 40 px に合わせて 2 文字に配分）。
+
+**この差は「意図した差」ではなく「未対応による差」。** JIS X 4051 / JLREQ 3.3.2 の 1:2:1 の配分と
+**ルビの掛け**（親文字の隣の文字へのはみ出し）が未対応だから中央に置くしかない、というだけで、
+中央寄せが正しいと決めたわけではない（README の「既知の制限」の「ルビ」を参照）。
+掛けが無いまま親文字の側を広げても JLREQ には近づかない（広げたぶんが行全体を間延びさせる）ので、
+**1:2:1 と掛けを入れるときにまとめて実装する**。
+
+なお、**注記を親文字の「送り」の中央に置く**（末尾の字間を含む。A37）点は Chrome と同じだった。
+実測（ケース 1、`<ruby>ABC<rt>x</rt></ruby>`、32px・字間 16px）: 親文字の送りは両者とも
+`[0, 108.906]`（末尾の字間 16px を含む）で、注記の中心も両者 54.45 px。
+インクの中心（`C` の開始 72.48 + グリフの送り ≒ 92.9 の中点 ≒ 46.4 px）ではない。
+**「送りの中央か、インクの中央か」は両エンジンとも送りの中央**。
+
 ---
 
 ## 2. モジュールと依存
@@ -752,24 +1052,29 @@ BK CR LF NL SP ZW WJ GL CM ZWJ OP CL CP QU EX IS SY NS CJ IN B2 BA BB HY PR PO N
 - `Oikomi`: 貪欲法で決めた位置の次の分割可能位置までを、行内の約物の空き（(4) の空き量が上限）を
   詰めれば収められるなら、詰めて収める。詰め量は各約物の詰め可能量に比例配分する。
   収められなければ追い出し
-- どのポリシーでも (A4) 禁則 > 幅。`break_anywhere` は分割可能位置が 1 つもない行でだけ発動する
+- どのポリシーでも (A4) 禁則 > 幅。緊急分割（`Wrap` が `Normal` 以外）は分割可能位置が
+  1 つもない行でだけ発動する
 
 **(6) 不変条件**（ファジングで検査する）: 全アイテムがちょうど 1 行に属する / 行は空でない /
 `overflows` でない行は `width <= available_width`（+ 許容誤差）/ 分割位置は必ず
-`break_opportunities()` が true の位置か ForcedBreak の直後か `break_anywhere` の発動
-（= 両側のアイテムがともに anywhere の位置。(7)）/ 同じ入力には同じ出力。
+`break_opportunities()` が true の位置か ForcedBreak の直後か緊急分割の発動
+（= 両側のアイテムがともに `Normal` 以外の位置。(7)）/ `min_content_width()` の幅で組んだ行は
+どれも `overflows` にならない / 同じ入力には同じ出力。
 ファジングにはアイテムごとのポリシーをランダムな範囲で混ぜた入力も含める。
 
-**(7) アイテムごとのポリシー**（A23）: `Item::strictness` / `Item::break_anywhere` は
+**(7) アイテムごとのポリシー**（A23）: `Item::strictness` / `Item::wrap` は
 インライン要素（`<span>`）での上書き。nullopt なら `Config` の値を使い、すべて nullopt なら
 出力は `Config` だけを使っていたころと完全に同じ。境界の規則は:
 - (1) の分割クラスの解決は**そのアイテム自身の** `strictness` で行う。(2) のペア表・文脈規則は
   解決済みのクラスに対して従来どおり働く。例外は loose の「直前が ID ならハイフン ‐ – の前で
   割ってよい」だけで、これは行頭に来る側（後ろのアイテム）の `strictness` で決める
-- (5) の `break_anywhere` の緊急分割は、**両側のアイテムがともに** `break_anywhere` の位置でだけ
-  起こす。発動条件と位置選びの優先順は変わらない。割れる位置が 1 つもなければ A4 ではみ出す
-- `break_opportunities()` は `break_anywhere` の影響を受けない（緊急分割は「分割可能位置」ではない）。
-  `min_content_width()` は `strictness` の影響を受け、`break_anywhere` の影響は受けない
+- (5) の緊急分割は、**両側のアイテムがともに** `Wrap::Normal` 以外の位置でだけ起こす。
+  発動条件と位置選びの優先順は変わらない。割れる位置が 1 つもなければ A4 ではみ出す
+- `break_opportunities()` は `wrap` の影響を受けない（緊急分割は「分割可能位置」ではない）。
+  `min_content_width()` は `strictness` と `wrap` の影響を受ける: 分割可能位置に加えて
+  **両側がともに `Wrap::Anywhere` のクラスタ境界**でも区間を切る（CSS Text 3 §5.4。
+  `BreakWord` では切らない。A35）。切った位置は緊急分割の候補そのものなので、
+  返した幅は必ず達成できる
 
 ### 3.5 text（④）
 
@@ -840,7 +1145,11 @@ class FreeTypeGlyphSource final : public raster::GlyphSource { /* FontStore を�
   「全部の字が消えた PNG」になる前に一番早い段で落とす（A19）
 - テスト用フォント: リポジトリに置かず、CMake の configure 時に版（コミット SHA）とハッシュを
   固定してダウンロードする（`cmake/TestAssets.cmake`）。Noto Sans JP（OFL）+ 欧文フォント 1 つ
-  （フォールバックのテスト用）。パスはコンパイル定義でテストに渡す
+  （フォールバックのテスト用）。パスはコンパイル定義でテストに渡す。
+  和文 2 本は **CLI に埋め込む既定フォントを兼ねる**ので `SHASHOKU_BUILD_TESTS=OFF` でも取得する
+  （A38。欧文 1 本はテスト専用のまま）
+- エラーメッセージは英語で書く（他のモジュールにそろえる）。`tests/text/font_store_test.cpp` の
+  `ErrorMessagesAreAscii` が ASCII 以外の混入を見張る
 - 受け入れ（DESIGN.md Phase 2）: 「こんにちは、世界のみんな。ABC😀」を 1 行でシェーピングでき、
   😀 だけが豆腐として報告される
 
@@ -873,7 +1182,8 @@ std::string dump_json(const Node& root);
 ```cpp
 namespace shashoku::style {
 // ルートの ComputedStyle は初期値
-Result<StyledNode> resolve(const html::Node& root, std::size_t max_style_rules = kMaxStyleRules);
+Result<StyledNode> resolve(const html::Node& root, std::size_t max_style_rules = kMaxStyleRules,
+                           float max_length_px = kMaxLengthPx);
 std::string dump_json(const StyledNode& root);
 }
 ```
@@ -889,6 +1199,13 @@ std::string dump_json(const StyledNode& root);
   `border-style`（solid / none）`border-color`、`flex`（`none` / `auto` / 1〜3 値）、
   `gap` `row-gap` `column-gap`、`background`（色のみ。`background-color` の別名）。
   一覧にないプロパティは `UnsupportedProperty`、値が対応外なら `UnsupportedValue`
+- **`UnsupportedProperty` の文面には代替案を一言添える**（#20。試用版で「未対応です」だけでは
+  次に何をすればよいか分からない）。`value_parser.cpp` の `kPropertyHints` に
+  **未対応だと分かっているものだけ**を載せ、`` `box-sizing` is not a supported property
+  (content-box only: subtract padding and border from `width` / `height`) `` のように
+  **先頭を変えず後ろに括弧で足す**（前方一致で見ているものがあるかもしれないため）。
+  表に無い名前（綴り間違いなど）には何も足さない。**載せてよいのは shashoku で実際に
+  同じ結果が出せると確かめた代替だけ**で、代替が無いもの（縦中横）は「未実装」とだけ言う
 - 単位: `px` `em`、`0`（単位なし）。`%` は `width` と `flex-basis` のみ。`line-height` は
   `normal` / 数値 / px / em。色: `#rgb #rgba #rrggbb #rrggbbaa`、`rgb()` `rgba()`、
   CSS の色名、`transparent`、`currentColor`（border-color のみ）
@@ -900,6 +1217,15 @@ std::string dump_json(const StyledNode& root);
   （`img` を除く）。`writing-mode` の途中変更も `UnsupportedLayout`（A1）
 - `<style>` から読んだ規則が `max_style_rules` を超えたら `LimitExceeded`（位置つき）。
   セレクタの照合は「規則数 x 要素数」なので、規則の数そのものに上限が要る（A25）
+- **出力の不変条件（A36）**: 返る木の `ComputedStyle` に入っている長さは、`font-size` を除いて
+  すべて**有限で、絶対値が `max_length_px` 以内**である。`em` の乗算の結果（`1e38em x 16px`）も、
+  px で直接書いた値（`3e38px`）も、同じ上限で止める。超えたら `LimitExceeded` + **宣言の位置**
+  （`<style>` の中なら宣言そのもの、`style` 属性なら属性の位置）。`line-height` の倍率は
+  「倍率 x その要素の font-size」が上限以内であることを、カスケードのあとに見る。
+  `<img>` の `width` / `height` 属性も同じ上限。
+  **対象外が 2 つある**: (1) `%` と `auto` は包含ブロックが要るので layout が解決する（A5）ので、
+  ここでは検査できない。(2) `font-size` は A25 の `font_size_device_px`（scale 込みでより厳しい）が
+  api で止める。ただし非有限な `font-size` だけはここで止める（`LimitExceeded` + 要素の位置）
 
 ### 3.8 layout（③）
 
@@ -908,7 +1234,8 @@ namespace shashoku::layout {
 struct Options {
   float viewport_width;                  // 物理 px
   std::optional<float> viewport_height;  // 縦書きでは必須（InvalidOption）
-  linebreak::Config line_break;          // strictness / break_anywhere は CSS が上書きする
+  linebreak::Config line_break;          // strictness / wrap は CSS が上書きする
+  float max_geometry_px;                 // 出口の検査の上限（A36。既定 length_px x dom_nodes）
 };
 struct ImageSize { float width, height; };  // <img> の固有寸法。名前 → 寸法は api が解決して渡す
 Result<BoxTree> layout(const style::StyledNode& root, const Options&, text::TextMeasurer&,
@@ -921,6 +1248,7 @@ std::string dump_json(const BoxTree&);
   layout の実装者が定義する。最低限: ブロックの border-box と塗り情報、行ボックス、
   行内のテキスト断片（FontId・サイズ・色・sideways・グリフごとの inline 位置と offset・
   ベースライン / 中心軸の block 位置・**元ノードの位置**）、画像断片、インライン背景。
+  ブロックも**元要素の位置**（`BlockBox::location`。A36）を持つ。
   加えて豆腐の記録（`BoxTree::missing_glyphs`。A31）を持つ。**絵には影響しない**
   （paint は読まない）が、api が `Warning` にし、`dump_json()` が出す
 - **block**: 幅は親から降り、高さは子から戻る。`width: auto` は利用可能幅いっぱい。
@@ -950,12 +1278,26 @@ std::string dump_json(const BoxTree&);
   issue #5 の 2^depth）。配置の `layout_block()` は従来どおり毎回 1 回ずつ実行するので、
   座標は 1 ビットも変わらない。固有寸法（`content_intrinsic()`）と準備済み段落も同じメモに乗る
 - **ルビ**（Phase 7）: `<ruby>` 内の「親文字の並び + `<rt>`」を 1 組とし、組ごとに 1 つの Atomic。
-  幅は max(親文字, ルビ)、短い方を中央に置く。行ボックスはルビのぶん block-start 側に広がる
+  幅は max(親文字, ルビ)、短い方を中央に置く。行ボックスはルビのぶん block-start 側に広がる。
+  **組の内部は通常のインライン内容と同じ規則で配置する**（字間・装飾・背景。CSS Ruby 1 §2
+  「ruby base は inline box として扱う」。A37）。Atomic なのは**行分割だけ**で、親文字は
+  クラスタごとに `letter-spacing` 込みの送りで並ぶ（= 計測と配置が同じ数値を使う）。
+  行の高さは親文字の**全クラスタ**の ascent / descent / `line-height` から求め、ルビはその
+  外側に置く（注釈側は行の高さに参加しない。CSS Ruby 1 §3.4）。`<rt>` の `letter-spacing` は
+  **適用しない**（A37 に根拠）。組の内部の**行分割**指定が効かないのは従来どおり（A28）
 - **縦書き**（Phase 8）: 論理座標のまま。`TextStyle::direction = Vertical` で測るだけ
 - **計算量**: 1 つの IFC を組む仕事は、アイテム数 N に対して線形。行ごとに段落全体を舐めたり、
   段落全体ぶんの作業バッファを確保したりしない（A22）。flex の入れ子は深さ d に対して d²
   （A29。メモがないと 2^d）。守れているかは計測カウンタ（A21）で
   検査する（`tests/layout/complexity_test.cpp`）。時間ではなく回数で見る
+- **出力の不変条件（A36）**: 返る `BoxTree` に入っている数値 —— ブロック・行・画像断片・
+  インライン背景の矩形（位置・大きさ・端）、枠線の幅と半径、padding、ベースライン、
+  テキスト断片の font-size と inline 範囲、グリフごとの位置と offset —— は、**すべて有限で、
+  絶対値が `Options::max_geometry_px` 以内**である。`layout()` は最後に `check_geometry()` で
+  木を前順に 1 回辿ってこれを確かめ、破れていたら `LimitExceeded` + **その箱（断片なら断片）の
+  入力位置**を返す。②の `length_px` と違い、この上限は**足し算の結果**に掛かるので
+  `length_px x dom_nodes` で取る（根拠は A36。②を通った文書では発動しない）。
+  後段（paint / raster）はこの前提に寄りかかってよい
 - テストは偽の `TextMeasurer`（全角 1em / 半角 0.5em、ascent 0.88em / descent 0.12em）で
   フォントなしに書き、`dump_json()` の座標を検証する（DESIGN.md §10-3）
 
@@ -1011,11 +1353,25 @@ HTML を読む前に返す**（壊れた HTML でも `InvalidOption` が先に�
 `src/api/out_of_memory.hpp` だけで、`render()` / `dump()` / `prepare()` の全オーバーロードが使う）。
 CLI に上限を変えるフラグは足していない（既定値のまま使う）。
 
-CLI は `tools/shashoku/`: `shashoku input.html --font A.otf [--font B.ttf …] [--image name=path …]
+CLI は `tools/shashoku/`: `shashoku input.html [--font A.otf [--font B.ttf …]] [--image name=path …]
 -o out.png [--width N] [--height N] [--scale S] [--compression 0-9]
 [--overflow oidashi|oikomi|burasage] [--dump-stage dom|style|box|display-list|svg]`。
 エラーは `to_string(RenderError)` を stderr に出して終了コード 1。
 値の範囲の検査は `render()` に任せる（オプションの正は 1 か所。CLI は形だけを見る）。
+
+**CLI 層だけの機能**（A38 / A39。ライブラリには一切漏らさない）:
+
+| | |
+|---|---|
+| 既定フォント | `--font` を省いたら `tools/shashoku/embedded.cpp` が `.incbin` で焼き込んだ Noto Sans JP を Regular → Bold の順に `FontSet` へ入れる。`--font` を書けばそちらだけを使う |
+| `--version` | shashoku（公開 API の `version()`）・zlib / FreeType / HarfBuzz（`cmake/Dependencies.cmake` の版をコンパイル定義で渡す）・既定フォント（コミット SHA） |
+| `--license` | 焼き込んだ `LICENSE` と `THIRD_PARTY_LICENSES`。SIL OFL 1.1 が求める「ライセンス文の同梱」を、バイナリ 1 つでも満たすため |
+| 配布のビルド | `dist` プリセット = Release + `SHASHOKU_STATIC_RUNTIME`（`-static-libstdc++ -static-libgcc`。glibc は動的のまま。A39）+ `SHASHOKU_EMBED_DEFAULT_FONT` |
+
+CLI が zlib / FreeType / HarfBuzz のヘッダを見ることはない（版は文字列で受け取る）。
+検査は `tools/shashoku/cli_test.cmake`（`ctest -R Cli`）。`default_font` が「既定フォントの PNG と
+`--font <同じ OTF>` の PNG がバイト単位で一致すること」を、`examples` が「`examples/*.html` の
+先頭コメントに書いた**そのまま貼れる 1 行**が実際に動くこと」を見る。
 
 ---
 
@@ -1047,4 +1403,8 @@ CLI は `tools/shashoku/`: `shashoku input.html --font A.otf [--font B.ttf …] 
 「意図した差」の候補にもなる）: ベースライン（縦書きでは行の中心軸）／`sideways` と、それによる
 断片の切れ目／`<img>` の行内での揃え方（横書きはベースライン揃え、縦書きは中心軸に中央揃え）と
 固有寸法が物理であること／行に font-size の大小が混ざるときのインライン背景の block 方向／
-ルビの行高の float 1 ulp。
+**ルビを含む行の高さ**。最後のものは float の誤差ではなく**モデルの違い**で、横書きは
+ascent ベース（`max_base_ascent + rt_ascent + rt_descent`）、縦書きは em ベース
+（`max_base_font_size / 2 + rt_font_size`）で張り出しを出している。`font-size: 16px` の
+ブロックで親文字だけ 24px にすると 横 46.328125 / 縦 37.375 になる。縦書きに ascent の
+概念（行の中心軸からの上下）が無いためで、揃えるかどうかは Chrome と見比べてから決める（#15）。

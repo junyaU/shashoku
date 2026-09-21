@@ -1,9 +1,10 @@
 <!-- OG 画像の典型レイアウト（DESIGN.md Phase 6 の受け入れ条件）。
      1200x630 で組む前提。box-sizing は content-box だけなので、
      width / height は padding を引いた値を書く（1040 = 1200 - 80*2、470 = 630 - 80*2）。
+     アーカイブを展開したディレクトリ（`shashoku` と `examples/` が並んでいる場所）で、
+     次の 1 行をそのまま貼れば PNG になる（--font は要らない。太字も既定フォントの Bold で出る）:
 
-       shashoku examples/og_card.html --font NotoSansJP-Bold.otf --font NotoSansJP-Regular.otf \
-         --image icon=icon.png -o og.png --width 1200 --height 630
+     ./shashoku examples/og_card.html --image icon=examples/icon.png -o og_card.png --width 1200 --height 630
 -->
 <style>
   .card   { display: flex; flex-direction: column; width: 1040px; height: 470px; padding: 80px;

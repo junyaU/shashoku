@@ -308,6 +308,7 @@ TEST(LayoutVertical, DumpJson) {
   "viewport_height": 48,
   "root": {
     "tag": "#root",
+    "location": "1:1",
     "rect": [
       0,
       0,
@@ -317,6 +318,7 @@ TEST(LayoutVertical, DumpJson) {
     "blocks": [
       {
         "tag": "div",
+        "location": "1:1",
         "rect": [
           0,
           0,

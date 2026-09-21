@@ -36,20 +36,32 @@ enum class OverflowPolicy : std::uint8_t {
   Burasage,  // ぶら下げ: 行末の句読点 1 文字を行の外にはみ出させる。対象外の文字なら追い出し
 };
 
-// 段落（インライン整形文脈）全体の既定値。strictness と break_anywhere は
-// アイテムごとに Item::strictness / Item::break_anywhere で上書きできる（<span> の指定）。
+// CSS の overflow-wrap に対応（CSS Text Level 3 §5.4）。分割可能位置がない長い語
+// （URL など）を、クラスタ境界で強制的に割ってよいか。
+//   Normal   : 割らない。行に収まらなければそのままはみ出す（A4 禁則 > 幅）
+//   BreakWord: 行に収まらない行でだけ割る（緊急分割）。min_content_width() は変わらない
+//   Anywhere : 緊急分割に加えて、min_content_width() でもその位置で区間を切る
+// §5.4 は 2 値の違いをこう定める:「break-word は anywhere と同じだが、break-word が
+// もたらす分割位置は min-content intrinsic size の計算では考えない」。
+// min-content は flex アイテムの自動最小サイズ（Flexbox §4.5）に使うので、この区別が
+// 無いと anywhere を指定した flex の子が親からはみ出す（issue #18 / ARCHITECTURE.md A35）。
+//
+// 値は「弱い順」に並べてある。位置の両側のアイテムの**弱い方**が、その位置で何ができるかを
+// 決める（Item の境界の規則を参照）。
+enum class Wrap : std::uint8_t { Normal, BreakWord, Anywhere };
+
+// 段落（インライン整形文脈）全体の既定値。strictness と wrap は
+// アイテムごとに Item::strictness / Item::wrap で上書きできる（<span> の指定）。
 struct Config {
   Strictness strictness = Strictness::Strict;
   OverflowPolicy overflow = OverflowPolicy::Oidashi;
 
-  // overflow-wrap: anywhere / break-word。分割可能位置がなく行に収まらない語
-  // （長い URL など）を、クラスタ境界で強制的に割る。
-  // min_content_width() には影響しない（CSS の break-word 相当。CSS Text 3 の
-  // overflow-wrap: anywhere は min-content に効くが、ここでは両者を区別していない）。
-  // このときも分離禁則（—— …… 数値と単位）> 行頭禁則・行末禁則 の順にできる限り守る。
-  // 分離禁則を破らざるをえない位置ばかりでも、その中で行頭禁則を守れる位置を優先する。
-  // 守れる位置が 1 つもなければ破る。クラスタの内部では決して割らない。
-  bool break_anywhere = false;
+  // overflow-wrap（CSS Text 3 §5.4）。緊急分割のときも、分離禁則（—— …… 数値と単位）>
+  // 行頭禁則・行末禁則 の順にできる限り守る。分離禁則を破らざるをえない位置ばかりでも、
+  // その中で行頭禁則を守れる位置を優先する。守れる位置が 1 つもなければ破る
+  // （この「最後の逃げ場」があるので、Anywhere の min_content_width() は必ず達成できる）。
+  // クラスタの内部では決して割らない。
+  Wrap wrap = Wrap::Normal;
 
   // 約物が連続するときの空きを詰める（JLREQ 3.1.4）。「」」「」や「。」」が間延びしない。
   bool collapse_punctuation_spacing = true;
@@ -97,14 +109,16 @@ struct Item {
   //     解決済みのクラスに対して従来どおり働く。例外は loose の
   //     「直前が ID ならハイフン ‐ – の前で割ってよい」だけで、これは 2 アイテムに
   //     またがるので、行頭に来る側（= 後ろのアイテム = ハイフン自身）の値で決める
-  //   * break_anywhere の緊急分割は、位置の両側のアイテムがともに true のときだけ許す
-  //     （anywhere を指定した要素の内部でだけ割れ、要素の境界では割れない）。
-  //     発動条件（分割可能位置が 1 つもない行でだけ）と位置選びの優先順は Config と同じ
+  //   * wrap は位置の両側のアイテムの**弱い方**（Normal < BreakWord < Anywhere）で決める。
+  //     緊急分割は両側がともに Normal 以外の位置でだけ許し、min_content_width() の区間は
+  //     両側がともに Anywhere の位置でだけ切る（anywhere を指定した要素の内部でだけ割れ、
+  //     要素の境界では割れない）。発動条件（分割可能位置が 1 つもない行でだけ）と
+  //     位置選びの優先順は Config と同じ
   //
   // = std::nullopt は既定値の明示。designated initializer で Item を作っている呼び出し側が
   // -Wmissing-field-initializers に掛からないように、既定値を必ず書く。
   std::optional<Strictness> strictness = std::nullopt;
-  std::optional<bool> break_anywhere = std::nullopt;
+  std::optional<Wrap> wrap = std::nullopt;
 
   bool operator==(const Item&) const = default;
 };
@@ -159,7 +173,7 @@ struct Counters {
   std::uint64_t width_items = 0;
   // 次の強制改行（<br>）を探して進んだ位置の数。行ごとに前方走査すると行数 × N になる。
   std::uint64_t mandatory_scan = 0;
-  // 緊急分割（break_anywhere）の位置選びで見た位置の数。
+  // 緊急分割（Wrap）の位置選びと、min_content_width() の区間の切れ目の判定で見た位置の数。
   std::uint64_t anywhere_scan = 0;
   // 分割可能位置の判定で前に遡った位置の数（空白越し・数値の並び・地域表示記号の並び）。
   std::uint64_t rule_scan = 0;
@@ -175,6 +189,10 @@ class LineBreaker {
                                    Counters* counters = nullptr) const;
 
   // 分割不能な最長区間の幅（min-content）。flex アイテムの最小幅の計算に使う。
+  // 区間の切れ目は「分割可能位置」と「両側がともに Wrap::Anywhere のクラスタ境界」
+  // （CSS Text 3 §5.4）。Wrap::BreakWord では切らない。
+  // 返す幅はこの行分割器で必ず達成できる（この幅で break_lines() を回すと、
+  // どの行も overflows にならない）。
   [[nodiscard]] float min_content_width(std::span<const Item> items,
                                         Counters* counters = nullptr) const;
 

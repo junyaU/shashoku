@@ -4,6 +4,7 @@ shashoku_add_test(style_test
     cascade_test.cpp
     inherit_test.cpp
     error_test.cpp
+    limit_test.cpp
     tree_test.cpp
     dump_json_test.cpp
     fuzz_test.cpp

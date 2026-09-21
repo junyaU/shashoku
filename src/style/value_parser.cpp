@@ -152,6 +152,19 @@ std::unexpected<Error> bad_value(const Ctx& ctx, std::string_view detail) {
               ctx.location);
 }
 
+// float にできない数値（`1e39px` / `1e400px`）。「数値が範囲外」は、em の乗算であふれる
+// `1e38em` と同じ `LimitExceeded` に寄せてある（ARCHITECTURE.md A36）: 利用者から見て
+// この 2 つが別の種類なのは説明しづらい。ここは float の表現範囲なので RenderLimits では
+// 緩められない（緩められるのは計算値の上限 length_px の方）。
+std::unexpected<Error> out_of_range(const Ctx& ctx) {
+  return fail(ErrorKind::LimitExceeded,
+              std::format("`{}: {}` is out of range (the number cannot be represented as a "
+                          "32-bit float; lengths must be finite and within "
+                          "RenderLimits::length_px)",
+                          ctx.name, ctx.raw),
+              ctx.location);
+}
+
 constexpr std::string_view kLengthHelp = "supported lengths: <number>px, <number>em, or 0";
 
 // ---- 値の部品 ----------------------------------------------------------------
@@ -176,7 +189,7 @@ Result<SpecLength> to_length(const Ctx& ctx, const ValueToken& token, bool allow
                      std::format("`{}` is not a supported unit ({})", token.unit, kLengthHelp));
   }
   if (!representable(token.number)) {
-    return bad_value(ctx, "the number is out of range");
+    return out_of_range(ctx);
   }
   if (token.number < 0 && !allow_negative) {
     return bad_value(ctx, "negative lengths are only allowed for `margin` and `letter-spacing`");
@@ -199,7 +212,7 @@ Result<SpecDimension> to_dimension(const Ctx& ctx, const ValueToken& token,
       return bad_value(ctx, "`%` is only supported for `width` and `flex-basis`");
     }
     if (!representable(token.number)) {
-      return bad_value(ctx, "the number is out of range");
+      return out_of_range(ctx);
     }
     if (token.number < 0) {
       return bad_value(ctx, "negative percentages are not allowed");
@@ -675,7 +688,12 @@ Result<void> parse_line_height(const Ctx& ctx, std::span<const ValueToken> token
     return {};
   }
   if (token.kind == ValueToken::Kind::Number && token.number != 0) {
-    if (!representable(token.number) || token.number < 0) {
+    // 「範囲外」と「負」は別のこと。まとめると `line-height: 1e39` が
+    // 「負の数は不可」と言ってしまう（issue #19）。
+    if (!representable(token.number)) {
+      return out_of_range(ctx);
+    }
+    if (token.number < 0) {
       return bad_value(ctx, "`line-height` must not be negative");
     }
     emit(out, ctx, PropertyId::LineHeight,
@@ -702,7 +720,11 @@ Result<void> parse_letter_spacing(const Ctx& ctx, std::span<const ValueToken> to
 
 Result<void> parse_flex_factor(const Ctx& ctx, const ValueToken& token, PropertyId property,
                                std::vector<Declaration>& out) {
-  if (token.kind != ValueToken::Kind::Number || !representable(token.number) || token.number < 0) {
+  // 範囲外（`flex-grow: 1e39`）を「非負の数を書け」と言わない（issue #19）。
+  if (token.kind == ValueToken::Kind::Number && !representable(token.number)) {
+    return out_of_range(ctx);
+  }
+  if (token.kind != ValueToken::Kind::Number || token.number < 0) {
     return bad_value(ctx, "expected a non-negative number");
   }
   emit(out, ctx, property, SpecNumber{.value = static_cast<float>(token.number)});

@@ -27,8 +27,16 @@ linebreak::Strictness resolve_strictness(style::LineBreak value, linebreak::Stri
   return fallback;  // A17: エンジンの既定に従う
 }
 
-bool resolve_break_anywhere(style::OverflowWrap value) {
-  return value != style::OverflowWrap::Normal;
+linebreak::Wrap resolve_wrap(style::OverflowWrap value) {
+  switch (value) {
+    case style::OverflowWrap::Anywhere:
+      return linebreak::Wrap::Anywhere;  // min-content にも効く（CSS Text 3 §5.4）
+    case style::OverflowWrap::BreakWord:
+      return linebreak::Wrap::BreakWord;  // 緊急分割だけ
+    case style::OverflowWrap::Normal:
+      break;
+  }
+  return linebreak::Wrap::Normal;
 }
 
 std::size_t CharStyleTable::intern(const style::ComputedStyle& style, text::Direction direction,

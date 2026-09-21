@@ -85,9 +85,9 @@ std::unexpected<Error> length_error(float value, const SpecLength& spec, const L
   const std::string_view name = to_css(guard.property);
   if (!std::isfinite(value)) {
     // float で表せない値。どう掛けてそうなったかを添える（`1e+38em x 16 px`）。
-    std::string computation =
-        spec.em ? std::format("{}em x font-size {} px", spec.value, guard.em_base)
-                : std::format("{}px", spec.value);
+    std::string computation = spec.em
+                                  ? std::format("{}em x font-size {} px", spec.value, guard.em_base)
+                                  : std::format("{}px", spec.value);
     return fail(ErrorKind::LimitExceeded,
                 std::format("`{}` computes to {} ({}), which a float cannot represent; lengths "
                             "must be finite and at most {} px "
@@ -480,7 +480,7 @@ Result<void> apply_value(PropertyId property, const SpecifiedValue& value, Style
       // scale 込みでより厳しく見ており、そちらは要素の位置つきで報告する。ここで二重に
       // 検査すると、同じ入力のエラーの位置が宣言の側に移ってしまう。非有限になった場合は
       // cascade() が要素の位置で止める（em の基準が壊れたまま先へ進めないため）。
-      const SpecLength spec = take<SpecLength>(value);
+      const auto spec = take<SpecLength>(value);
       s.font_size = spec.em ? spec.value * em_base : spec.value;
       return {};
     }
@@ -672,7 +672,8 @@ std::optional<float> parse_attribute_number(std::string_view text) {
   return static_cast<float>(token.number);
 }
 
-Result<void> read_image_attributes(const html::Node& node, StyledNode& styled, float max_length_px) {
+Result<void> read_image_attributes(const html::Node& node, StyledNode& styled,
+                                   float max_length_px) {
   const html::Attribute* src = node.find_attr("src");
   if (src == nullptr) {
     return fail(ErrorKind::UnsupportedValue, "`<img>` requires a `src` attribute", node.location);
@@ -856,7 +857,7 @@ Result<void> check_computed_lengths(const ComputedStyle& s, float max_px, Source
                             what, value, max_px),
                 location);
   };
-  const std::array<std::pair<std::string_view, float>, 9> kLengths = {{
+  const std::array<std::pair<std::string_view, float>, 9> lengths = {{
       {"padding-top", s.padding.top},
       {"padding-right", s.padding.right},
       {"padding-bottom", s.padding.bottom},
@@ -867,12 +868,12 @@ Result<void> check_computed_lengths(const ComputedStyle& s, float max_px, Source
       {"column-gap", s.column_gap},
       {"letter-spacing", s.letter_spacing},
   }};
-  for (const auto& [name, value] : kLengths) {
+  for (const auto& [name, value] : lengths) {
     if (!within(value, max_px)) {
       return bad(name, value);
     }
   }
-  const std::array<std::pair<std::string_view, const Dimension*>, 7> kDimensions = {{
+  const std::array<std::pair<std::string_view, const Dimension*>, 7> dimensions = {{
       {"width", &s.width},
       {"height", &s.height},
       {"margin-top", &s.margin.top},
@@ -881,7 +882,7 @@ Result<void> check_computed_lengths(const ComputedStyle& s, float max_px, Source
       {"margin-left", &s.margin.left},
       {"flex-basis", &s.flex_basis},
   }};
-  for (const auto& [name, dimension] : kDimensions) {
+  for (const auto& [name, dimension] : dimensions) {
     // `%` は layout が解決するので、ここでは見られない（#19 の第 2 段階）。
     if (dimension->kind == Dimension::Kind::Px && !within(dimension->value, max_px)) {
       return bad(name, dimension->value);

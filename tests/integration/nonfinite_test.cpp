@@ -1,5 +1,6 @@
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -54,7 +55,7 @@ struct PropertyCase {
 };
 
 const std::vector<PropertyCase>& em_overflow_cases() {
-  static const std::vector<PropertyCase> kCases = {
+  static const std::vector<PropertyCase> cases = {
       {"padding", R"(<div style="padding:1e38em">A</div>)"},
       {"margin", R"(<div style="margin:1e38em">A</div>)"},
       {"margin-negative", R"(<div style="margin:-1e38em">A</div>)"},
@@ -71,7 +72,7 @@ const std::vector<PropertyCase>& em_overflow_cases() {
       // 唯一もともと止まっていたもの。種類と位置が変わっていないことを一緒に押さえる
       {"font-size", R"(<div style="font-size:1e38em">A</div>)"},
   };
-  return kCases;
+  return cases;
 }
 
 TEST(NonFiniteLengths, EmOverflowFailsWithALocation) {
@@ -96,7 +97,8 @@ TEST(NonFiniteLengths, LocationPointsAtTheStyleAttribute) {
 
 // font-size だけは A25 の font_size_device_px が止める（種類と位置は従来どおり要素の先頭）。
 TEST(NonFiniteLengths, FontSizeKeepsItsOldKindAndLocation) {
-  const RenderError error = render_failure(R"(<div style="font-size:1e38em">A</div>)", viewport(300));
+  const RenderError error =
+      render_failure(R"(<div style="font-size:1e38em">A</div>)", viewport(300));
   EXPECT_EQ(error.kind, ErrorKind::LimitExceeded) << error.message;
   ASSERT_TRUE(error.location.has_value());
   EXPECT_EQ(error.location.value_or(SourceLocation{}).column, 1U) << error.message;
@@ -128,7 +130,7 @@ TEST(NonFiniteLengths, SameInEveryContext) {
     std::string_view html;
     bool vertical;
   };
-  const std::array<ContextCase, 4> kCases = {{
+  constexpr std::array<ContextCase, 4> kCases = {{
       {"block", R"(<div style="padding-left:1e38em">あ</div>)", false},
       {"vertical", R"(<div style="writing-mode:vertical-rl;padding-top:1e38em">あ</div>)", true},
       {"flex", R"(<div style="display:flex"><div style="padding:1e38em">あ</div></div>)", false},
@@ -158,8 +160,8 @@ TEST(NonFiniteLengths, SvgDumpDoesNotDisagreeWithThePng) {
 // ---------------------------------------------------------------------------
 
 // 長さ（issue #19 の受け入れ条件の組み合わせ）。
-constexpr std::array<std::string_view, 7> kValues = {"0", "1", "1e3", "1e7", "1e19", "1e30",
-                                                     "3.4e38"};
+constexpr std::array<std::string_view, 7> kValues = {"0",    "1",    "1e3",   "1e7",
+                                                     "1e19", "1e30", "3.4e38"};
 constexpr std::array<std::string_view, 3> kUnits = {"px", "em", "%"};
 constexpr std::array<std::size_t, 3> kDepths = {1, 3, 10};
 constexpr std::array<int, 3> kViewports = {200, 1000, 16384};
@@ -200,8 +202,7 @@ TEST(NonFiniteLengths, PropertyLengthsUnitsAndNesting) {
         for (const int width : kViewports) {
           const std::string length = std::string{value} + std::string{unit};
           for (const std::string_view property : {"padding", "width", "margin", "font-size"}) {
-            const std::string html =
-                nest(std::string{property} + ":" + length, depth, "あ");
+            const std::string html = nest(std::string{property} + ":" + length, depth, "あ");
             SCOPED_TRACE(html.substr(0, 96));
             expect_no_non_finite(html, viewport(width));
           }
@@ -242,7 +243,7 @@ TEST(NonFiniteLengths, PropertyWritingModesFlexAndRuby) {
     std::string_view close;
     bool vertical;
   };
-  const std::array<Wrapper, 4> kWrappers = {{
+  constexpr std::array<Wrapper, 4> kWrappers = {{
       {"<div>", "</div>", false},
       {R"(<div style="writing-mode:vertical-rl">)", "</div>", true},
       {R"(<div style="display:flex">)", "</div>", false},
@@ -270,7 +271,7 @@ TEST(NonFiniteLengths, OrdinaryValuesAreUnchanged) {
     std::string_view html;
     std::string_view expect;  // style ダンプに必ず現れる数値
   };
-  const std::array<OkCase, 4> kCases = {{
+  constexpr std::array<OkCase, 4> kCases = {{
       {R"(<div style="padding:1000px">あ</div>)", "1000"},
       {R"(<div style="width:5000px">あ</div>)", "5000"},
       {R"(<div style="font-size:100px"><div style="font-size:1em"><div style="padding:1em">)"

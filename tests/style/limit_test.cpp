@@ -1,5 +1,6 @@
-#include <cmath>
+#include <array>
 #include <cstddef>
+#include <cstdint>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -53,7 +54,7 @@ struct OverflowCase {
 };
 
 const std::vector<OverflowCase>& em_overflow_cases() {
-  static const std::vector<OverflowCase> kCases = {
+  static const std::vector<OverflowCase> cases = {
       {"padding: 1e38em", "padding-top"},
       {"padding-left: 1e38em", "padding-left"},
       {"margin: 1e38em", "margin-top"},
@@ -69,7 +70,7 @@ const std::vector<OverflowCase>& em_overflow_cases() {
       {"column-gap: 1e38em", "column-gap"},
       {"flex-basis: 1e38em", "flex-basis"},
   };
-  return kCases;
+  return cases;
 }
 
 TEST(StyleLengthLimit, EmOverflowIsRejected) {
@@ -125,9 +126,9 @@ TEST(StyleLengthLimit, LineHeightNumberIsCheckedAgainstFontSize) {
 
 // 倍率は倍率のまま継承するので、親では収まっていても子の font-size で超えることがある。
 TEST(StyleLengthLimit, InheritedLineHeightNumberIsRecheckedOnTheChild) {
-  const html::Node tree = test_root(test_parent(
-      "div", {test_attr("style", "line-height: 1e6")},
-      test_element("div", {test_attr("style", "font-size: 100px")})));
+  const html::Node tree =
+      test_root(test_parent("div", {test_attr("style", "line-height: 1e6")},
+                            test_element("div", {test_attr("style", "font-size: 100px")})));
   const Result<StyledNode> styled = resolve(tree);
   ASSERT_FALSE(styled.has_value()) << "1e6 x 100px = 1e8 px は上限を超える";
   EXPECT_EQ(styled.error().kind, ErrorKind::LimitExceeded) << styled.error().message;
@@ -174,7 +175,8 @@ TEST(StyleLengthLimit, NonFiniteFontSizeStopsAtTheElement) {
   EXPECT_EQ(error.location.value_or(SourceLocation{}).column, 1U) << error.message;
 }
 
-// font-size 自体は length_px では縛らない（1e7 px は length_px 以内だが font_size_device_px 超え）。
+// font-size 自体は length_px では縛らない（1e7 px は length_px 以内だが font_size_device_px
+// 超え）。
 TEST(StyleLengthLimit, LargeButFiniteFontSizeIsLeftToTheApi) {
   const Result<ComputedStyle> style = resolve_with_limit("font-size: 1000000px", kMaxLengthPx);
   ASSERT_TRUE(style.has_value()) << (style ? std::string{} : style.error().message);
@@ -183,8 +185,8 @@ TEST(StyleLengthLimit, LargeButFiniteFontSizeIsLeftToTheApi) {
 
 // <img> の width / height 属性も layout に渡る長さなので、同じ上限で見る。
 TEST(StyleLengthLimit, ImageAttributesAreBounded) {
-  const html::Node tree = test_root(test_element(
-      "img", {test_attr("src", "icon"), test_attr("width", "300000000")}));
+  const html::Node tree =
+      test_root(test_element("img", {test_attr("src", "icon"), test_attr("width", "300000000")}));
   const Result<StyledNode> styled = resolve(tree);
   ASSERT_FALSE(styled.has_value()) << "3e8 px は length_px を超える";
   EXPECT_EQ(styled.error().kind, ErrorKind::LimitExceeded) << styled.error().message;
@@ -195,11 +197,15 @@ TEST(StyleLengthLimit, ImageAttributesAreBounded) {
 // `1e39px` は float にできないのでパーサが弾く。種類は limit-exceeded に寄せてある
 // （利用者から見て `1e39px` と `1e38em` が別種なのは説明しづらい。A-new）。
 TEST(StyleLengthLimit, OutOfRangeNumbersAreLimitExceeded) {
-  const std::vector<std::string_view> kCases = {
-      "padding: 1e39px", "padding: 1e400px", "padding: 1e39em",
-      "width: 1e39%",    "line-height: 1e39", "flex-grow: 1e39",
+  constexpr std::array<std::string_view, 7> kCases = {{
+      "padding: 1e39px",
+      "padding: 1e400px",
+      "padding: 1e39em",
+      "width: 1e39%",
+      "line-height: 1e39",
+      "flex-grow: 1e39",
       "flex-shrink: 1e39",
-  };
+  }};
   for (const std::string_view css : kCases) {
     SCOPED_TRACE(css);
     const Error error = style_failure(css);

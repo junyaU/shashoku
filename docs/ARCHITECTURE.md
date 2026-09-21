@@ -778,6 +778,77 @@ layout の加算で `inf` になる。そこで `RenderLimits` に**長さ・座
   これは親文字を 1 つのインラインボックスとして中央に揃えた結果で、通常テキストの送りの
   扱いと一貫している（Chrome との突き合わせは #15）
 
+**A38. 既定フォントは CLI 層だけの機能。ライブラリはバイト列しか受け取らない。**（issue #20）
+試用版の目的は「準備なしで 1 枚出せる」ことなので、`--font` を省けるようにする必要がある。
+ただし `render()` / `dump()` にフォントの探索経路を持たせると、**同じ HTML から機種ごとに違う PNG**
+が出うる（DESIGN.md §3-5 の純粋関数、§4「外部リソースを取りに行かない」に正面から反する）。
+そこで既定フォントは `tools/shashoku/` に閉じ込め、公開 API（`include/shashoku/`）も
+`render()` / `dump()` の署名も変えない（A12: 画像とフォントはバイト列で渡す）。
+
+- **持ち方はバイナリへの埋め込み**（Noto Sans JP Regular + Bold、約 11.2 MiB）。
+  `.incbin` で `.rodata` に置く（C の配列初期化子に展開すると 50 MB 超のソースになる）。
+  実行ファイルの隣に置く方式は「バイナリだけコピーされる」と分かりにくく失敗する。
+  **システムフォントの探索も実行時のダウンロードもしない**（上と同じ理由）
+- **サブセット化はしない**。「任意の日本語文字列を流し込んでも組版が壊れない」が製品の約束
+  （README 冒頭）なので、字種を削るとその約束を破る
+- **`--font` を書けばそちらが優先**。既定フォントは黙って足されない（欧文フォントだけを
+  渡したら和文は豆腐になり、警告が出る = 利用者が見ている集合と実際の集合が食い違わない）
+- **順序は Regular → Bold**。`--font <Regular> --font <Bold>` と書いたときと
+  **バイト単位で同じ PNG** が出ることを `Cli.default_font` が検査する（og_card で
+  `font-weight: 700` の選び方まで見る）。この 2 本は同じ family で太さが違うだけなので
+  順序を入れ替えても結果は変わらないが、約束として順序を固定しておく
+- **版の固定**: 埋め込むフォントは `cmake/TestAssets.cmake` がコミット SHA と SHA256 で
+  固定して取得する（テスト用フォントと同じ実体。`SHASHOKU_BUILD_TESTS=OFF` でも和文 2 本は取る）。
+  **フォントの版が変われば同じ HTML から違う PNG が出る**ので、`shashoku --version` が
+  shashoku・zlib・FreeType・HarfBuzz・既定フォントの版を出し、README の「保証しないもの」にも書いた（A32）
+- 埋め込みは `SHASHOKU_EMBED_DEFAULT_FONT`（既定 ON）で切れる。OFF のときは `--font` が必須に戻る
+
+**A39. 配布物は「C++ ランタイムだけ静的、glibc は動的」。完全静的リンクは却下した。
+リンク方法は出力を変えない。**（issue #20。2026-09-21 にユーザーが決定）
+release ビルドの動的依存は `libc++.so.1` / `libc++abi.so.1` / `libunwind.so.1` / `libm` /
+`libgcc_s` / `libc` で、**素の Ubuntu に無いのは前の 3 つ（と `libgcc_s` の版）だけ**。
+`-static-libstdc++ -static-libgcc` で C++ ランタイムを取り込めば、残る動的依存は glibc だけになる。
+実測で NEEDED は `libm.so.6` と `libc.so.6` の 2 つになり、libc++abi と libunwind は
+追加の指定なしで静的に入った（clang-18 + libc++ 18）。
+
+- **完全静的（`-static`）は却下した。** NEEDED が消えてどの Linux でも動くのは魅力だが、
+  glibc（LGPL-2.1+）を実行ファイルに取り込むことになり、LGPL が再配布に求める
+  「受け取った人が別版の glibc と再リンクできる手段の提供」に触れうる。配布物のための
+  法務上の負担を、試用版の段階で背負う価値は無いと判断した
+- 代わりに**前提が 1 つ増えた**: 動的に要る glibc の版は「ビルド機の版以上」なので、
+  **ubuntu:22.04 のコンテナでビルドする**（= glibc 2.35 以降が前提。Ubuntu 22.04 /
+  Debian 12 以降）。**musl の環境（Alpine など）では動かない**。「どの Linux でも動く」とは
+  言えなくなったので、README と配布物の README に前提を明記する
+- **この前提は静かに壊れる**（新しいランナーでビルドすると、要求する glibc のシンボル版だけが
+  上がって「古いディストリで GLIBC_2.39 not found」になる。絵もテストも変わらないので気づけない）。
+  だから 2 つを機械で押さえる:
+  1. **ビルドは必ず ubuntu:22.04 のコンテナの中**（`scripts/dist_container_build.sh` を
+     `docker run ... ubuntu:22.04` で呼ぶ。CI の `dist` ジョブと release.yml の両方）。
+     22.04 には clang-18 / libc++-18 が無いので apt.llvm.org の jammy-18 を足す。
+     CMake は 22.04 の 3.22.1 で足りる（`cmake_minimum_required` と同じ）
+  2. **`scripts/check_dist_binary.sh`** が NEEDED と**要求する glibc のシンボル版の最大**
+     （既定の上限 2.35）を検査する。`readelf --dyn-syms` の `@GLIBC_x.y` を集めて最大を取る
+     （`2.4 < 2.35` を正しく比べるため major / minor は整数で見る）
+- workflow のシェルは `scripts/` に切り出してある（workflow に埋め込むと**ローカルで一度も
+  動かせない**）。`check_dist_binary.sh` / `pack_dist.sh` / `release_notes.sh` は docker 無しで
+  回せる。`dist_container_build.sh` は `SHASHOKU_SKIP_TOOLCHAIN=1` で apt の部分だけ飛ばせる
+- **`cmake/CompilerOptions.cmake`（`-ffp-contract=off` など決定性のフラグ）は変えない。**
+  変えるのは CLI のリンク方法だけで、浮動小数点の丸めには触れない。実測でも、`dist` と
+  通常の release の CLI で examples 5 本 + 禁則 3 方式の PNG がバイト単位で一致した
+- 保証範囲（A32）は「同じ版・同じ依存」で語っているので、**配布するのと同じ設定でビルドした
+  バイナリでゴールデン 16 枚を通す**。`dist` プリセット（Release + `SHASHOKU_STATIC_RUNTIME`）を
+  用意し、CI の `dist` ジョブと release.yml の両方で `ctest --preset dist` を回す。
+  どちらのジョブも `readelf -d` の NEEDED が libc / libm / ld-linux 以外なら失敗する
+- 対応環境は **linux-x86_64 だけ**。決定性を CI で検査しているのが x86-64 Linux の 2 つの
+  ツールチェーンだけで、aarch64 では**ゴールデン 16 枚を検査していない**（= 絵を保証しない
+  成果物になる）。macOS / Windows / aarch64 は Phase 9c
+- **ライセンス表示**: 静的に取り込む libc++ / libc++abi / libunwind は
+  Apache-2.0 WITH LLVM-exception なので `THIRD_PARTY_LICENSES` の 5 節に全文を転載した。
+  glibc は取り込まないので転載しない
+- サイズ（strip 前）: 通常の release（動的・フォント無し）3.1 MiB /
+  `dist`（C++ ランタイム静的・フォント埋め込み）13.0 MiB（strip 後 12.3 MiB）。
+  参考: 完全静的だと 14.0 MiB だった
+
 ---
 
 ## 2. モジュールと依存
@@ -1016,7 +1087,11 @@ class FreeTypeGlyphSource final : public raster::GlyphSource { /* FontStore を�
   「全部の字が消えた PNG」になる前に一番早い段で落とす（A19）
 - テスト用フォント: リポジトリに置かず、CMake の configure 時に版（コミット SHA）とハッシュを
   固定してダウンロードする（`cmake/TestAssets.cmake`）。Noto Sans JP（OFL）+ 欧文フォント 1 つ
-  （フォールバックのテスト用）。パスはコンパイル定義でテストに渡す
+  （フォールバックのテスト用）。パスはコンパイル定義でテストに渡す。
+  和文 2 本は **CLI に埋め込む既定フォントを兼ねる**ので `SHASHOKU_BUILD_TESTS=OFF` でも取得する
+  （A38。欧文 1 本はテスト専用のまま）
+- エラーメッセージは英語で書く（他のモジュールにそろえる）。`tests/text/font_store_test.cpp` の
+  `ErrorMessagesAreAscii` が ASCII 以外の混入を見張る
 - 受け入れ（DESIGN.md Phase 2）: 「こんにちは、世界のみんな。ABC😀」を 1 行でシェーピングでき、
   😀 だけが豆腐として報告される
 
@@ -1066,6 +1141,13 @@ std::string dump_json(const StyledNode& root);
   `border-style`（solid / none）`border-color`、`flex`（`none` / `auto` / 1〜3 値）、
   `gap` `row-gap` `column-gap`、`background`（色のみ。`background-color` の別名）。
   一覧にないプロパティは `UnsupportedProperty`、値が対応外なら `UnsupportedValue`
+- **`UnsupportedProperty` の文面には代替案を一言添える**（#20。試用版で「未対応です」だけでは
+  次に何をすればよいか分からない）。`value_parser.cpp` の `kPropertyHints` に
+  **未対応だと分かっているものだけ**を載せ、`` `box-sizing` is not a supported property
+  (content-box only: subtract padding and border from `width` / `height`) `` のように
+  **先頭を変えず後ろに括弧で足す**（前方一致で見ているものがあるかもしれないため）。
+  表に無い名前（綴り間違いなど）には何も足さない。**載せてよいのは shashoku で実際に
+  同じ結果が出せると確かめた代替だけ**で、代替が無いもの（縦中横）は「未実装」とだけ言う
 - 単位: `px` `em`、`0`（単位なし）。`%` は `width` と `flex-basis` のみ。`line-height` は
   `normal` / 数値 / px / em。色: `#rgb #rgba #rrggbb #rrggbbaa`、`rgb()` `rgba()`、
   CSS の色名、`transparent`、`currentColor`（border-color のみ）
@@ -1213,11 +1295,25 @@ HTML を読む前に返す**（壊れた HTML でも `InvalidOption` が先に�
 `src/api/out_of_memory.hpp` だけで、`render()` / `dump()` / `prepare()` の全オーバーロードが使う）。
 CLI に上限を変えるフラグは足していない（既定値のまま使う）。
 
-CLI は `tools/shashoku/`: `shashoku input.html --font A.otf [--font B.ttf …] [--image name=path …]
+CLI は `tools/shashoku/`: `shashoku input.html [--font A.otf [--font B.ttf …]] [--image name=path …]
 -o out.png [--width N] [--height N] [--scale S] [--compression 0-9]
 [--overflow oidashi|oikomi|burasage] [--dump-stage dom|style|box|display-list|svg]`。
 エラーは `to_string(RenderError)` を stderr に出して終了コード 1。
 値の範囲の検査は `render()` に任せる（オプションの正は 1 か所。CLI は形だけを見る）。
+
+**CLI 層だけの機能**（A38 / A39。ライブラリには一切漏らさない）:
+
+| | |
+|---|---|
+| 既定フォント | `--font` を省いたら `tools/shashoku/embedded.cpp` が `.incbin` で焼き込んだ Noto Sans JP を Regular → Bold の順に `FontSet` へ入れる。`--font` を書けばそちらだけを使う |
+| `--version` | shashoku（公開 API の `version()`）・zlib / FreeType / HarfBuzz（`cmake/Dependencies.cmake` の版をコンパイル定義で渡す）・既定フォント（コミット SHA） |
+| `--license` | 焼き込んだ `LICENSE` と `THIRD_PARTY_LICENSES`。SIL OFL 1.1 が求める「ライセンス文の同梱」を、バイナリ 1 つでも満たすため |
+| 配布のビルド | `dist` プリセット = Release + `SHASHOKU_STATIC_RUNTIME`（`-static-libstdc++ -static-libgcc`。glibc は動的のまま。A39）+ `SHASHOKU_EMBED_DEFAULT_FONT` |
+
+CLI が zlib / FreeType / HarfBuzz のヘッダを見ることはない（版は文字列で受け取る）。
+検査は `tools/shashoku/cli_test.cmake`（`ctest -R Cli`）。`default_font` が「既定フォントの PNG と
+`--font <同じ OTF>` の PNG がバイト単位で一致すること」を、`examples` が「`examples/*.html` の
+先頭コメントに書いた**そのまま貼れる 1 行**が実際に動くこと」を見る。
 
 ---
 

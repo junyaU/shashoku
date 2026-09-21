@@ -1,0 +1,80 @@
+name: 試用報告（組めなかった / 絵が崩れた / エラーが分からない）
+description: 試用版で引っかかったところを教えてください。次に対応する CSS はここで決めます。
+title: "[試用] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        shashoku は**再現できないものは直せません**（同じ入力からは必ず同じ PNG が出る設計です）。
+        下の 5 つが揃っていれば、こちらで必ず同じ絵を出せます。スクリーンショットより、
+        **入力の全文とエラーの全文**のほうが役に立ちます。
+
+  - type: textarea
+    id: version
+    attributes:
+      label: 版（`shashoku --version` の出力をそのまま）
+      description: 依存ライブラリと既定フォントの版で出力が変わるので、全行を貼ってください。
+      render: text
+      placeholder: |
+        shashoku 0.1.0
+          zlib 1.3.2
+          FreeType 2.14.3
+          HarfBuzz 14.4.0
+          default font: Noto Sans JP Regular / Bold (notofonts/noto-cjk f8d1575)
+    validations:
+      required: true
+
+  - type: textarea
+    id: html
+    attributes:
+      label: 入力した HTML（全文）
+      description: |
+        抜粋ではなく全文を貼ってください（組版は前後の文字で変わります）。
+        公開できない文言は、同じ長さ・同じ字種の別の文に置き換えて構いません。
+      render: html
+    validations:
+      required: true
+
+  - type: textarea
+    id: command
+    attributes:
+      label: 実行したコマンド行
+      render: shell
+      placeholder: ./shashoku input.html -o out.png --width 1200 --height 630
+    validations:
+      required: true
+
+  - type: textarea
+    id: output
+    attributes:
+      label: 出力（エラー・警告の全文）
+      description: |
+        `error[...] at 行:桁: ...` の行を省略せずに貼ってください。
+        正常終了したけれど絵が崩れた場合は「エラーなし」と書いてください。
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期待した絵と、実際に起きたこと
+      description: |
+        「どう組まれてほしかったか」を言葉で書いてください。
+        絵が崩れた場合は、出力した PNG をこの欄にドラッグして添付できます。
+    validations:
+      required: true
+
+  - type: input
+    id: environment
+    attributes:
+      label: 環境（任意）
+      placeholder: Ubuntu 22.04 / WSL2 Ubuntu 24.04 / Docker debian:12 など
+
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: 確認
+      options:
+        - label: 貼った HTML と PNG に、公開できない情報が含まれていないこと
+          required: true

@@ -207,7 +207,7 @@ TEST(TextShaper, WithoutFontsIsAnInternalErrorInsteadOfEmptyResults) {
   const Result<ShapedText> shaped = shaper.shape(U"あA", japanese_style());
   ASSERT_FALSE(shaped.has_value());
   EXPECT_EQ(shaped.error().kind, ErrorKind::Internal);
-  EXPECT_NE(shaped.error().message.find("フォント"), std::string::npos);
+  EXPECT_NE(shaped.error().message.find("no fonts"), std::string::npos) << shaped.error().message;
 }
 
 // 「正常に 0 グリフ」（空文字列）は成功であって失敗ではない（text_measurer.hpp）。

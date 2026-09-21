@@ -79,6 +79,49 @@ jobs:
       - name: Test
         run: ctest --preset ${{ matrix.preset }}
 
+  # 配布物（#20）と同じ設定で作ったバイナリを検査するジョブ。release.yml は
+  # タグを push したときしか走らないので、壊れたことに気づくのはここ。
+  dist:
+    name: 配布と同じ設定（ubuntu:22.04 の中でビルド）
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      # 依存のソースとフォントは他のジョブと同じ場所・同じ鍵で共有する。
+      # コンテナには /src としてマウントするので、パスはコンテナ側の絶対パスで渡す。
+      - name: Cache dependency sources and test fonts
+        uses: actions/cache@v5
+        with:
+          path: |
+            build/_deps/*-src
+            build/_deps/*-subbuild
+            build/_assets
+          key: deps-${{ hashFiles('cmake/Dependencies.cmake', 'cmake/TestAssets.cmake') }}
+      - name: Cache ccache
+        uses: actions/cache@v5
+        with:
+          path: build/_ccache
+          key: ccache-dist-${{ github.run_id }}
+          restore-keys: ccache-dist-
+      # **ビルドは ubuntu:22.04 のコンテナの中で行う**（A39）。配布物は glibc を
+      # 動的のままにしているので、ビルド機の glibc の版がそのまま「動く環境の下限」に
+      # なる。ランナー（ubuntu-24.04 / glibc 2.39）で直接ビルドすると 22.04 で起動
+      # できないバイナリができる。中身は scripts/dist_container_build.sh:
+      # ツールチェーンの導入 → configure / build / ctest 全件（ゴールデン 16 枚と
+      # Cli.examples を含む）→ NEEDED と要求 glibc の検査 → アーカイブの組み立て。
+      # docker が要るので、この 2 ステップはローカルでは試せない（スクリプトの中身は
+      # scripts/ に切り出してあり、apt 以外はローカルで実行して確かめてある）。
+      # **このジョブ自体は最初の PR の CI が初回の実行になる。**
+      - name: Build, test and pack inside ubuntu:22.04
+        run: |
+          docker run --rm -v "$PWD:/src" -w /src \
+            -e CCACHE_DIR=/src/build/_ccache -e CCACHE_MAXSIZE=400M \
+            ubuntu:22.04 bash scripts/dist_container_build.sh \
+              -DFETCHCONTENT_BASE_DIR=/src/build/_deps \
+              -DSHASHOKU_TEST_ASSETS_DIR=/src/build/_assets
+      # ビルドツールを何も入れていない素の Ubuntu で、置いたその場で動くこと。
+      - name: Run in bare Ubuntu containers
+        run: scripts/smoke_dist_containers.sh build/package/shashoku-linux-x86_64
+
   lint:
     name: clang-format + clang-tidy
     runs-on: ubuntu-24.04

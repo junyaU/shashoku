@@ -9,6 +9,13 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 option(SHASHOKU_BUILD_TESTS "テストをビルドする" ${PROJECT_IS_TOP_LEVEL})
 option(SHASHOKU_BUILD_TOOLS "CLI（tools/shashoku）をビルドする" ${PROJECT_IS_TOP_LEVEL})
+# 配布用（#20。A38 / A39）。どちらも CLI だけに効き、ライブラリの
+# コンパイル結果（= 出力 PNG）は変えない。
+option(SHASHOKU_EMBED_DEFAULT_FONT
+       "CLI に既定フォント（Noto Sans JP Regular / Bold）を埋め込む" ON)
+option(SHASHOKU_STATIC_RUNTIME
+       "CLI に C++ ランタイム（libc++ / libc++abi / libunwind / libgcc）を静的リンクする。\
+glibc は動的のまま（A39）" OFF)
 option(SHASHOKU_WARNINGS_AS_ERRORS "警告をエラーとして扱う" OFF)
 option(SHASHOKU_SANITIZE "ASan + UBSan を有効にする（依存ライブラリにも適用）" OFF)
 option(SHASHOKU_SANITIZE_THREAD "TSan を有効にする（依存ライブラリにも適用）" OFF)

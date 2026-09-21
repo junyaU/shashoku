@@ -124,6 +124,40 @@ std::optional<PropertyName> lookup_property(std::string_view name) {
   return std::nullopt;
 }
 
+// 未対応と**分かっている**プロパティには、次に何をすればよいかを一言だけ添える（#20）。
+// 「未対応です」だけでは手がかりがゼロで、試用の最初の 1 枚で詰まるため。
+//
+// ここに書いてよいのは、**shashoku で実際に同じ結果が出せると確かめた**代替だけ
+// （tests/style/error_test.cpp の文面の検査と、CLI の `--dump-stage box` で 1 つずつ確認済み）。
+// 表に無い名前（綴り間違い・そもそも知らないプロパティ）には何も足さない:
+// 間違った助言をするくらいなら、何も言わないほうがよい。
+// 代替が無いもの（縦中横）は「未実装」とだけ言う。
+struct HintEntry {
+  std::string_view name;
+  std::string_view hint;
+};
+
+constexpr auto kPropertyHints = std::to_array<HintEntry>({
+    {"box-sizing", "content-box only: subtract padding and border from `width` / `height`"},
+    {"flex-wrap", "single-line flex only: use one flex container per row"},
+    {"float", "no floats: use `display: flex` to put boxes side by side"},
+    {"max-height", "no min/max resolution: use a fixed `height`"},
+    {"max-width", "no min/max resolution: use a fixed `width`"},
+    {"min-height", "no min/max resolution: use a fixed `height`"},
+    {"min-width", "no min/max resolution: use a fixed `width`"},
+    {"position", "no positioning: use `display: flex` with `justify-content` / `align-items`"},
+    {"text-combine-upright", "tate-chu-yoko is not implemented"},
+});
+
+std::string_view hint_for(std::string_view name) {
+  for (const HintEntry& entry : kPropertyHints) {
+    if (entry.name == name) {
+      return entry.hint;
+    }
+  }
+  return {};
+}
+
 // ---- longhand への展開表（inherit / initial の配布に使う）--------------------
 
 constexpr std::array<PropertyId, 4> kMarginSides = {PropertyId::MarginTop, PropertyId::MarginRight,
@@ -1026,8 +1060,13 @@ Result<void> parse_declaration(std::string_view name, std::string_view raw_value
                                std::vector<Declaration>& out) {
   const std::optional<PropertyName> property = lookup_property(name);
   if (!property) {
+    // 文面の**先頭は変えない**（前方一致で見ているスクリプトがあるかもしれないので、
+    // 分かっているものにだけ括弧で代替案を足す）。エラーの種類と位置も変えない。
+    const std::string_view hint = hint_for(name);
     return fail(ErrorKind::UnsupportedProperty,
-                std::format("`{}` is not a supported property", name), name_location);
+                hint.empty() ? std::format("`{}` is not a supported property", name)
+                             : std::format("`{}` is not a supported property ({})", name, hint),
+                name_location);
   }
 
   const Ctx ctx{.name = name, .raw = trim_css_space(raw_value), .location = value_location};

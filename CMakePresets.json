@@ -52,6 +52,16 @@
       "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
     },
     {
+      "name": "dist",
+      "displayName": "配布用（Release + C++ ランタイムの静的リンク + 既定フォントの埋め込み）",
+      "inherits": ["base", "clang-libcxx"],
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "SHASHOKU_STATIC_RUNTIME": "ON",
+        "SHASHOKU_EMBED_DEFAULT_FONT": "ON"
+      }
+    },
+    {
       "name": "gcc",
       "displayName": "GCC + libstdc++（移植性確認用。環境変数 CC / CXX でバージョン指定）",
       "inherits": ["base"],
@@ -63,6 +73,7 @@
     { "name": "asan", "configurePreset": "asan" },
     { "name": "tsan", "configurePreset": "tsan" },
     { "name": "release", "configurePreset": "release" },
+    { "name": "dist", "configurePreset": "dist" },
     { "name": "gcc", "configurePreset": "gcc" }
   ],
   "testPresets": [
@@ -75,6 +86,7 @@
     { "name": "asan", "inherits": "base", "configurePreset": "asan" },
     { "name": "tsan", "inherits": "base", "configurePreset": "tsan" },
     { "name": "release", "inherits": "base", "configurePreset": "release" },
+    { "name": "dist", "inherits": "base", "configurePreset": "dist" },
     { "name": "gcc", "inherits": "base", "configurePreset": "gcc" }
   ]
 }

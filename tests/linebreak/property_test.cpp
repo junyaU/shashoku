@@ -91,14 +91,14 @@ std::string describe(std::span<const Item> items, const Breaks& breaks, std::siz
   return out;
 }
 
-// 位置 i（items[i-1] と items[i] の間）で break_anywhere の強制分割が起こりうるか。
-// 両側のアイテムがともに anywhere のときだけ（ARCHITECTURE.md A23）。
+// 位置 i（items[i-1] と items[i] の間）で overflow-wrap の緊急分割が起こりうるか。
+// 両側のアイテムがともに Normal 以外のときだけ（ARCHITECTURE.md A23）。
 bool anywhere_between(std::span<const Item> items, const Config& config, std::size_t i) {
   if (i == 0 || i >= items.size()) {
     return false;
   }
-  return items[i - 1].break_anywhere.value_or(config.break_anywhere) &&
-         items[i].break_anywhere.value_or(config.break_anywhere);
+  return items[i - 1].wrap.value_or(config.wrap) != Wrap::Normal &&
+         items[i].wrap.value_or(config.wrap) != Wrap::Normal;
 }
 
 void check_invariants(std::span<const Item> items, const Config& config, float width) {
@@ -141,7 +141,7 @@ void check_invariants(std::span<const Item> items, const Config& config, float w
     if (!line.overflows) {
       EXPECT_LE(line.width, width + kTolerance);
     }
-    // 分割位置は break_opportunities() が true の位置（break_anywhere の発動を除く）
+    // 分割位置は break_opportunities() が true の位置（緊急分割の発動を除く）
     const bool anywhere_here = anywhere_between(items, config, line.begin);
     if (i > 0 && !anywhere_here) {
       EXPECT_TRUE(opportunities[line.begin]);
@@ -179,15 +179,15 @@ TEST(LineBreakProperty, InvariantsUnderRandomInput) {
          {Strictness::Strict, Strictness::Normal, Strictness::Loose}) {
       for (const OverflowPolicy overflow :
            {OverflowPolicy::Oidashi, OverflowPolicy::Oikomi, OverflowPolicy::Burasage}) {
-        for (const bool anywhere : {false, true}) {
+        for (const Wrap wrap : {Wrap::Normal, Wrap::BreakWord, Wrap::Anywhere}) {
           Config config;
           config.strictness = strictness;
           config.overflow = overflow;
-          config.break_anywhere = anywhere;
+          config.wrap = wrap;
           SCOPED_TRACE("iteration " + std::to_string(iteration) + " strictness " +
                        std::to_string(static_cast<int>(strictness)) + " overflow " +
-                       std::to_string(static_cast<int>(overflow)) + " anywhere " +
-                       std::to_string(static_cast<int>(anywhere)) + " width " +
+                       std::to_string(static_cast<int>(overflow)) + " wrap " +
+                       std::to_string(static_cast<int>(wrap)) + " width " +
                        std::to_string(available));
           check_invariants(items, config, available);
         }
@@ -218,20 +218,23 @@ void sprinkle_policies(std::mt19937& rng, std::vector<Item>& items) {
       default:
         break;  // nullopt: Config に従う
     }
-    std::optional<bool> anywhere;
+    std::optional<Wrap> wrap;
     switch (choice(rng)) {
       case 1:
-        anywhere = true;
+        wrap = Wrap::Anywhere;
         break;
       case 2:
-        anywhere = false;
+        wrap = Wrap::Normal;
+        break;
+      case 3:
+        wrap = Wrap::BreakWord;
         break;
       default:
-        break;
+        break;  // nullopt: Config に従う
     }
     for (std::size_t j = i; j < end; ++j) {
       items[j].strictness = strictness;
-      items[j].break_anywhere = anywhere;
+      items[j].wrap = wrap;
     }
     i = end;
   }
@@ -250,15 +253,15 @@ TEST(LineBreakProperty, InvariantsWithPerItemPolicies) {
          {Strictness::Strict, Strictness::Normal, Strictness::Loose}) {
       for (const OverflowPolicy overflow :
            {OverflowPolicy::Oidashi, OverflowPolicy::Oikomi, OverflowPolicy::Burasage}) {
-        for (const bool anywhere : {false, true}) {
+        for (const Wrap wrap : {Wrap::Normal, Wrap::BreakWord, Wrap::Anywhere}) {
           Config config;
           config.strictness = strictness;
           config.overflow = overflow;
-          config.break_anywhere = anywhere;
+          config.wrap = wrap;
           SCOPED_TRACE("iteration " + std::to_string(iteration) + " strictness " +
                        std::to_string(static_cast<int>(strictness)) + " overflow " +
-                       std::to_string(static_cast<int>(overflow)) + " anywhere " +
-                       std::to_string(static_cast<int>(anywhere)) + " width " +
+                       std::to_string(static_cast<int>(overflow)) + " wrap " +
+                       std::to_string(static_cast<int>(wrap)) + " width " +
                        std::to_string(available));
           check_invariants(items, config, available);
         }
@@ -279,17 +282,28 @@ TEST(LineBreakProperty, InvariantsWithUnboundedWidth) {
 
 TEST(LineBreakProperty, MinContentWidthNeverOverflows) {
   // min_content_width は「この幅なら必ず収まる」下限であること。
+  // overflow-wrap: anywhere は min-content の区間を細かく切る（A-new）ので、
+  // 「切った位置で本当に割れる」ことがここで担保される（緊急分割の最後の逃げ場）。
+  // アイテムごとに anywhere / break-word / normal を混ぜた入力でも成り立つこと。
   std::mt19937 rng = seeded_rng(20260921);
   std::uniform_int_distribution<std::size_t> length(1, 40);
   for (int iteration = 0; iteration < 200; ++iteration) {
-    const std::vector<Item> items = random_items(rng, length(rng));
-    const LineBreaker breaker;
-    const float minimum = breaker.min_content_width(items);
-    SCOPED_TRACE("iteration " + std::to_string(iteration) + " min " + std::to_string(minimum));
-    EXPECT_GE(minimum, 0.0F);
-    for (const Line& line : breaker.break_lines(items, minimum).lines) {
-      EXPECT_FALSE(line.overflows);
-      EXPECT_LE(line.width, minimum + kTolerance);
+    std::vector<Item> items = random_items(rng, length(rng));
+    if (iteration % 2 == 1) {
+      sprinkle_policies(rng, items);  // span 相当の範囲にランダムなポリシーを振る
+    }
+    for (const Wrap wrap : {Wrap::Normal, Wrap::BreakWord, Wrap::Anywhere}) {
+      Config config;
+      config.wrap = wrap;
+      const LineBreaker breaker(config);
+      const float minimum = breaker.min_content_width(items);
+      SCOPED_TRACE("iteration " + std::to_string(iteration) + " wrap " +
+                   std::to_string(static_cast<int>(wrap)) + " min " + std::to_string(minimum));
+      EXPECT_GE(minimum, 0.0F);
+      for (const Line& line : breaker.break_lines(items, minimum).lines) {
+        EXPECT_FALSE(line.overflows);
+        EXPECT_LE(line.width, minimum + kTolerance);
+      }
     }
   }
 }
@@ -332,7 +346,7 @@ PairedText random_paired_text(std::mt19937& rng, std::size_t tokens) {
 }
 
 TEST(LineBreakProperty, BreakAnywhereKeepsInseparablePairsThatFit) {
-  // 緊急分割（break_anywhere）でも、ペアが 1 行に収まる幅なら途中では割らない。
+  // 緊急分割でも、ペアが 1 行に収まる幅なら途中では割らない。
   // 出典: JIS X 4051 / JLREQ 3.1.1 分離禁則。ペアが収まらない幅で割れるのは想定内。
   std::mt19937 rng = seeded_rng(20260923);
   std::uniform_int_distribution<std::size_t> tokens(1, 20);
@@ -347,7 +361,7 @@ TEST(LineBreakProperty, BreakAnywhereKeepsInseparablePairsThatFit) {
         Config config;
         config.strictness = strictness;
         config.overflow = overflow;
-        config.break_anywhere = true;
+        config.wrap = Wrap::Anywhere;
         const Breaks breaks = LineBreaker(config).break_lines(text.items, available);
         SCOPED_TRACE("iteration " + std::to_string(iteration) + " width " +
                      std::to_string(available) + " strictness " +
@@ -394,7 +408,7 @@ TEST(LineBreakProperty, BreakAnywhereBreaksLineStartRuleOnlyAsLastResort) {
     for (const Strictness strictness : {Strictness::Strict, Strictness::Normal}) {
       Config config;
       config.strictness = strictness;
-      config.break_anywhere = true;
+      config.wrap = Wrap::Anywhere;
       const LineBreaker breaker(config);
       const Breaks breaks = breaker.break_lines(items, available);
       const std::vector<bool> opportunities = breaker.break_opportunities(items);

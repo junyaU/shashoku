@@ -312,13 +312,18 @@ def parse_box_dump(dump, font_infos):
         line_baseline = line["baseline"]
         items, ruby_items = [], []
         for frag in line["fragments"]:
-            if frag.get("type") == "image":
+            kind = frag.get("type")
+            if kind == "image":
                 rect = frag["rect"]
                 items.append({
                     "kind": "image", "text": "", "ruby": False,
                     "inline_start": rect[0], "inline_end": rect[0] + rect[2],
                     "block_start": rect[1], "block_end": rect[1] + rect[3],
                 })
+                continue
+            if kind != "text":
+                # background（インライン背景の箱）など、文字を持たない断片。
+                # 中身は他の断片から出るので、4 つの判定では見ない。
                 continue
             is_ruby = frag["baseline"] < line_baseline - 0.01
             size = frag["font_size"]
@@ -681,6 +686,11 @@ document.fonts.ready.then(function () {
     }
 
 
+# ウィンドウの上限。ケース 20（padding: 1e38em）では Chrome が 2^25 px で飽和させるので、
+# その高さを素直に渡すと chrome.exe が起動に失敗する（exit 8）。
+MAX_WINDOW = 4000
+
+
 def window_size(width, height):
     """chrome.exe に渡すウィンドウの大きさ。
 
@@ -688,7 +698,8 @@ def window_size(width, height):
     描かれないことがある。紙面は CSS 側（`#shk-root`）で決めているので、ウィンドウは
     常に大きめにして、スクリーンショットは後から切り出す。
     """
-    return max(int(width) + 60, 560), max(int(height) + 200, 400)
+    return (min(max(int(width) + 60, 560), MAX_WINDOW),
+            min(max(int(height) + 200, 400), MAX_WINDOW))
 
 
 def chrome_args(chrome, profile_dir, width, height):
@@ -879,7 +890,8 @@ def main():
     ctx.shashoku = args.shashoku
     ctx.chrome = args.chrome
     ctx.out = args.out
-    ctx.images = {"box": image_path}
+    # examples/og_card.html は `icon` という名前で引くので同じ画像を両方の名前で渡す。
+    ctx.images = {"box": image_path, "icon": image_path}
     # **ユーザーの普段の Chrome のプロファイルには触らない。** 実行ごとに使い捨ての
     # ディレクトリを作り、終わったら消す（前の実行が残したロックを引きずらないよう
     # プロセス ID を付ける）。Windows 側には何も置かない。
@@ -1002,7 +1014,7 @@ def main():
         # 入る高さで撮り直す（並べたときの左上の範囲は shashoku の PNG と同じまま）。
         chrome_root = chrome_raw.get("root_rect", {})
         chrome_h = chrome_root.get("inline_end" if chrome_raw["vertical"] else "block_end", 0)
-        shot_h = max(png_h, int(chrome_h) + 1)
+        shot_h = min(max(png_h, int(chrome_h) + 1), MAX_WINDOW)
         ok, why = screenshot(ctx.chrome, page, ctx.profile, png_w, shot_h, shot)
         if not ok:
             entry["errors"].append("chrome: スクリーンショットが書かれなかった（%s）" % why)

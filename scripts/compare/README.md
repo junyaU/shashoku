@@ -7,6 +7,9 @@ shashoku と Chrome の組版を並べて、**機能同士の組み合わせで�
 Chrome は正解ではなく、差を見つけるための第 2 の意見として使う。差の読み方と結果は
 [docs/chrome_compare.md](../../docs/chrome_compare.md)。
 
+ケースは [cases/cases.json](cases/cases.json) の 25 件。1〜21 が「機能 × 機能」の
+組み合わせ（#15 のコメント）、22〜25 が `examples/`（= ゴールデンの入力）。
+
 ## 走らせ方
 
 ```bash

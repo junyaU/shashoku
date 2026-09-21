@@ -53,11 +53,11 @@
     },
     {
       "name": "dist",
-      "displayName": "配布用（Release + CLI の完全静的リンク + 既定フォントの埋め込み）",
+      "displayName": "配布用（Release + C++ ランタイムの静的リンク + 既定フォントの埋め込み）",
       "inherits": ["base", "clang-libcxx"],
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "SHASHOKU_STATIC_CLI": "ON",
+        "SHASHOKU_STATIC_RUNTIME": "ON",
         "SHASHOKU_EMBED_DEFAULT_FONT": "ON"
       }
     },

@@ -1,8 +1,12 @@
 name: Release
 
 # `v*` のタグを push したときだけ走る（#20）。ここで作るものが配布物のすべて:
-# linux-x86_64 の実行ファイル 1 つ（完全静的リンク + 既定フォントの埋め込み）と、
+# linux-x86_64 の実行ファイル 1 つ（C++ ランタイムを静的リンク + 既定フォントの埋め込み。
+# glibc は動的なので **glibc 2.35 以降 = Ubuntu 22.04 以降**が前提。A-new-2）と、
 # サンプル・README・ライセンスを入れた tar.gz、その SHA256。
+#
+# **作るのはドラフトのリリース**。公開はユーザーが GitHub の Releases の画面で
+# "Publish release" を押して行う（タグを push しただけでは公開されない）。
 on:
   push:
     tags: ['v*']
@@ -38,14 +42,18 @@ jobs:
       - name: Test
         run: ctest --preset dist
 
-      - name: Check that the executable is standalone
+      # 動的に残ってよいのは glibc（libc / libm）だけ。libc++ / libc++abi / libunwind /
+      # libgcc_s が残っていたら、素の Ubuntu では起動できない（A-new-2）。
+      - name: Check the dynamic dependencies
         run: |
           set -eu
           bin=build/dist/tools/shashoku/shashoku
           file "$bin"
-          if readelf -d "$bin" | grep -q NEEDED; then
-            echo "::error::動的依存が残っています（-static が効いていません）"
-            readelf -d "$bin"
+          readelf -d "$bin" | grep NEEDED || true
+          unexpected=$(readelf -d "$bin" | sed -n 's/.*NEEDED.*\[\(.*\)\].*/\1/p' \
+            | grep -v -E '^(libc\.so\.6|libm\.so\.6|ld-linux-x86-64\.so\.2)$' || true)
+          if [ -n "$unexpected" ]; then
+            echo "::error::glibc 以外の動的依存が残っています: $unexpected"
             exit 1
           fi
           "$bin" --version
@@ -103,7 +111,11 @@ jobs:
             echo '```'
             echo
             echo '実行ファイルは 1 つだけで、依存ライブラリも既定フォント（Noto Sans JP Regular / Bold）も'
-            echo '中に入っています（linux-x86_64・完全静的リンク）。`--font` を書けばそちらが優先されます。'
+            echo '中に入っています。`--font` を書けばそちらが優先されます。'
+            echo
+            echo '**対応環境: linux-x86_64 / glibc 2.35 以降**（Ubuntu 22.04 以降、Debian 12 以降など）。'
+            echo 'C++ ランタイムは静的リンク済みで、動的に要るのは libc と libm だけです。'
+            echo 'musl の環境（Alpine など）では動きません。'
             echo
             echo '### 版'
             echo
@@ -121,11 +133,16 @@ jobs:
           } > release_notes.md
           cat release_notes.md
 
-      - name: Create the release
+      # **ドラフト**として作る。公開はユーザーが GitHub の Releases の画面で
+      # 中身を確かめてから "Publish release" を押す（#20 の「決めること」5 番）。
+      - name: Create the draft release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$GITHUB_REF_NAME" \
+            --draft \
             --title "shashoku $GITHUB_REF_NAME" \
             --notes-file release_notes.md \
             "$ARCHIVE_DIR.tar.gz" "$ARCHIVE_DIR.tar.gz.sha256"
+          echo "ドラフトを作りました。GitHub の Releases で中身を確かめ、"
+          echo "\"Publish release\" を押すと公開されます。"

@@ -40,10 +40,13 @@ endif()
 set_source_files_properties(embedded.cpp PROPERTIES
   OBJECT_DEPENDS "${shashoku_cli_embedded}")
 
-# 配布用の完全静的リンク（A-new-2）。libc++ / libc++abi / libunwind / glibc まで取り込み、
-# 素の Ubuntu に何も入れずに動くようにする。コンパイルフラグは変えないので絵は変わらない。
-if(SHASHOKU_STATIC_CLI)
-  target_link_options(shashoku_cli PRIVATE -static)
+# 配布用のリンク（A-new-2）。C++ ランタイム（libc++ / libc++abi / libunwind / libgcc）だけを
+# 静的に取り込み、**glibc は動的のまま**にする。素の Ubuntu に無いのは前者なのでこれで足りる。
+# 完全静的（-static）にすると glibc（LGPL-2.1）を実行ファイルに取り込むことになり、
+# 再リンク手段の提供という条件に触れうるので採らない。
+# 変えるのはリンク方法だけで、コンパイルフラグ（-ffp-contract=off 等）は触らない = 絵は変わらない。
+if(SHASHOKU_STATIC_RUNTIME)
+  target_link_options(shashoku_cli PRIVATE -static-libstdc++ -static-libgcc)
 endif()
 
 if(SHASHOKU_BUILD_TESTS)

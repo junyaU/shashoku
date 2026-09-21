@@ -13,8 +13,9 @@ option(SHASHOKU_BUILD_TOOLS "CLI（tools/shashoku）をビルドする" ${PROJEC
 # コンパイル結果（= 出力 PNG）は変えない。
 option(SHASHOKU_EMBED_DEFAULT_FONT
        "CLI に既定フォント（Noto Sans JP Regular / Bold）を埋め込む" ON)
-option(SHASHOKU_STATIC_CLI
-       "CLI を完全静的リンク（-static）する。素の Linux で動く配布物を作るため" OFF)
+option(SHASHOKU_STATIC_RUNTIME
+       "CLI に C++ ランタイム（libc++ / libc++abi / libunwind / libgcc）を静的リンクする。\
+glibc は動的のまま（A-new-2）" OFF)
 option(SHASHOKU_WARNINGS_AS_ERRORS "警告をエラーとして扱う" OFF)
 option(SHASHOKU_SANITIZE "ASan + UBSan を有効にする（依存ライブラリにも適用）" OFF)
 option(SHASHOKU_SANITIZE_THREAD "TSan を有効にする（依存ライブラリにも適用）" OFF)

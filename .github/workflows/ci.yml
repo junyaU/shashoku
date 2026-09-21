@@ -82,7 +82,7 @@ jobs:
   # 配布物（#20）と同じ設定で作ったバイナリを検査するジョブ。release.yml は
   # タグを push したときしか走らないので、壊れたことに気づくのはここ。
   dist:
-    name: 配布と同じ設定（静的リンク + 既定フォント）
+    name: 配布と同じ設定（C++ ランタイムの静的リンク + 既定フォント）
     runs-on: ubuntu-24.04
     env:
       CMAKE_C_COMPILER_LAUNCHER: ccache
@@ -116,14 +116,18 @@ jobs:
       # ゴールデン 16 枚と、examples の「そのまま貼れる 1 行」5 本（Cli.examples）を含む全件。
       - name: Test
         run: ctest --preset dist
-      - name: Check that the executable is standalone
+      # 動的に残ってよいのは glibc（libc / libm）だけ。libc++ / libc++abi / libunwind /
+      # libgcc_s が残っていたら、素の Ubuntu では起動できない（A-new-2）。
+      - name: Check the dynamic dependencies
         run: |
           set -eu
           bin=build/dist/tools/shashoku/shashoku
           file "$bin"
-          if readelf -d "$bin" | grep -q NEEDED; then
-            echo "::error::動的依存が残っています（-static が効いていません）"
-            readelf -d "$bin"
+          readelf -d "$bin" | grep NEEDED || true
+          unexpected=$(readelf -d "$bin" | sed -n 's/.*NEEDED.*\[\(.*\)\].*/\1/p' \
+            | grep -v -E '^(libc\.so\.6|libm\.so\.6|ld-linux-x86-64\.so\.2)$' || true)
+          if [ -n "$unexpected" ]; then
+            echo "::error::glibc 以外の動的依存が残っています: $unexpected"
             exit 1
           fi
       # ビルドツールを何も入れていない素の Ubuntu で、置いたその場で動くこと。

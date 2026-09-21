@@ -450,6 +450,15 @@ Result<float> output_height(const layout::BoxTree& tree, const RenderOptions& op
     return fail(ErrorKind::InvalidOption, "viewport height is required in vertical writing mode");
   }
   const float height = std::ceil(tree.content_block_size());
+  // 非有限な内容高さは③ layout の出口（A36）が位置つきで止めるので、ここには届かない。
+  // 届いたら layout の不変条件が破れている = shashoku 側のバグなので、
+  // 「高さが 0」と言い切らずに Internal で報告する（issue #19 のメッセージの誤り 3 件目）。
+  if (!std::isfinite(height)) {
+    return fail(ErrorKind::Internal,
+                std::format("the laid out content height is {}, which is not a finite number "
+                            "(layout should have rejected it; please report this input)",
+                            height));
+  }
   if (!(height > 0)) {
     return fail(ErrorKind::InvalidOption,
                 "nothing to render: the content height is 0 and no viewport height was given");

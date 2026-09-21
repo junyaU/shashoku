@@ -19,6 +19,19 @@
 // 物理座標への変換は paint が 1 回だけ行う（ARCHITECTURE.md §3.9）。
 // グリフの x_offset / y_offset だけは例外で、text_measurer.hpp の座標の約束のまま
 // **物理 px** で運ぶ（シェーピングが返した値をそのまま渡すため）。
+//
+// **不変条件（ARCHITECTURE.md A36）**: ここに入っている数値 —— 矩形の位置・大きさ・端、
+// 枠線の幅と半径、padding、ベースライン、断片の font-size と inline 範囲、グリフの位置と
+// offset —— は、**すべて有限**で、絶対値が `Options::max_geometry_px`（既定は
+// `RenderLimits::length_px x dom_nodes` = 2^24 x 20,000）**以内**である。
+// `layout()` が出口で `check_geometry()` を通して保証し、破れていたら `LimitExceeded`
+// （その箱の位置つき）で失敗する。後段（paint / raster）はこの前提に寄りかかってよい。
+//
+// なぜ「長さの上限」より緩いか: 座標は長さの足し算なので、`length_px` をそのまま使うと
+// 高さ 1000 px のブロックを 2 万個積んだだけで落ちてしまう。一方で「有限であること」だけでは
+// `width: 1e38%` @200（= 2e38）が通ってしまい、**ビューポート幅によってエラーになったり
+// ならなかったり**する。`length_px x dom_nodes` なら、②style を通った文書は必ず収まり、
+// 収まらないのは `%` や flex の比のように入力の長さに比例しない計算が壊れたときだけになる。
 namespace shashoku::layout {
 
 using WritingMode = style::WritingMode;

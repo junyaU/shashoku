@@ -124,6 +124,8 @@ void write_line(JsonWriter& writer, const LineBox& line) {
 void write_block(JsonWriter& writer, const BlockBox& box) {
   writer.begin_object();
   writer.key("tag").value(box.tag);
+  // この箱を生んだ要素の位置（A36）。出口の検査のエラーがどこを指すかを目で追えるようにする
+  writer.key("location").value(location_text(box.location));
   writer.key("rect");
   write_rect(writer, box.rect);
   write_decoration(writer, box.decoration);

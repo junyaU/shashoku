@@ -54,6 +54,11 @@ static_assert(RenderLimits{}.style_rules == style::kMaxStyleRules,
               "RenderLimits::style_rules と style::kMaxStyleRules の既定値が食い違っている");
 static_assert(RenderLimits{}.length_px == style::kMaxLengthPx,
               "RenderLimits::length_px と style::kMaxLengthPx の既定値が食い違っている");
+// layout の出口の上限（A36）は「1 要素あたりの長さ x 要素数」で導く。導出の式が 2 か所で
+// 別々に動かないよう、既定値の一致をここで確かめる。
+static_assert(RenderLimits{}.length_px * static_cast<float>(RenderLimits{}.dom_nodes) ==
+                  layout::kMaxGeometryPx,
+              "layout::kMaxGeometryPx が RenderLimits::length_px x dom_nodes と食い違っている");
 static_assert(RenderLimits{}.image_pixels == png::kMaxPixels,
               "RenderLimits::image_pixels と png::kMaxPixels の既定値が食い違っている");
 static_assert(RenderLimits{}.device_pixels == raster::kMaxDevicePixels,
@@ -96,7 +101,7 @@ linebreak::Config to_internal(const LineBreakConfig& config) {
   linebreak::Config out;
   out.strictness = to_internal(config.strictness);
   out.overflow = to_internal(config.overflow);
-  // break_anywhere は CSS の overflow-wrap から layout が決める（ここでは既定のまま）。
+  // wrap（A35）は CSS の overflow-wrap から layout がアイテムごとに決める（ここでは既定のまま）。
   out.collapse_punctuation_spacing = config.collapse_punctuation_spacing;
   out.trim_line_end = config.trim_line_end;
   out.trim_line_start = config.trim_line_start;
@@ -414,6 +419,11 @@ Result<layout::BoxTree> run_layout(const style::StyledNode& styled, const Render
     layout_options.viewport_height = static_cast<float>(*options.viewport_height);
   }
   layout_options.line_break = to_internal(options.line_break);
+  // 出口の検査の上限（A36）。「1 要素あたりの長さ x 要素数」で導くので、この 2 つの上限を
+  // 守った文書では絶対に発動しない。どちらかを極端に緩めて積が inf になったら、
+  // 出口の検査は「有限であること」だけを見る（それでも黙って消える事故は止まる）。
+  layout_options.max_geometry_px =
+      options.limits.length_px * static_cast<float>(options.limits.dom_nodes);
 
   // 名前 → 画像（A12）。追加順の線形探索: 決定的で、数十枚までなら十分速い。
   const layout::ImageLookup lookup =

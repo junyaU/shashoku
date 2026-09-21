@@ -108,6 +108,7 @@ Result<BlockBox> LayoutEngine::layout_image_box(const BlockInput& input, const B
 
   BlockBox box;
   box.tag = input.tag;
+  box.location = input.location;
   box.rect = border_box;
   box.children = std::vector<LineBox>{std::move(line)};
   return box;

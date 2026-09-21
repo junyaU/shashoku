@@ -167,6 +167,7 @@ Result<BlockBox> LayoutEngine::layout_block(const BlockInput& input, const BoxSi
 
   BlockBox box;
   box.tag = input.tag;
+  box.location = input.location;
   if (!input.anonymous) {
     box.decoration = BoxDecoration{.background_color = input.style->background_color,
                                    .border_width = sizing.border,

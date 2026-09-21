@@ -139,6 +139,11 @@ struct LineBox {
 struct BlockBox {
   // デバッグ用のタグ名。無名ブロックは "#anonymous"、合成ルートは "#root"。
   std::string tag;
+  // この箱を生んだ要素の入力位置（`TextFragment::location` と同じ考え方。A31 / A36）。
+  // 無名ブロックは包んだインラインの連続の先頭、合成ルートは入力の先頭。
+  // **paint は読まない**ので絵には一切影響しない。出口の検査（A36）が「どの要素の座標が
+  // 壊れたか」を報告するのに使い、`dump_json()` が出す。
+  SourceLocation location;
   LogicalRect rect;  // border-box
   BoxDecoration decoration;
   // content 領域を復元するための padding（border-box → content の差分。border は decoration）。

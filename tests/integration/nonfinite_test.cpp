@@ -347,7 +347,8 @@ TEST(NonFiniteLengths, PercentAndFlexRatioAreStoppedAtTheLayoutExit) {
     SCOPED_TRACE(html);
     // style は通る（ここでは有限）
     const auto style_dump = dump(html, FontSet{}, ImageSet{}, options, DumpStage::Style);
-    ASSERT_TRUE(style_dump.has_value()) << (style_dump ? std::string{} : to_string(style_dump.error()));
+    ASSERT_TRUE(style_dump.has_value())
+        << (style_dump ? std::string{} : to_string(style_dump.error()));
     EXPECT_EQ(style_dump->find("null"), std::string::npos);
     // layout の出口で止まる
     const RenderError error = render_failure(html, options);
@@ -376,8 +377,8 @@ TEST(NonFiniteLengths, HugePercentIsTheSameErrorAtEveryViewport) {
 TEST(NonFiniteLengths, AutoHeightNeverBlamesAZeroContentHeight) {
   // `--height` を省く（内容の高さに追従させる）
   const RenderOptions options = viewport(300);
-  for (const std::string_view html : {R"(<div style="width:1e38%">あ</div>)",
-                                      R"(<div style="padding:1e38em">あ</div>)"}) {
+  for (const std::string_view html :
+       {R"(<div style="width:1e38%">あ</div>)", R"(<div style="padding:1e38em">あ</div>)"}) {
     SCOPED_TRACE(html);
     const RenderError error = render_failure(html, options);
     EXPECT_EQ(error.kind, ErrorKind::LimitExceeded) << error.message;
@@ -409,8 +410,8 @@ TEST(NonFiniteLengths, TallDocumentsStillRender) {
 
 // box ダンプに BlockBox の入力位置が出る（A36。paint は読まないので絵は変わらない）。
 TEST(NonFiniteLengths, BoxDumpCarriesTheBlockLocation) {
-  const auto box = dump("<div>あ</div>", japanese_fonts(), ImageSet{}, viewport(300),
-                        DumpStage::Box);
+  const auto box =
+      dump("<div>あ</div>", japanese_fonts(), ImageSet{}, viewport(300), DumpStage::Box);
   ASSERT_TRUE(box.has_value()) << (box ? std::string{} : to_string(box.error()));
   EXPECT_NE(box->find(R"("location": "1:1")"), std::string::npos) << *box;
 }

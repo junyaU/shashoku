@@ -39,9 +39,9 @@ Error layout_failure(const style::StyledNode& root, const Options& options,
 // **どちらも同じ種類のエラー**でなければならない（issue #19 の受け入れ条件）。
 TEST(GeometryLimit, HugePercentFailsTheSameWayAtEveryViewport) {
   FakeMeasurer measurer;
-  const style::StyledNode root =
-      build({at(block({text("あ")}, [](style::ComputedStyle& s) { s.width = Dimension::percent(1e38F); }),
-                7)});
+  const style::StyledNode root = build(
+      {at(block({text("あ")}, [](style::ComputedStyle& s) { s.width = Dimension::percent(1e38F); }),
+          7)});
   for (const float width : {200.0F, 1000.0F, 16384.0F}) {
     SCOPED_TRACE(width);
     const Error error = layout_failure(root, make_options(width), measurer);
@@ -59,14 +59,14 @@ TEST(GeometryLimit, HugePercentFailsTheSameWayAtEveryViewport) {
 // 「上限以内か」の判定 1 つで一緒に捕まる。
 TEST(GeometryLimit, FlexRatioNanIsRejected) {
   FakeMeasurer measurer;
-  const style::StyledNode root = build({flex(
-      {at(block({text("あ")},
-                [](style::ComputedStyle& s) {
-                  s.flex_shrink = 1e38F;
-                  s.width = Dimension::px(1e7F);
-                }),
-          20)},
-      [](style::ComputedStyle& s) { s.width = Dimension::px(10); })});
+  const style::StyledNode root =
+      build({flex({at(block({text("あ")},
+                            [](style::ComputedStyle& s) {
+                              s.flex_shrink = 1e38F;
+                              s.width = Dimension::px(1e7F);
+                            }),
+                      20)},
+                  [](style::ComputedStyle& s) { s.width = Dimension::px(10); })});
   const Error error = layout_failure(root, make_options(1000), measurer);
   EXPECT_EQ(error.kind, ErrorKind::LimitExceeded) << error.message;
   ASSERT_TRUE(error.location.has_value()) << error.message;
@@ -124,11 +124,10 @@ TEST(GeometryLimit, TallDocumentsStillLayOut) {
 
 TEST(GeometryLimit, OrdinaryDocumentsAreUnaffected) {
   FakeMeasurer measurer;
-  const style::StyledNode root = build({block(
-      {text("日本語の組版")}, [](style::ComputedStyle& s) {
-        s.padding = Edges<float>{8, 8, 8, 8};
-        s.width = Dimension::px(300);
-      })});
+  const style::StyledNode root = build({block({text("日本語の組版")}, [](style::ComputedStyle& s) {
+    s.padding = Edges<float>{8, 8, 8, 8};
+    s.width = Dimension::px(300);
+  })});
   const Result<BoxTree> tree = run_layout(root, make_options(600), measurer);
   ASSERT_TRUE(tree.has_value()) << (tree ? std::string{} : tree.error().message);
 }

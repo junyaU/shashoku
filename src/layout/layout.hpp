@@ -30,9 +30,9 @@ namespace shashoku::layout {
 inline constexpr float kMaxGeometryPx = 3.3554432e11F;  // 2^24 x 20,000
 
 struct Options {
-  float viewport_width = 1200;           // 物理 px。0 以下・非有限は InvalidOption
-  std::optional<float> viewport_height;  // 物理 px。縦書きでは必須（第 3 段）
-  linebreak::Config line_break;          // overflow ポリシー等
+  float viewport_width = 1200;             // 物理 px。0 以下・非有限は InvalidOption
+  std::optional<float> viewport_height;    // 物理 px。縦書きでは必須（第 3 段）
+  linebreak::Config line_break;            // overflow ポリシー等
   float max_geometry_px = kMaxGeometryPx;  // 出口の検査の上限（A36）
 };
 

@@ -1,8 +1,11 @@
 #include "layout/check_geometry.hpp"
 
+#include <array>
 #include <cmath>
+#include <cstddef>
 #include <format>
 #include <string_view>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -20,8 +23,8 @@ bool within(float value, float max_px) { return value >= -max_px && value <= max
 // 検査の文脈。違反したときだけ文字列を作る（走査は要素数に比例して回る）。
 struct Scan {
   float max_px = 0;
-  SourceLocation location;   // いま見ている箱・断片の位置
-  std::string_view tag;      // 箱のタグ（"#root" / "div" / "#anonymous"）
+  SourceLocation location;  // いま見ている箱・断片の位置
+  std::string_view tag;     // 箱のタグ（"#root" / "div" / "#anonymous"）
 };
 
 std::unexpected<Error> violation(const Scan& scan, std::string_view what, float value) {
@@ -38,12 +41,12 @@ std::unexpected<Error> violation(const Scan& scan, std::string_view what, float 
 
 // 矩形 1 つ（位置 2 つ + 大きさ 2 つ）。名前は box ダンプの並びに合わせる。
 Result<void> check_rect(const Scan& scan, std::string_view name, const LogicalRect& rect) {
-  const std::pair<std::string_view, float> fields[] = {
+  const std::array<std::pair<std::string_view, float>, 4> fields = {{
       {"inline_start", rect.inline_start},
       {"block_start", rect.block_start},
       {"inline_size", rect.inline_size},
       {"block_size", rect.block_size},
-  };
+  }};
   for (const auto& [field, value] : fields) {
     if (!within(value, scan.max_px)) {
       return violation(scan, std::format("{}.{}", name, field), value);
@@ -150,12 +153,12 @@ Result<void> check_block_tree(const BlockBox& root, float max_px) {
       return ok;
     }
     const LogicalEdges<float>& padding = box.padding;
-    const std::pair<std::string_view, float> edges[] = {
+    const std::array<std::pair<std::string_view, float>, 4> edges = {{
         {"padding.inline_start", padding.inline_start},
         {"padding.inline_end", padding.inline_end},
         {"padding.block_start", padding.block_start},
         {"padding.block_end", padding.block_end},
-    };
+    }};
     for (const auto& [field, value] : edges) {
       if (!within(value, max_px)) {
         return violation(scan, field, value);

@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstddef>
 #include <format>
+#include <string>
 #include <string_view>
 #include <utility>
 #include <variant>
@@ -28,14 +29,18 @@ struct Scan {
 };
 
 std::unexpected<Error> violation(const Scan& scan, std::string_view what, float value) {
-  const std::string_view reason = std::isfinite(value)
-                                      ? "which exceeds the limit"
-                                      : "which a float cannot represent (the limit";
+  // 「どの上限を・いくつに対して・いくつだったか」を出す（A25 の流儀）。上限は
+  // `length_px x dom_nodes` で導いた値なので、緩め方が分かるようにその式も書く。
+  const std::string detail =
+      std::isfinite(value)
+          ? std::format("{} px, which exceeds the limit of {} px", value, scan.max_px)
+          : std::format("{}, which a float cannot represent; the limit is {} px", value,
+                        scan.max_px);
   return fail(ErrorKind::LimitExceeded,
-              std::format("the laid out `{}` has {} = {} px, {} of {} px; `%` and flex factors "
-                          "are resolved here, so a value that was finite in the computed style "
-                          "can still blow up (raise RenderLimits::length_px to allow it)",
-                          scan.tag, what, value, reason, scan.max_px),
+              std::format("the laid out `{}` has {} = {} (RenderLimits::length_px x dom_nodes); "
+                          "`%` and flex factors are resolved in layout, so a value that was "
+                          "finite in the computed style can still blow up here",
+                          scan.tag, what, detail),
               scan.location);
 }
 

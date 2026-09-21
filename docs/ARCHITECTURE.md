@@ -607,6 +607,50 @@ PNG エンコードで、そこは #7 の対象外**。
   後者は `tsan` プリセット（`SHASHOKU_SANITIZE_THREAD`）でも回す。**普段の完了条件には入れない**:
   依存ライブラリまで再ビルドになるので `dev` / `asan` と並べると重い
 
+**A-new-1. 既定フォントは CLI 層だけの機能。ライブラリはバイト列しか受け取らない。**（issue #20）
+試用版の目的は「準備なしで 1 枚出せる」ことなので、`--font` を省けるようにする必要がある。
+ただし `render()` / `dump()` にフォントの探索経路を持たせると、**同じ HTML から機種ごとに違う PNG**
+が出うる（DESIGN.md §3-5 の純粋関数、§4「外部リソースを取りに行かない」に正面から反する）。
+そこで既定フォントは `tools/shashoku/` に閉じ込め、公開 API（`include/shashoku/`）も
+`render()` / `dump()` の署名も変えない（A12: 画像とフォントはバイト列で渡す）。
+
+- **持ち方はバイナリへの埋め込み**（Noto Sans JP Regular + Bold、約 11.2 MiB）。
+  `.incbin` で `.rodata` に置く（C の配列初期化子に展開すると 50 MB 超のソースになる）。
+  実行ファイルの隣に置く方式は「バイナリだけコピーされる」と分かりにくく失敗する。
+  **システムフォントの探索も実行時のダウンロードもしない**（上と同じ理由）
+- **サブセット化はしない**。「任意の日本語文字列を流し込んでも組版が壊れない」が製品の約束
+  （README 冒頭）なので、字種を削るとその約束を破る
+- **`--font` を書けばそちらが優先**。既定フォントは黙って足されない（欧文フォントだけを
+  渡したら和文は豆腐になり、警告が出る = 利用者が見ている集合と実際の集合が食い違わない）
+- **順序は Regular → Bold**。`--font <Regular> --font <Bold>` と書いたときと
+  **バイト単位で同じ PNG** が出ることを `Cli.default_font` が検査する（og_card で
+  `font-weight: 700` の選び方まで見る）。この 2 本は同じ family で太さが違うだけなので
+  順序を入れ替えても結果は変わらないが、約束として順序を固定しておく
+- **版の固定**: 埋め込むフォントは `cmake/TestAssets.cmake` がコミット SHA と SHA256 で
+  固定して取得する（テスト用フォントと同じ実体。`SHASHOKU_BUILD_TESTS=OFF` でも和文 2 本は取る）。
+  **フォントの版が変われば同じ HTML から違う PNG が出る**ので、`shashoku --version` が
+  shashoku・zlib・FreeType・HarfBuzz・既定フォントの版を出し、README の「保証しないもの」にも書いた（A32）
+- 埋め込みは `SHASHOKU_EMBED_DEFAULT_FONT`（既定 ON）で切れる。OFF のときは `--font` が必須に戻る
+
+**A-new-2. 配布物は完全静的リンク（`-static`）。リンク方法は出力を変えない。**（issue #20）
+release ビルドの動的依存は `libc++.so.1` / `libc++abi.so.1` / `libunwind.so.1` / `libm` /
+`libgcc_s` / `libc` で、**前 3 つは素の Ubuntu に無い**。`-static-libstdc++ -static-libgcc` でも
+glibc の版が前提に残り（ビルド機より新しい glibc では動かない）、ランナーの選択に縛られる。
+`-static` なら NEEDED が消えてその問題ごと無くなる。shashoku は dlopen / NSS / ロケールを
+使わないので実害は無い。musl は libm が別物になるので採らない（画素の検査をやり直すことになる）。
+
+- **`cmake/CompilerOptions.cmake`（`-ffp-contract=off` など決定性のフラグ）は変えない。**
+  変えるのは CLI のリンク方法だけで、浮動小数点の丸めには触れない。実測でも、静的と動的の
+  CLI で examples 5 本 + 禁則 3 方式の PNG がバイト単位で一致した
+- 保証範囲（A32）は「同じ版・同じ依存」で語っているので、**配布するのと同じ設定でビルドした
+  バイナリでゴールデン 16 枚を通す**。`dist` プリセット（Release + `SHASHOKU_STATIC_CLI`）を
+  用意し、CI の `dist` ジョブと release.yml の両方で `ctest --preset dist` を回す
+- 対応環境は **linux-x86_64 だけ**。決定性を CI で検査しているのが x86-64 Linux の 2 つの
+  ツールチェーンだけで、aarch64 では**ゴールデン 16 枚を検査していない**（= 絵を保証しない
+  成果物になる）。macOS / Windows / aarch64 は Phase 9c
+- サイズ（strip 前）: 動的・フォント無し 3.1 MiB / 静的・フォント無し 5.3 MiB /
+  静的・フォント埋め込み 14.0 MiB（strip 後 13.2 MiB）
+
 ---
 
 ## 2. モジュールと依存
@@ -840,7 +884,11 @@ class FreeTypeGlyphSource final : public raster::GlyphSource { /* FontStore を�
   「全部の字が消えた PNG」になる前に一番早い段で落とす（A19）
 - テスト用フォント: リポジトリに置かず、CMake の configure 時に版（コミット SHA）とハッシュを
   固定してダウンロードする（`cmake/TestAssets.cmake`）。Noto Sans JP（OFL）+ 欧文フォント 1 つ
-  （フォールバックのテスト用）。パスはコンパイル定義でテストに渡す
+  （フォールバックのテスト用）。パスはコンパイル定義でテストに渡す。
+  和文 2 本は **CLI に埋め込む既定フォントを兼ねる**ので `SHASHOKU_BUILD_TESTS=OFF` でも取得する
+  （A-new-1。欧文 1 本はテスト専用のまま）
+- エラーメッセージは英語で書く（他のモジュールにそろえる）。`tests/text/font_store_test.cpp` の
+  `ErrorMessagesAreAscii` が ASCII 以外の混入を見張る
 - 受け入れ（DESIGN.md Phase 2）: 「こんにちは、世界のみんな。ABC😀」を 1 行でシェーピングでき、
   😀 だけが豆腐として報告される
 
@@ -1011,11 +1059,25 @@ HTML を読む前に返す**（壊れた HTML でも `InvalidOption` が先に�
 `src/api/out_of_memory.hpp` だけで、`render()` / `dump()` / `prepare()` の全オーバーロードが使う）。
 CLI に上限を変えるフラグは足していない（既定値のまま使う）。
 
-CLI は `tools/shashoku/`: `shashoku input.html --font A.otf [--font B.ttf …] [--image name=path …]
+CLI は `tools/shashoku/`: `shashoku input.html [--font A.otf [--font B.ttf …]] [--image name=path …]
 -o out.png [--width N] [--height N] [--scale S] [--compression 0-9]
 [--overflow oidashi|oikomi|burasage] [--dump-stage dom|style|box|display-list|svg]`。
 エラーは `to_string(RenderError)` を stderr に出して終了コード 1。
 値の範囲の検査は `render()` に任せる（オプションの正は 1 か所。CLI は形だけを見る）。
+
+**CLI 層だけの機能**（A-new-1 / A-new-2。ライブラリには一切漏らさない）:
+
+| | |
+|---|---|
+| 既定フォント | `--font` を省いたら `tools/shashoku/embedded.cpp` が `.incbin` で焼き込んだ Noto Sans JP を Regular → Bold の順に `FontSet` へ入れる。`--font` を書けばそちらだけを使う |
+| `--version` | shashoku（公開 API の `version()`）・zlib / FreeType / HarfBuzz（`cmake/Dependencies.cmake` の版をコンパイル定義で渡す）・既定フォント（コミット SHA） |
+| `--license` | 焼き込んだ `LICENSE` と `THIRD_PARTY_LICENSES`。SIL OFL 1.1 が求める「ライセンス文の同梱」を、バイナリ 1 つでも満たすため |
+| 配布のビルド | `dist` プリセット = Release + `SHASHOKU_STATIC_CLI`（`-static`）+ `SHASHOKU_EMBED_DEFAULT_FONT` |
+
+CLI が zlib / FreeType / HarfBuzz のヘッダを見ることはない（版は文字列で受け取る）。
+検査は `tools/shashoku/cli_test.cmake`（`ctest -R Cli`）。`default_font` が「既定フォントの PNG と
+`--font <同じ OTF>` の PNG がバイト単位で一致すること」を、`examples` が「`examples/*.html` の
+先頭コメントに書いた**そのまま貼れる 1 行**が実際に動くこと」を見る。
 
 ---
 

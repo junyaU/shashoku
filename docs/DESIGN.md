@@ -326,6 +326,15 @@ render(std::string_view html, const LoadedFonts& fonts, const LoadedImages& imag
 - **Phase 7: ルビ**
 - **Phase 8: 縦書き**
 - **Phase 9: 配布**（CLI 整備、ドキュメント、必要なら Node バインディング検討）
+  - **9a: 試用版（#20）** — 「初めて触る人が準備なしで 1 枚作れる」までを先に出す。
+    linux-x86_64 の単体で動く実行ファイル（`-static`）、CLI に埋め込む既定フォント
+    （Noto Sans JP Regular / Bold。**CLI 層だけの機能**で `render()` の署名は変えない。A-new-1）、
+    動くサンプル 5 本、`v*` タグでリリースを作る workflow、試用報告の受け口
+    ✅ 展開して `./shashoku examples/og_card.html --image icon=examples/icon.png -o og.png` が
+    素の Ubuntu 22.04 / 24.04 で通り、既定フォントの PNG が `--font <同じ OTF>` とバイト単位で一致する
+  - **9b: C++ の配布 API** — `install()` / `find_package(shashoku)` / パッケージ設定ファイル。未着手
+  - **9c: その他** — deb・Homebrew・Docker、Node バインディング、macOS / Windows / aarch64 の成果物。
+    aarch64 はゴールデン画像を別に持つ覚悟が要るので、先に決めること（#20 の「決めること」1 番）
 
 ## 10. テスト戦略
 

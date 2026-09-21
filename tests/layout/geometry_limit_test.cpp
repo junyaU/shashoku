@@ -1,4 +1,5 @@
 #include <cstddef>
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -6,6 +7,7 @@
 
 #include "core/result.hpp"
 #include "layout/box_tree.hpp"
+#include "layout/counters.hpp"
 #include "layout/layout.hpp"
 #include "shashoku/error.hpp"
 #include "style/computed_style.hpp"
@@ -130,6 +132,33 @@ TEST(GeometryLimit, OrdinaryDocumentsAreUnaffected) {
   })});
   const Result<BoxTree> tree = run_layout(root, make_options(600), measurer);
   ASSERT_TRUE(tree.has_value()) << (tree ? std::string{} : tree.error().message);
+}
+
+// ---- 計算量（A21: 時間ではなく回数で測る）-------------------------------------------
+
+// 出口の走査は木の大きさに線形（paint の走査 1 回ぶん）。段落の数を 2 倍にしたら
+// 見た数も 2 倍になる（二乗なら 4 倍になって落ちる）。
+TEST(GeometryLimit, ScanIsLinearInTheTreeSize) {
+  const auto work_for = [](std::size_t paragraphs) {
+    FakeMeasurer measurer;
+    std::vector<Tree> children;
+    children.reserve(paragraphs);
+    for (std::size_t i = 0; i < paragraphs; ++i) {
+      children.push_back(block({text("日本語の組版をする")}));
+    }
+    const style::StyledNode root = build(std::move(children));
+    Counters counters;
+    const Result<BoxTree> tree = run_layout(root, make_options(600), measurer, counters);
+    EXPECT_TRUE(tree.has_value());
+    return counters.geometry_nodes;
+  };
+
+  const std::uint64_t small = work_for(100);
+  const std::uint64_t large = work_for(200);
+  EXPECT_GT(small, 0U);
+  // ちょうど 2 倍（ルート 1 個ぶんだけずれる）。余裕を見て 2.1 倍以下
+  EXPECT_LE(large, small * 21 / 10) << small << " -> " << large;
+  EXPECT_GE(large, small * 19 / 10) << small << " -> " << large;
 }
 
 // ---- BlockBox::location（A36）--------------------------------------------------------

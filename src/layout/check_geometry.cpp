@@ -24,8 +24,9 @@ bool within(float value, float max_px) { return value >= -max_px && value <= max
 // 検査の文脈。違反したときだけ文字列を作る（走査は要素数に比例して回る）。
 struct Scan {
   float max_px = 0;
-  SourceLocation location;  // いま見ている箱・断片の位置
-  std::string_view tag;     // 箱のタグ（"#root" / "div" / "#anonymous"）
+  SourceLocation location;       // いま見ている箱・断片の位置
+  std::string_view tag;          // 箱のタグ（"#root" / "div" / "#anonymous"）
+  Counters* counters = nullptr;  // 見た数を足し込む（A21。出力には影響しない）
 };
 
 std::unexpected<Error> violation(const Scan& scan, std::string_view what, float value) {
@@ -82,6 +83,7 @@ Result<void> check_text_fragment(const Scan& block_scan, const TextFragment& fra
   // 断片は自分の位置を持っている（A31）ので、そちらで報告する方が近い。
   Scan scan = block_scan;
   scan.location = fragment.location;
+  ++scan.counters->geometry_nodes;
   if (!within(fragment.font_size, scan.max_px)) {
     return violation(scan, "text.font_size", fragment.font_size);
   }
@@ -95,6 +97,7 @@ Result<void> check_text_fragment(const Scan& block_scan, const TextFragment& fra
     return violation(scan, "text.inline_size", fragment.inline_size);
   }
   for (const PositionedGlyph& glyph : fragment.glyphs) {
+    ++scan.counters->geometry_nodes;
     if (!within(glyph.inline_position, scan.max_px)) {
       return violation(scan, "glyph.inline_position", glyph.inline_position);
     }
@@ -109,6 +112,7 @@ Result<void> check_text_fragment(const Scan& block_scan, const TextFragment& fra
 }
 
 Result<void> check_line(const Scan& scan, const LineBox& line) {
+  ++scan.counters->geometry_nodes;
   if (const Result<void> ok = check_rect(scan, "line", line.rect); !ok) {
     return ok;
   }
@@ -123,6 +127,7 @@ Result<void> check_line(const Scan& scan, const LineBox& line) {
       continue;
     }
     if (const auto* image = std::get_if<ImageFragment>(&fragment)) {
+      ++scan.counters->geometry_nodes;
       if (const Result<void> ok = check_rect(scan, "image", image->rect); !ok) {
         return ok;
       }
@@ -135,6 +140,7 @@ Result<void> check_line(const Scan& scan, const LineBox& line) {
       continue;
     }
     const auto& background = std::get<InlineBackground>(fragment);
+    ++scan.counters->geometry_nodes;
     if (const Result<void> ok = check_rect(scan, "background", background.rect); !ok) {
       return ok;
     }
@@ -144,13 +150,15 @@ Result<void> check_line(const Scan& scan, const LineBox& line) {
 
 // 前順（親 → 子、文書順）に辿る。再帰ではなく明示的なスタックにして、
 // 入れ子の深い文書（nesting_depth = 256）でもスタックを使い切らないようにする。
-Result<void> check_block_tree(const BlockBox& root, float max_px) {
+Result<void> check_block_tree(const BlockBox& root, float max_px, Counters& counters) {
   std::vector<const BlockBox*> stack{&root};
   while (!stack.empty()) {
     const BlockBox& box = *stack.back();
     stack.pop_back();
 
-    const Scan scan{.max_px = max_px, .location = box.location, .tag = box.tag};
+    ++counters.geometry_nodes;
+    const Scan scan{
+        .max_px = max_px, .location = box.location, .tag = box.tag, .counters = &counters};
     if (const Result<void> ok = check_rect(scan, "rect", box.rect); !ok) {
       return ok;
     }
@@ -188,8 +196,8 @@ Result<void> check_block_tree(const BlockBox& root, float max_px) {
 
 }  // namespace
 
-Result<void> check_geometry(const BoxTree& tree, float max_geometry_px) {
-  return check_block_tree(tree.root, max_geometry_px);
+Result<void> check_geometry(const BoxTree& tree, float max_geometry_px, Counters& counters) {
+  return check_block_tree(tree.root, max_geometry_px, counters);
 }
 
 }  // namespace shashoku::layout

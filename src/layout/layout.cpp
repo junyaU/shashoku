@@ -279,8 +279,8 @@ Result<BoxTree> layout_root(const style::StyledNode& root, const Options& option
   const float viewport_inline_size =
       mode == WritingMode::VerticalRl ? *options.viewport_height : options.viewport_width;
   Counters discarded;  // 呼び出し側が数えないときの捨て場（null 判定を 1 か所で済ませる）
-  LayoutEngine engine(options, measurer, images, mode, counters != nullptr ? *counters : discarded,
-                      memo);
+  Counters& work = counters != nullptr ? *counters : discarded;
+  LayoutEngine engine(options, measurer, images, mode, work, memo);
   Result<BoxSizing> sizing = engine.resolve_box(root.style, viewport_inline_size, root.location);
   if (!sizing) {
     return std::unexpected(sizing.error());
@@ -309,7 +309,7 @@ Result<BoxTree> layout_root(const style::StyledNode& root, const Options& option
   // 座標の足し算も flex の比も、この段でしか起きない（style では判定できない。A5）。
   // ここで止めないと raster が「非有限な寸法のコマンドは無視する」（§3.3）で黙って捨て、
   // その要素だけが消えた PNG が終了コード 0 で返る（issue #19）。
-  if (const Result<void> ok = check_geometry(tree, options.max_geometry_px); !ok) {
+  if (const Result<void> ok = check_geometry(tree, options.max_geometry_px, work); !ok) {
     return std::unexpected(ok.error());
   }
   return tree;

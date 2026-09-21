@@ -2,6 +2,7 @@
 
 #include "core/result.hpp"
 #include "layout/box_tree.hpp"
+#include "layout/counters.hpp"
 
 // ③ レイアウトの出口の検査（ARCHITECTURE.md A36 の第 2 段階 / issue #19）。
 namespace shashoku::layout {
@@ -16,6 +17,7 @@ namespace shashoku::layout {
 //
 // 費用は O(N)（paint の走査 1 回ぶん）。判定は比較だけで、NaN も inf も範囲外も
 // 同じ 1 つの比較で落ちる（A9 の許可リスト内）。
-Result<void> check_geometry(const BoxTree& tree, float max_geometry_px);
+// counters には見た箱・行・断片・グリフの数を足し込む（A21。出力には影響しない）。
+Result<void> check_geometry(const BoxTree& tree, float max_geometry_px, Counters& counters);
 
 }  // namespace shashoku::layout

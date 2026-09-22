@@ -112,6 +112,10 @@ constexpr auto kPropertyNames = std::to_array<NameEntry>({
     {"row-gap", PropertyName::RowGap},
     {"text-align", PropertyName::TextAlign},
     {"width", PropertyName::Width},
+    // CSS Text 3 §5.4 の legacy name alias。別名は**同じ PropertyName に写す**だけにして、
+    // カスケード・継承・計算値・ダンプの名前を `overflow-wrap` と同じ経路に通す（A35）。
+    // 正規化を入口でやらないのは、値のエラーで著者の綴りを残すため
+    {"word-wrap", PropertyName::OverflowWrap},
     {"writing-mode", PropertyName::WritingMode},
 });
 
@@ -141,6 +145,12 @@ constexpr auto kPropertyHints = std::to_array<HintEntry>({
     {"box-sizing", "content-box only: subtract padding and border from `width` / `height`"},
     {"flex-wrap", "single-line flex only: use one flex container per row"},
     {"float", "no floats: use `display: flex` to put boxes side by side"},
+    // CSS Box Alignment 3 §8.4 の legacy gap properties。写し先（`gap` / `row-gap` /
+    // `column-gap`）は 3 つとも対応しているが、shashoku に grid は無く flex に `grid-gap` と
+    // 書く動機もないので別名そのものは入れない（A35）。案内だけする
+    {"grid-column-gap", "legacy name: use `column-gap`"},
+    {"grid-gap", "legacy name: use `gap`"},
+    {"grid-row-gap", "legacy name: use `row-gap`"},
     {"max-height", "no min/max resolution: use a fixed `height`"},
     {"max-width", "no min/max resolution: use a fixed `width`"},
     {"min-height", "no min/max resolution: use a fixed `height`"},

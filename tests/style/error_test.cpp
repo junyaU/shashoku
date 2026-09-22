@@ -79,8 +79,14 @@ TEST(StyleError, KnownUnsupportedPropertiesCarryAWorkaround) {
     std::string_view property;
     std::string_view needle;
   };
-  const std::array<Hint, 9> cases{{
+  const std::array<Hint, 12> cases{{
       {"box-sizing: border-box", "box-sizing", "content-box"},
+      // CSS Box Alignment 3 §8.4 の legacy gap properties。写し先は 3 つとも対応済みだが、
+      // shashoku に grid は無く flex に `grid-gap` と書く動機もないので別名は入れない（A35）。
+      // 代わりに写し先を案内する
+      {"grid-gap: 4px", "grid-gap", "`gap`"},
+      {"grid-row-gap: 4px", "grid-row-gap", "`row-gap`"},
+      {"grid-column-gap: 4px", "grid-column-gap", "`column-gap`"},
       {"max-width: 200px", "max-width", "`width`"},
       {"min-width: 200px", "min-width", "`width`"},
       {"max-height: 200px", "max-height", "`height`"},
@@ -115,6 +121,23 @@ TEST(StyleError, UnknownPropertiesGetNoWorkaround) {
     EXPECT_EQ(style.error().kind, ErrorKind::UnsupportedProperty);
     EXPECT_EQ(style.error().message.find('('), std::string::npos) << style.error().message;
   }
+}
+
+// `word-wrap` は `overflow-wrap` の legacy name alias（CSS Text 3 §5.4。issue #25）なので
+// プロパティとしては通る。値が対応外のときだけ落ち、そのときは**著者が書いた綴り**と
+// 宣言の位置で報告する（CSSOM を持たない shashoku で旧名が見える唯一の場所。A35）。
+TEST(StyleError, WordWrapValueErrorsKeepTheAuthorSpellingAndLocation) {
+  const SourceLocation attribute{.offset = 12, .line = 1, .column = 6};
+  const html::Node tree =
+      test_root(test_element("div", {test_attr("style", "word-wrap: foo", attribute)}));
+  const Result<StyledNode> styled = resolve(tree);
+  ASSERT_FALSE(styled.has_value());
+  EXPECT_EQ(styled.error().kind, ErrorKind::UnsupportedValue);
+  EXPECT_EQ(styled.error().location.value_or(SourceLocation{}), attribute);
+  EXPECT_TRUE(styled.error().message.starts_with("`word-wrap: foo` is not supported"))
+      << styled.error().message;
+  EXPECT_EQ(styled.error().message.find("overflow-wrap"), std::string::npos)
+      << styled.error().message;
 }
 
 // ---- 対応外の値・単位 -----------------------------------------------------------

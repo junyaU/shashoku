@@ -81,6 +81,55 @@ TEST(StyleValue, LineBreakAndOverflowWrap) {
   EXPECT_EQ(computed("overflow-wrap: break-word").overflow_wrap, OverflowWrap::BreakWord);
 }
 
+// CSS Text 3 §5.4: "For legacy reasons, UAs must treat `word-wrap` as a legacy name alias of
+// the `overflow-wrap` property."（issue #25 / A35）。名前の表に 1 行足しただけなので、
+// カスケード・継承・計算値は `overflow-wrap` と**同じ経路**を通る。
+TEST(StyleValue, WordWrapIsALegacyNameAliasOfOverflowWrap) {
+  EXPECT_EQ(computed("word-wrap: normal").overflow_wrap, OverflowWrap::Normal);
+  EXPECT_EQ(computed("word-wrap: anywhere").overflow_wrap, OverflowWrap::Anywhere);
+  EXPECT_EQ(computed("word-wrap: break-word").overflow_wrap, OverflowWrap::BreakWord);
+  // 名前は大小無関係（宣言名は小文字化されてから引かれる）
+  EXPECT_EQ(computed("WORD-WRAP: anywhere").overflow_wrap, OverflowWrap::Anywhere);
+  // <style> でも効く
+  const Result<ComputedStyle> sheet = sheet_style("div { word-wrap: break-word }");
+  ASSERT_TRUE(sheet.has_value()) << (sheet ? "" : sheet.error().message);
+  EXPECT_EQ(sheet->overflow_wrap, OverflowWrap::BreakWord);
+  // <span>（インライン要素）でも効く
+  const html::Node tree = test_root(
+      test_parent("div", {}, test_element("span", {test_attr("style", "word-wrap: anywhere")})));
+  const Result<StyledNode> styled = resolve(tree);
+  ASSERT_TRUE(styled.has_value()) << (styled ? "" : styled.error().message);
+  EXPECT_EQ(styled->children.front().children.front().style.overflow_wrap, OverflowWrap::Anywhere);
+}
+
+// 別名は**同一プロパティ**なので、同じ宣言ブロックでは後に書いた方が勝つ。
+TEST(StyleValue, WordWrapAndOverflowWrapCascadeAsOneProperty) {
+  EXPECT_EQ(computed("overflow-wrap: normal; word-wrap: anywhere").overflow_wrap,
+            OverflowWrap::Anywhere);
+  EXPECT_EQ(computed("word-wrap: anywhere; overflow-wrap: normal").overflow_wrap,
+            OverflowWrap::Normal);
+}
+
+// inherit / initial も写し先と同じ扱い。
+TEST(StyleValue, WordWrapAcceptsGlobalKeywords) {
+  const auto child_wrap = [](std::string_view parent, std::string_view child) {
+    const html::Node tree = test_root(test_parent(
+        "div", {test_attr("style", parent)}, test_element("div", {test_attr("style", child)})));
+    const Result<StyledNode> styled = resolve(tree);
+    EXPECT_TRUE(styled.has_value()) << child << ": " << (styled ? "" : styled.error().message);
+    if (!styled || styled->children.empty() || styled->children.front().children.empty()) {
+      ADD_FAILURE() << "子要素が木から落ちた";
+      return OverflowWrap::Normal;
+    }
+    return styled->children.front().children.front().style.overflow_wrap;
+  };
+  EXPECT_EQ(child_wrap("overflow-wrap: anywhere", "word-wrap: inherit"), OverflowWrap::Anywhere);
+  EXPECT_EQ(child_wrap("overflow-wrap: anywhere", "overflow-wrap: inherit"),
+            OverflowWrap::Anywhere);
+  EXPECT_EQ(child_wrap("overflow-wrap: anywhere", "word-wrap: initial"), OverflowWrap::Normal);
+  EXPECT_EQ(child_wrap("word-wrap: break-word", "word-wrap: inherit"), OverflowWrap::BreakWord);
+}
+
 // ---- 長さと単位 ---------------------------------------------------------------
 
 TEST(StyleValue, LengthUnits) {
@@ -355,6 +404,7 @@ TEST(StyleValue, EverySupportedPropertyNameIsAccepted) {
       "text-align: center",
       "line-break: strict",
       "overflow-wrap: anywhere",
+      "word-wrap: anywhere",  // overflow-wrap の legacy name alias（CSS Text 3 §5.4）
       "writing-mode: horizontal-tb",
   };
   for (const std::string_view declaration : declarations) {

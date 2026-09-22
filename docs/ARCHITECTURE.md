@@ -658,10 +658,35 @@ suggestion は主軸の min-content サイズ）に使われるので、1 つの
 - **採らなかった案**: `bool` を残して `anywhere_in_min_content` をもう 1 本足す形。差分は小さいが、
   bool 2 本の組み合わせに意味のない状態（緊急分割は不可・min-content には効く）ができて
   契約が読みにくくなる
-- **範囲外**（この判断では直さない）: `min-width` の対応、`word-wrap`（`overflow-wrap` の
-  legacy name alias。CSS Text 3 §5.4 は必須としているが現状は `unsupported-property`）、
+- **範囲外**（この判断では直さない）: `min-width` の対応、
   `anywhere_candidate()` が `Item::no_break_before` を見ないこと（rank 3/4 の候補にはなるので
   実害はないが、緊急分割の候補判定としては見るのが筋）
+
+**A35 への追記（issue #25。legacy name alias）**: 範囲外に置いていた `word-wrap` を入れた。
+CSS Text 3 §5.4 は *"For legacy reasons, UAs must treat `word-wrap` as a legacy name alias of the
+`overflow-wrap` property."* としており、**alias は「未対応の機能」ではない**。写し先の 3 値は
+実装済みなので、止めても利用者には代替の組版が手に入らず、「黙って違う絵を出さない」という
+fail loudly（DESIGN.md §3-6）の目的を果たしていない。旧来の日本語ページはほぼ必ず
+`word-wrap: break-word` を書くので、試用版（#20）で最初の 1 枚が通らない典型例になる。
+
+- **やり方は「名前の表に 1 行足す」だけ**（`value_parser.cpp` の `kPropertyNames` に
+  `{"word-wrap", PropertyName::OverflowWrap}`）。`Declaration::property` が
+  `PropertyId::OverflowWrap` になるので、カスケード（同一ブロックでは後勝ち）・継承・
+  `inherit` / `initial`・計算値・`--dump-stage style` の出力名は、すべて `overflow-wrap` と
+  **完全に同一の経路**を通る。CSS Cascade の「パース時に新しいプロパティへ変換する」を満たす
+- **入口で名前を正規化する案（別表 `kPropertyAliases`）は採らない。** エラーの文面まで
+  `overflow-wrap` に寄り、著者が書いていない名前をエラーに出すことになる。CSSOM を持たない
+  shashoku では旧名が見える場所は**値のエラーの文面だけ**なので、そこは著者の綴りを残す
+  （`` `word-wrap: foo` is not supported (…) ``。種類と位置は従来どおり）
+- **`grid-row-gap` / `grid-column-gap` / `grid-gap` の別名は入れない（決定）。** CSS Box
+  Alignment 3 §8.4 が同じ "legacy name alias" を課しており写し先も対応済みだが、CLAUDE.md の
+  一問「日本語の文章を正しく組むことに寄与するか」に対し `word-wrap` は Yes（旧来の日本語
+  ページの標準的な書き方）、`grid-gap` は No（shashoku に grid は無く、flex に `grid-gap` と
+  書く動機がない）。代わりに `kPropertyHints` に 3 行足して写し先を案内する
+  （`` `grid-gap` is not a supported property (legacy name: use `gap`) ``）
+- **出力は 1 ビットも変わらない。** `examples/` とゴールデン 16 枚の入力に `word-wrap` は無く、
+  `overflow-wrap` の経路自体は触っていない（`release` の CLI で修正前後の
+  `--dump-stage style` / `box` と PNG がバイト一致することを確かめた）
 
 **A36. 各段は「自分が出す数値が有限で上限以内であること」を保証する。A25 の「入力の
 個数・サイズ」とは別の保証として並べる。** `padding: 1e38em` を渡すと `em x font-size` が
@@ -1197,8 +1222,11 @@ std::string dump_json(const StyledNode& root);
 - 対応プロパティは DESIGN.md §4 の一覧 + 次のショートハンド / 別名:
   `margin` `padding`（1〜4 値）、`border`（`<幅> solid <色>` / `none`）、`border-width`
   `border-style`（solid / none）`border-color`、`flex`（`none` / `auto` / 1〜3 値）、
-  `gap` `row-gap` `column-gap`、`background`（色のみ。`background-color` の別名）。
+  `gap` `row-gap` `column-gap`、`background`（色のみ。`background-color` の別名）、
+  `word-wrap`（`overflow-wrap` の legacy name alias。CSS Text 3 §5.4。名前の表で写し替えるだけで、
+  カスケード・継承・計算値・ダンプの名前はすべて `overflow-wrap` と同じ。A35）。
   一覧にないプロパティは `UnsupportedProperty`、値が対応外なら `UnsupportedValue`
+  （別名に対応外の値を書いたときの文面は**著者の綴り**のまま。`` `word-wrap: foo` is not supported … ``）
 - **`UnsupportedProperty` の文面には代替案を一言添える**（#20。試用版で「未対応です」だけでは
   次に何をすればよいか分からない）。`value_parser.cpp` の `kPropertyHints` に
   **未対応だと分かっているものだけ**を載せ、`` `box-sizing` is not a supported property

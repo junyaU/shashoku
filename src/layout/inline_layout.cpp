@@ -151,8 +151,10 @@ class InlineFormatter {
   // 1 クラスタぶんの配置。通常テキストのアイテムとルビ組の親文字で共有する（#16）。
   Placement place_cluster(const ItemSource& source, float advance, float baseline,
                           FragmentWriter& writer, float& pen) const;
-  void place_ruby(const RubyPiece& piece, float item_start, float advance, float baseline,
-                  FragmentWriter& writer);
+  // ルビ組。`box` は組の箱（ルビが占める範囲。掛けのぶん行の送りの範囲より広い）、
+  // `region` は行の送りの範囲（= 親文字が占める範囲。背景の矩形もこれ）。掛けが無ければ同じ。
+  void place_ruby(const RubyPiece& piece, const Placement& box, const Placement& region,
+                  float baseline, FragmentWriter& writer);
   void place_line(const linebreak::Line& line, const linebreak::Breaks& breaks,
                   const Alignment& alignment, float baseline, std::vector<InlineFragment>& content);
   // 行 [line.begin, line.content_end) の中で、文字位置 char_index 以降から始まる最初のアイテム。
@@ -401,15 +403,18 @@ RubySpread spread_of(float extra, std::size_t count, float max_lead) {
   return {.lead = max_lead, .gap = (extra - (2 * max_lead)) / (n - 1)};
 }
 
-// ルビ組: 組の送り（= max(親文字, ルビ)）は行分割器に渡した値のまま、短い方の余りを
-// JLREQ 3.3.6 の比率で組の内部に配る（#28。掛け = JLREQ 3.3.8 はまだ無い）。
+// ルビ組: 組の箱（= max(親文字, ルビ)）の中で、短い方の余りを JLREQ 3.3.6 の比率で配る（#28）。
+// 掛け（JLREQ 3.3.8）があるときは、親文字は**行の送りの範囲**（掛けのぶん狭い）に配り、
+// ルビは組の箱いっぱいに置く（= 前後の仮名にはみ出す）。掛けきれずに残った余りが
+// 親文字の側の配分になるので、規則は 1 本のまま（掛けが無ければ箱と範囲は同じ）。
 // 組の内部の親文字は、通常のインライン内容と同じ規則で配置する（CSS Ruby 1 §2。#16）。
-void InlineFormatter::place_ruby(const RubyPiece& piece, float item_start, float advance,
-                                 float baseline, FragmentWriter& writer) {
+void InlineFormatter::place_ruby(const RubyPiece& piece, const Placement& box,
+                                 const Placement& region, float baseline, FragmentWriter& writer) {
   writer.close();
-  const RubySpread base_spread =
-      spread_of(advance - piece.base_width, piece.base_end - piece.base_begin, piece.rt_font_size);
-  float pen = item_start + base_spread.lead;
+  const float region_size = region.inline_end - region.inline_start;
+  const RubySpread base_spread = spread_of(region_size - piece.base_width,
+                                           piece.base_end - piece.base_begin, piece.rt_font_size);
+  float pen = region.inline_start + base_spread.lead;
   for (std::size_t i = piece.base_begin; i < piece.base_end; ++i) {
     const RubyCluster& cluster = paragraph_->ruby_clusters[i];
     Placement placed = place_cluster(cluster.source, cluster.advance, baseline, writer, pen);
@@ -426,10 +431,10 @@ void InlineFormatter::place_ruby(const RubyPiece& piece, float item_start, float
   // ルビ文字に letter-spacing は掛けない（A37 / §3.8 のルビ）。配分は親文字と同じ規則で、
   // ルビも**クラスタ単位**で置く（1 回で並べると字間を入れる場所が無い）
   const text::ShapedText& ruby = paragraph_->runs[piece.rt_run].shaped;
-  const RubySpread rt_spread =
-      spread_of(advance - piece.rt_width, ruby.clusters.size(), piece.rt_font_size);
+  const RubySpread rt_spread = spread_of(box.inline_end - box.inline_start - piece.rt_width,
+                                         ruby.clusters.size(), piece.rt_font_size);
   const float rt_baseline = ruby_baseline(piece, baseline);
-  float ruby_pen = item_start + rt_spread.lead;
+  float ruby_pen = box.inline_start + rt_spread.lead;
   // 断片のテキストは先頭のクラスタで 1 回だけ渡す（A31: 位置も文字も断片の先頭のもの）
   std::string text = piece.rt_text;
   for (std::size_t i = 0; i < ruby.clusters.size(); ++i) {
@@ -459,21 +464,28 @@ void InlineFormatter::place_line(const linebreak::Line& line, const linebreak::B
     pen += breaks.spacing[i].before;
     const float item_start = pen;
     const ItemSource& source = paragraph_->sources[i];
+    pen = item_start + paragraph_->items[i].advance + breaks.spacing[i].after;
+    // アイテムが行の中で占める範囲（背景の矩形と、組の内部の位置の基準）。
+    // ルビの掛け（#28(b)）が効いたアイテムでは、箱 [item_start, pen] が行の送りの範囲より
+    // 前後にはみ出している。Atomic に付く Spacing は掛けだけなので、そのぶんを戻せば
+    // 送りの範囲が出る（line_breaker.hpp の Spacing の説明）
+    Placement placed{.inline_start = item_start, .inline_end = pen};
 
     if (source.image != kNone) {
       writer.close();
       place_image(paragraph_->images[source.image], item_start, baseline, content);
     } else if (source.ruby != kNone) {
-      place_ruby(paragraph_->rubies[source.ruby], item_start, paragraph_->items[i].advance,
-                 baseline, writer);
+      const Placement box{.inline_start = item_start,
+                          .inline_end = item_start + paragraph_->items[i].advance};
+      placed.inline_start = item_start - breaks.spacing[i].before;
+      place_ruby(paragraph_->rubies[source.ruby], box, placed, baseline, writer);
     } else {
       float glyph_pen = item_start;
       place_cluster(source, paragraph_->items[i].advance, baseline, writer, glyph_pen);
     }
 
-    pen = item_start + paragraph_->items[i].advance + breaks.spacing[i].after;
     writer.extend_to(pen);
-    placement_[i] = Placement{.inline_start = item_start, .inline_end = pen};
+    placement_[i] = placed;
   }
 }
 

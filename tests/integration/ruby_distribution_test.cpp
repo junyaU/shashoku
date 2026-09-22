@@ -111,15 +111,16 @@ std::vector<std::string> line_rects(const std::string& json) {
 // ---- issue #28 の再現表 ---------------------------------------------------------------
 
 // ルビの方が長い組: 親文字を端 2 / 字間 4 で配る（修正前は 4・20 のベタ中央置き）。
+// 組の後ろは漢字にしてある: 仮名だとルビの掛け（#28(b) / ruby_overhang_test.cpp）が効く。
 TEST(IntegrationRubyDistribution, LongerRubyDistributesTheBase) {
   const std::string json =
-      box_dump(R"(<div style="font-size: 16px"><ruby>写植<rt>しゃしょく</rt></ruby>です。</div>)");
+      box_dump(R"(<div style="font-size: 16px"><ruby>写植<rt>しゃしょく</rt></ruby>都市</div>)");
   EXPECT_EQ(glyph_positions_of(json, "写植"), (std::vector<std::string>{"2", "22"}));
   // ルビ側はベタのまま
   EXPECT_EQ(glyph_positions_of(json, "しゃしょく"),
             (std::vector<std::string>{"0", "8", "16", "24", "32"}));
-  // 組の送りは max(32, 40) = 40 のまま（続く「です。」の位置 = 行分割器に渡した送り）
-  EXPECT_EQ(field_of(json, "です。", "inline_start"), "40");
+  // 組の送りは max(32, 40) = 40 のまま（続く「都市」の位置 = 行分割器に渡した送り）
+  EXPECT_EQ(field_of(json, "都市", "inline_start"), "40");
   // 行の矩形も変わらない（配分は組の内部だけを動かす）
   EXPECT_EQ(line_rects(json), (std::vector<std::string>{"0,0,400,34.75"}));
 }
@@ -148,12 +149,12 @@ TEST(IntegrationRubyDistribution, VerticalUsesTheSameDistribution) {
   RenderOptions options = options_for(400);
   options.viewport_height = 400;
   const std::string json = box_dump(
-      R"(<div style="writing-mode: vertical-rl; font-size: 16px"><ruby>写植<rt>しゃしょく</rt></ruby>です。</div>)",
+      R"(<div style="writing-mode: vertical-rl; font-size: 16px"><ruby>写植<rt>しゃしょく</rt></ruby>都市</div>)",
       options);
   EXPECT_EQ(glyph_positions_of(json, "写植"), (std::vector<std::string>{"2", "22"}));
   EXPECT_EQ(glyph_positions_of(json, "しゃしょく"),
             (std::vector<std::string>{"0", "8", "16", "24", "32"}));
-  EXPECT_EQ(field_of(json, "です。", "inline_start"), "40");
+  EXPECT_EQ(field_of(json, "都市", "inline_start"), "40");
 }
 
 // 配分する余りが無い / 配る先が無い組は数値が変わらない（修正前と同じ）。
@@ -166,11 +167,11 @@ TEST(IntegrationRubyDistribution, CasesThatMustNotChange) {
             (std::vector<std::string>{"0", "8", "16", "24"}));
   EXPECT_EQ(field_of(equal, "へ", "inline_start"), "32");
 
-  // 親文字 1 文字は中央のまま（配る字間が無い）
+  // 親文字 1 文字は中央のまま（配る字間が無い）。後ろは漢字（仮名だと掛けが効く。#28(b)）
   const std::string single =
-      box_dump(R"(<div style="font-size: 16px"><ruby>桜<rt>さくら</rt></ruby>へ</div>)");
+      box_dump(R"(<div style="font-size: 16px"><ruby>桜<rt>さくら</rt></ruby>木</div>)");
   EXPECT_EQ(glyph_positions_of(single, "桜"), (std::vector<std::string>{"4"}));
-  EXPECT_EQ(field_of(single, "へ", "inline_start"), "24");
+  EXPECT_EQ(field_of(single, "木", "inline_start"), "24");
 
   // ルビ 1 文字も中央のまま（端 12 は上限 8 を超えるが、中央置きには上限を掛けない）
   const std::string one_ruby =

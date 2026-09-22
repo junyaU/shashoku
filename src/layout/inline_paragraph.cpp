@@ -28,6 +28,8 @@ class ParagraphBuilder {
  private:
   [[nodiscard]] Result<void> build_ruby_item(std::size_t group_index);
   void build_atomic_item(std::size_t at);
+  // (c'') ルビの掛け（JLREQ 3.3.8）。隣のアイテムを見るので、アイテムを全部作ってから決める。
+  void resolve_ruby_overhang();
   // (c') 空のインラインボックスを行に割り当てる（#23）。行の幅に依らないのでここで決める。
   void resolve_empty_boxes();
   [[nodiscard]] Result<std::size_t> build_text_items(std::size_t begin);
@@ -252,6 +254,51 @@ Result<std::size_t> ParagraphBuilder::build_text_items(std::size_t begin) {
   return end;
 }
 
+// JLREQ 3.3.8: ルビを掛けてよい相手は**平仮名・片仮名**（長音・小書きの仮名を含む。
+// cl-15 / cl-16 / cl-10 / cl-11）だけ。漢字等（cl-19）・欧文・数字・約物には掛けない。
+// <img> やほかのルビ組（Atomic）・<br> にも掛けない。
+// 半角片仮名（U+FF66〜）と仮名の繰返し記号（ゝゞヽヾ）は対象外にしてある: 和文の本文では
+// 使わないうえ、掛けてよいかの根拠が JLREQ に無い。
+bool accepts_ruby_overhang(const linebreak::Item& item) {
+  if (item.kind != linebreak::ItemKind::Text) {
+    return false;
+  }
+  const char32_t cp = item.cp;
+  return (cp >= U'ぁ' && cp <= U'ゖ') ||  // 平仮名（ぁ〜ゖ。小書きを含む）
+         (cp >= U'ァ' && cp <= U'ヺ') ||  // 片仮名（ァ〜ヺ。小書きを含む）
+         cp == U'ー';                     // 長音符
+}
+
+// (c'') ルビの掛け（JLREQ 3.3.8）。ルビが親文字より長い組は、はみ出した量 E を前後の仮名に
+// 掛けてよい。掛ける量の上限は**ルビ文字サイズの全角**（`<rt>` の 1em）で、前後の両方に
+// 掛けられるなら 1:1 に、片側だけならその側に寄せる。**行頭・行末で落とすのは行分割器の仕事**
+// （どの行に来るかはここでは決まらない。line_breaker.hpp の Item::overhang_*）。
+// 掛けきれずに残った余りは、配置のときに (a) の配分（JLREQ 3.3.6）で組の内部に配る。
+void ParagraphBuilder::resolve_ruby_overhang() {
+  for (std::size_t i = 0; i < out_->items.size(); ++i) {
+    const std::size_t ruby = out_->sources[i].ruby;
+    if (ruby == kNone) {
+      continue;
+    }
+    const RubyPiece& piece = out_->rubies[ruby];
+    const float excess = piece.rt_width - piece.base_width;
+    if (excess <= 0) {
+      continue;  // ルビが親文字からはみ出していない組は掛けない
+    }
+    const float limit = piece.rt_font_size;
+    const bool before = i > 0 && accepts_ruby_overhang(out_->items[i - 1]);
+    const bool after = i + 1 < out_->items.size() && accepts_ruby_overhang(out_->items[i + 1]);
+    if (before && after) {
+      out_->items[i].overhang_before = std::min(excess / 2, limit);
+      out_->items[i].overhang_after = out_->items[i].overhang_before;
+    } else if (before) {
+      out_->items[i].overhang_before = std::min(excess, limit);
+    } else if (after) {
+      out_->items[i].overhang_after = std::min(excess, limit);
+    }
+  }
+}
+
 // (c') 空のインラインボックス（文字を 1 つも持たない <span> など）が参加する行を決める。
 // 規則は 1 つだけ（issue #23。CSS 2.1 §10.8 / §10.8.1 と Chrome の実測に一致する）:
 //   * `char_pos` 以降の最初のアイテムの行
@@ -298,6 +345,7 @@ Result<void> ParagraphBuilder::build() {
     }
     i = *end;
   }
+  resolve_ruby_overhang();
   resolve_empty_boxes();
   return {};
 }

@@ -16,6 +16,7 @@ shashoku_add_test(integration_test
     line_policy_test.cpp
     empty_inline_test.cpp
     ruby_distribution_test.cpp
+    ruby_overhang_test.cpp
     overflow_wrap_test.cpp
     scale_property_test.cpp
     determinism_test.cpp

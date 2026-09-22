@@ -52,8 +52,12 @@ TEST(ColorFont, ColorOnlyGlyphsWarnAndAreDrawnAsTofu) {
   EXPECT_EQ(warning.kind, WarningKind::MissingGlyph);  // 種類は増やさない
   EXPECT_EQ(warning.codepoint, U'A');
   ASSERT_TRUE(warning.location.has_value());
-  EXPECT_EQ(warning.location->line, 1U);
-  EXPECT_EQ(warning.location->column, 28U);  // テキストノードの先頭
+  // value_or で取り出すのは pipeline_test.cpp と同じ流儀（gtest の ASSERT を
+  // clang-tidy の optional 解析が追えないため）。
+  const SourceLocation location =
+      warning.location.value_or(SourceLocation{.offset = 0, .line = 0, .column = 0});
+  EXPECT_EQ(location.line, 1U);
+  EXPECT_EQ(location.column, 28U);  // テキストノードの先頭
   EXPECT_EQ(warning.detail,
             "the glyph for U+0041 has only color layers (COLR); drawn as tofu at 1:28");
 

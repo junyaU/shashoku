@@ -7,6 +7,7 @@ shashoku_add_test(text_test
     shaper_test.cpp
     fallback_test.cpp
     cluster_test.cpp
+    color_font_test.cpp
     vertical_test.cpp
     glyph_source_test.cpp
     debug_output_test.cpp

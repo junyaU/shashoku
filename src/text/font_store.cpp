@@ -3,6 +3,7 @@
 #include <ft2build.h>
 #include <hb.h>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -97,6 +98,40 @@ int read_weight(FT_Face face) {
   return (face->style_flags & FT_STYLE_FLAG_BOLD) != 0 ? 700 : 400;
 }
 
+// 「色データ（COLR）を持ち、かつ単色の輪郭が空」のグリフを load() のときに拾っておく
+// （A-new / issue #27）。shashoku は単色の輪郭しか描かないので、このグリフを描くと
+// 警告も豆腐も無いまま字が消える。Shaper がこれを豆腐に回す。
+//
+// **フォント全体が色データを持たなければ 1 グリフも調べない。** COLR を持たないふつうの
+// フォントでは hb_ot_color_has_layers / has_paint の 2 回で終わり、出力も速度も変わらない。
+// 判定は FreeType と HarfBuzz の両方に聞く必要がある（A7 のとおり互いを知らないので、
+// 色データは HarfBuzz、輪郭は FreeType に）。hb_font_get_glyph_extents は COLR の
+// レイヤーから extents を計算してしまうので判定に使えない。
+void collect_color_only_glyphs(FT_Face face, hb_face_t* hb_face, FontEntry& entry) {
+  if (hb_ot_color_has_layers(hb_face) == 0 && hb_ot_color_has_paint(hb_face) == 0) {
+    return;
+  }
+  const unsigned int glyph_count = hb_face_get_glyph_count(hb_face);
+  for (unsigned int glyph = 0; glyph < glyph_count; ++glyph) {
+    ++entry.color_probe_count;
+    const bool has_color_data =
+        hb_ot_color_glyph_get_layers(hb_face, glyph, 0, nullptr, nullptr) > 0 ||
+        hb_ot_color_glyph_has_paint(hb_face, glyph) != 0;
+    if (!has_color_data) {
+      continue;  // 色レイヤー用のグリフや普通の字はここで抜ける
+    }
+    // 単色の輪郭があるか。スケールもヒンティングも要らない（グリフの形だけを見る）。
+    if (FT_Load_Glyph(face, glyph, FT_LOAD_NO_SCALE) != 0) {
+      continue;  // 読めないグリフはここでは判断しない。描く段が FontLoad で落とす（A19）
+    }
+    // Segoe UI Emoji のようにベースが輪郭（合成グリフ）を持つフォントはここを通らず、
+    // 従来どおり単色の線画として描かれる。
+    if (face->glyph->format == FT_GLYPH_FORMAT_OUTLINE && face->glyph->outline.n_contours == 0) {
+      entry.color_only_glyphs.push_back(static_cast<GlyphId>(glyph));
+    }
+  }
+}
+
 // FT_Face を一時的に 1 つ作って family / weight / upem を読み、HarfBuzz の face / font を
 // 用意して FontEntry に詰める。**FT_Face はこの関数を出るときに閉じる**（A34）:
 // 解析結果と HarfBuzz の不変オブジェクトだけが共有資源として残る。
@@ -160,6 +195,9 @@ Result<std::unique_ptr<FontEntry>> make_entry(
                 "cannot create the HarfBuzz font (face " + std::to_string(face_index) + ")");
   }
   hb_ot_font_set_funcs(hb_font);  // メトリクスは hb-ot から読む（A7）
+
+  // FT_Face がまだ生きているこの場所で、色データだけのグリフを拾っておく（A-new）。
+  collect_color_only_glyphs(face.get(), hb_face, *entry);
 
   entry->hb_face = hb_face;
   entry->font = detail::ImmutableFont(hb_font);  // ここで不変になる
@@ -246,6 +284,19 @@ bool FontStore::is_italic(FontId font) const noexcept {
 std::uint16_t FontStore::units_per_em(FontId font) const noexcept {
   const FontEntry* entry = impl_->at(font);
   return entry != nullptr ? entry->upem : 0;
+}
+
+bool FontStore::is_color_only_glyph(FontId font, GlyphId glyph) const noexcept {
+  const FontEntry* entry = impl_->at(font);
+  if (entry == nullptr || entry->color_only_glyphs.empty()) {
+    return false;  // COLR を持たないフォントはここで終わる
+  }
+  return std::ranges::binary_search(entry->color_only_glyphs, glyph);
+}
+
+std::size_t FontStore::color_probe_count(FontId font) const noexcept {
+  const FontEntry* entry = impl_->at(font);
+  return entry != nullptr ? entry->color_probe_count : 0;
 }
 
 GlyphId FontStore::glyph_for(FontId font, char32_t cp) const noexcept {

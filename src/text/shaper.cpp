@@ -369,7 +369,10 @@ Result<CharPlan> ShaperImpl::resolve_char(const std::vector<FontId>& stack, char
   plan.font = stack.front();
   plan.missing = true;
   for (const FontId font : stack) {
-    if (fonts->has_glyph(font, cp)) {
+    // 「cmap にグリフがある」だけでは足りない（A-new / issue #27）。COLR のベースのように
+    // 色データだけを持ち単色の輪郭が空のグリフは、そのフォントでは描けないので次のフォントに
+    // 送る。どのフォントも描けなければ豆腐（□）+ 警告になる（A31）。
+    if (fonts->has_drawable_glyph(font, cp)) {
       plan.font = font;
       plan.missing = false;
       break;

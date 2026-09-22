@@ -262,6 +262,16 @@ TEST(LayoutEmptyInline, EmptyBoxInsideRubyBase) {
   }
 }
 
+// 中身が空の <ruby></ruby> は空の span と同じ扱い（issue #23 の「方針」）。
+TEST(LayoutEmptyInline, EmptyRubyElementIsAnEmptyInlineBox) {
+  FakeMeasurer measurer;
+  const auto root = build({block({text("A"), ruby({}, font_size(80)), text("B")})});
+  const auto tree = run_layout(root, 400, measurer);
+  ASSERT_TRUE(tree.has_value());
+  expect_line_heights(*tree, {fake_line_height(80)});
+  EXPECT_EQ(line_texts(*tree), std::vector<std::string>{"AB"});
+}
+
 // flex アイテムの中の空 span。幅（固有寸法）は変えず、高さだけが変わる。
 TEST(LayoutEmptyInline, EmptyBoxInsideFlexItem) {
   FakeMeasurer measurer;

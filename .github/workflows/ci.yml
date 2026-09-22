@@ -136,6 +136,22 @@ jobs:
             ninja-build clang-18 clang-format-18 clang-tidy-18 libc++-18-dev libc++abi-18-dev
       - name: clang-format
         run: scripts/format.sh --check
+      # Unicode の表（A20）が、固定した版の UCD から生成したものと一致するかを検査する。
+      # UCD は 3 ファイル・約 1 MB。鍵にスクリプトを使うのは UCD_VERSION がそこにあるため。
+      - name: Cache UCD
+        id: ucd-cache
+        uses: actions/cache@v5
+        with:
+          path: build/ucd
+          key: ucd-${{ hashFiles('scripts/gen_unicode_tables.py') }}
+          restore-keys: ucd-
+      # ネットワークに出るのはキャッシュが外れたときのここだけ（取得もハッシュ固定）。
+      - name: Fetch UCD (cache miss only)
+        if: steps.ucd-cache.outputs.cache-hit != 'true'
+        run: scripts/gen_unicode_tables.py --fetch
+      # --offline なので、キャッシュがあるかぎりネットワーク障害で lint は落ちない。
+      - name: Unicode tables match the pinned UCD
+        run: scripts/gen_unicode_tables.py --check --offline
       - name: Cache dependency sources and test fonts
         uses: actions/cache@v5
         with:

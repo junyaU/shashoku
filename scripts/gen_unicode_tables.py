@@ -12,10 +12,8 @@
 
     scripts/gen_unicode_tables.py            再生成してファイルを書く
     scripts/gen_unicode_tables.py --check    コミット済みの表と一致するか検査（不一致なら差分 + 終了 1）
-    scripts/gen_unicode_tables.py --no-legacy
-                                             全角表の「据え置き」（LEGACY_WIDE_DEVIATIONS）を外し、
-                                             素の UCD どおりの表を出す。振る舞いが変わるので、
-                                             出力を採用するかは人間が判断する
+    scripts/gen_unicode_tables.py --fetch    UCD をキャッシュに取るだけ（表は読み書きしない）。
+                                             CI がキャッシュを温めるために使う
     scripts/gen_unicode_tables.py --print-sets
                                              break_class.cpp が手で持っている小さな集合
                                              （is_east_asian_bracket / is_wide_numeric_affix）の
@@ -138,69 +136,18 @@ EAST_ASIAN_WIDTH_NOTES = {
     0x2329: "〈〉",
     0x2E80: "CJK 部首補助",
     0x2F00: "康熙部首",
-    0x2FF0: "漢字構成記述文字",
-    0x3000: "　（F）、CJK の約物 、。「」（W）",
+    # 18.0.0 では 2FF0..303E が 1 本の範囲になる（U+2FFC..2FFF が W なので 3000 の手前で切れない）
+    0x2FF0: "漢字構成記述文字、　（F）、CJK の約物 、。「」（W）",
     0x3041: "ひらがな",
     0x3099: "濁点・カタカナ",
-    0x3250: "CJK 統合漢字拡張 A まで",
-    0x4E00: "CJK 統合漢字・彝文字",
+    # 同じく 3250..A48C が 1 本（U+4DC0..4DFF の易経が W なので 4DBF で切れない）
+    0x3250: "CJK 統合漢字拡張 A・CJK 統合漢字・彝文字",
     0xAC00: "ハングル音節",
     0xF900: "CJK 互換漢字",
     0xFF01: "全角英数・全角約物（F）",
     0xFFE0: "￠￡￥ など（F）",
     0x20000: "CJK 統合漢字拡張 B 以降",
 }
-
-# 全角表の「据え置き」。
-#
-# いまコミットされている kWideRanges は、機械生成ではなく Unicode 15.1 相当の
-# EastAsianWidth.txt から手で起こしたもので、18.0.0 の W / F とは 32 か所ずれている。
-# 18.0.0 どおりに直すと is_fullwidth() の答えが変わり、
-#   - 空白の畳み込み（ARCHITECTURE.md A14: 改行の前後がどちらも全角なら改行を消す）
-#   - tests/layout/test_support.cpp の偽 TextMeasurer の字幅（全角 1em / 半角 0.5em）
-# が変わる。行分割と layout のゴールデンに波及するので、issue #11 の範囲では振る舞いを変えず、
-# ずれを「どこが・なぜ」の形でここに残す。採否はオーケストレーターとユーザーが判断する
-# （--no-legacy で 18.0.0 どおりの表を出せる）。
-#
-# (lo, hi, wide, 理由)
-LEGACY_WIDE_DEVIATIONS = [
-    # (a) 18.0.0 では W だが、手起こしの表に入っていないもの。
-    #     「W になった版」は EastAsianWidth.txt を遡って確かめた値。
-    (0x2630, 0x2637, False, "八卦。16.0 で N -> W"),
-    (0x268A, 0x268F, False, "太玄経の単/重記号。16.0 で N -> W"),
-    (0x2FFC, 0x2FFF, False, "漢字構成記述文字。15.1 の時点で W（手起こしの漏れ）"),
-    (0x31E4, 0x31E5, False, "CJK の筆画。16.0 で N -> W"),
-    (0x31EF, 0x31EF, False, "漢字構成記述文字。15.1 の時点で W（手起こしの漏れ）"),
-    (0x4DC0, 0x4DFF, False, "易経の六十四卦。16.0 で N -> W"),
-    (0x16FF2, 0x16FF6, False, "表意文字記号。17.0 で追加"),
-    (0x187F8, 0x187FF, False, "西夏文字。17.0 で追加"),
-    (0x18CD6, 0x18CDA, False, "契丹小字。18.0 で追加"),
-    (0x18CFF, 0x18CFF, False, "契丹小字。16.0 で追加"),
-    (0x18D09, 0x18D20, False, "西夏文字補助。17.0 で追加"),
-    (0x18D80, 0x18DF2, False, "西夏文字部品補助。17.0 で追加"),
-    (0x18E00, 0x19191, False, "女真文字。18.0 で追加"),
-    (0x191A0, 0x191D2, False, "女真文字部首。18.0 で追加"),
-    (0x1B155, 0x1B155, False, "小書きカタカナ「コ」。15.1 の時点で W（手起こしの漏れ。和文の文字）"),
-    (0x1B168, 0x1B168, False, "小書きカタカナ。18.0 で追加"),
-    (0x1D300, 0x1D356, False, "太玄経。16.0 で N -> W"),
-    (0x1D360, 0x1D376, False, "算木。16.0 で N -> W"),
-    (0x1F1AE, 0x1F1AE, False, "六曜記号。18.0 で追加"),
-    (0x1F6D8, 0x1F6D9, False, "絵文字。17.0 で追加"),
-    (0x1F7DA, 0x1F7DA, False, "幾何学記号。18.0 で追加"),
-    (0x1FA8A, 0x1FA8E, False, "絵文字。17.0 で追加"),
-    (0x1FAC8, 0x1FAC8, False, "絵文字。17.0 で追加"),
-    (0x1FACC, 0x1FACD, False, "絵文字。18.0 で追加"),
-    (0x1FADD, 0x1FADD, False, "絵文字。18.0 で追加"),
-    (0x1FAEA, 0x1FAEB, False, "絵文字。17.0 で追加"),
-    (0x1FAEF, 0x1FAEF, False, "絵文字。17.0 で追加"),
-    (0x1FAF9, 0x1FAFA, False, "絵文字。18.0 で追加"),
-    # (b) 手起こしの表が、未割り当ての穴をまたいで範囲をつないでいるもの。
-    #     いずれも将来の追加に備えた予約領域で、実在する文字ではない。
-    (0x1AFF4, 0x1AFF4, True, "かな拡張 B の未割り当て。手起こしが 1AFF0..1AFFE でまとめた"),
-    (0x1AFFC, 0x1AFFC, True, "かな拡張 B の未割り当て。手起こしが 1AFF0..1AFFE でまとめた"),
-    (0x1B129, 0x1B131, True, "かな補助の未割り当て。手起こしが 1B000..1B152 でまとめた"),
-    (0x1B133, 0x1B14F, True, "かな補助の未割り当て。手起こしが 1B000..1B152 でまとめた"),
-]
 
 
 # ---------------------------------------------------------------------------
@@ -409,26 +356,16 @@ def build_vertical_orientation(vertical: UcdFile) -> str:
     return emit(lines)
 
 
-def build_east_asian_width(east_asian: UcdFile, legacy: bool) -> str:
+def build_east_asian_width(east_asian: UcdFile) -> str:
     values = assign(east_asian, "N",
                     [(lo, hi, "W") for lo, hi in EAST_ASIAN_DEFAULT_WIDE_RANGES])
     wide = ["W" if v in EAST_ASIAN_WIDE_VALUES else "-" for v in values]
-    if legacy:
-        for lo, hi, is_wide, _ in LEGACY_WIDE_DEVIATIONS:
-            for cp in range(lo, hi + 1):
-                wide[cp] = "W" if is_wide else "-"
     merged = merge_ranges(wide, skip="-")
     notes = apply_notes(merged, EAST_ASIAN_WIDTH_NOTES, "全角")
 
     rule = ["規則: East_Asian_Width が W / F のコードポイント（見出しが定める",
-            "  「未割り当てでも W」のブロックを含む）を、隣接する範囲を併合して並べたもの。"]
-    if legacy:
-        rule.append(f"  さらに {SCRIPT_NAME} の LEGACY_WIDE_DEVIATIONS "
-                    f"{len(LEGACY_WIDE_DEVIATIONS)} 件を当ててある")
-        rule.append("  （現行の表が Unicode 15.1 相当で凍結されているため。docs/UNICODE_TABLES.md）。")
-        rule.append("  --no-legacy を付けると 18.0.0 そのままの表になる（振る舞いが変わる）。")
-    else:
-        rule.append("  LEGACY_WIDE_DEVIATIONS は当てていない（--no-legacy）。")
+            "  「未割り当てでも W」のブロックを含む）を、隣接する範囲を併合して並べたもの。",
+            "  手で足した例外はない（A20。UCD の値をそのまま使う）。"]
 
     lines = header_lines([east_asian], rule, "east_asian_width.cpp の kWideRanges")
     for lo, hi, _ in merged:
@@ -489,8 +426,8 @@ def main() -> int:
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--check", action="store_true",
                         help="書かずに、コミット済みの表と一致するか検査する")
-    parser.add_argument("--no-legacy", action="store_true",
-                        help="全角表の据え置き（LEGACY_WIDE_DEVIATIONS）を外す")
+    parser.add_argument("--fetch", action="store_true",
+                        help="UCD をキャッシュに取るだけ（表は読み書きしない）")
     parser.add_argument("--print-sets", action="store_true",
                         help="break_class.cpp が手で持つ小さな集合の UCD 由来の中身を表示する")
     parser.add_argument("--ucd-dir", type=Path, default=None,
@@ -503,6 +440,14 @@ def main() -> int:
 
     root = repo_root()
     cache_dir = args.cache_dir or (root / "build" / "ucd" / UCD_VERSION)
+
+    if args.fetch:
+        # CI（lint ジョブ）がキャッシュを温めるための口。ここだけがネットワークに出る。
+        for name in sorted(UCD_FILES):
+            load_ucd_file(name, cache_dir, args.ucd_dir, args.offline)
+        print(f"UCD {UCD_VERSION} を {cache_dir} に用意した")
+        return 0
+
     sources = {name: UcdFile(name, load_ucd_file(name, cache_dir, args.ucd_dir, args.offline))
                for name in sorted(UCD_FILES)}
 
@@ -520,7 +465,7 @@ def main() -> int:
         (root / "src/text/vertical_orientation_table.inc",
          build_vertical_orientation(vertical), "Rotated", vertical),
         (root / "src/layout/east_asian_width_table.inc",
-         build_east_asian_width(east_asian, legacy=not args.no_legacy), "-", east_asian),
+         build_east_asian_width(east_asian), "-", east_asian),
     ]
 
     failed = False

@@ -28,7 +28,7 @@ $ head -3 src/text/vertical_orientation_table.inc
 ```bash
 scripts/gen_unicode_tables.py             # 再生成してファイルを書く
 scripts/gen_unicode_tables.py --check     # コミット済みの表と一致するか検査（不一致なら差分 + 終了 1）
-scripts/gen_unicode_tables.py --no-legacy # 全角表の据え置きを外し、18.0.0 そのままの表を出す
+scripts/gen_unicode_tables.py --fetch     # UCD をキャッシュに取るだけ（CI がキャッシュを温める）
 scripts/gen_unicode_tables.py --print-sets  # break_class.cpp が手で持つ集合の UCD 由来の中身
 ```
 
@@ -68,27 +68,29 @@ scripts/gen_unicode_tables.py --print-sets  # break_class.cpp が手で持つ集
 8. `src/text/char_properties.cpp` の `kClusterExtenderTable` は UCD から起こしていない
    （日本語と基本ラテン、絵文字列に必要な範囲だけの手書き。§3.5）。版上げでは触らなくてよい。
 
-## いまの全角表は Unicode 15.1 相当のまま据え置いてある
+## 全角表の「据え置き」は解消済み（issue #24）
 
-`src/layout/east_asian_width_table.inc` だけは、生成した結果に
-`LEGACY_WIDE_DEVIATIONS`（スクリプトの中の 32 件の例外リスト）を当てている。
+`src/layout/east_asian_width_table.inc` は、かつてコミットされていた手起こしの
+`kWideRanges`（**Unicode 15.1 相当**）を再現するために、生成の最後に
+`LEGACY_WIDE_DEVIATIONS` という 32 件の例外リストを当てていた（issue #11 で表を生成に
+切り替えたとき、振る舞いを変えないためにそうした）。issue #24 でこれを削除し、
+**3 つの表とも UCD 18.0.0 そのまま**になっている。
 
-コミットされていた `kWideRanges` は機械生成ではなく **Unicode 15.1 相当の
-EastAsianWidth.txt から手で起こしたもの**で、18.0.0 の W / F と 32 か所ずれていた
-（内訳: 16.0〜18.0 で追加・変更された 28 範囲が抜けている、未割り当ての穴をまたいで
-範囲をつないだ 4 か所が余分）。これを 18.0.0 どおりに直すと `is_fullwidth()` の答えが変わり、
+- 32 件の内訳: 16.0〜18.0 で N → W になった / 追加された 25 件、15.1 の時点で W なのに
+  写し漏れていた 3 件（**U+1B155 小書きカタカナ「コ」**、U+2FFC..2FFF / U+31EF 漢字構成記述文字）、
+  未割り当ての穴をまたいで範囲をつなぎ余分に全角にしていた 4 件
+- 「この文字は据え置くべきだ」という判断は 1 件も無かった（A20 に反する上書きが残っていただけ）
+- 実害: `<p>あ\n𛅕い</p>`（U+1B155）の畳み込みで空白が消えず、縦書きではその空白が
+  `sideways` の断片として独立して 1 本の断片が 3 本に割れていた（A14 / CSS Text 3 §4.1.3）
+- 影響の検証: ゴールデン 16 枚は 1 ビットも変わらず、`examples/*.html` の `--dump-stage box` と
+  PNG も修正前のバイナリとバイト一致した。32 区間のコードポイントはテストにも
+  `examples/` にも出てこないため
+- 回帰テスト: `tests/layout/east_asian_width_test.cpp`（32 区間の代表と対照、
+  分類ごとの畳み込み、ノード境界をまたぐ場合、横書き・縦書きの断片）
 
-- 空白の畳み込み（A14: ソース中の改行の前後がどちらも全角なら改行を消す）
-- `tests/layout/test_support.cpp` の偽 `TextMeasurer` の字幅（全角 1em / 半角 0.5em）
-
-が変わって行分割とゴールデンに波及する。issue #11 の範囲では**振る舞いを変えない**と決め、
-ずれを「どこが・なぜ」の形でスクリプトに残した。採否は別の作業で判断する。
-
-- `--no-legacy` を付けると 18.0.0 そのままの表が出る（このとき `--check` は当然落ちる）
-- 据え置きをやめるときは `LEGACY_WIDE_DEVIATIONS` を空にして再生成し、上の 5〜6 を踏む
-- 和文に効く抜けは **U+1B155 小書きカタカナ「コ」**（15.1 の時点で W。手起こしの漏れ）。
-  ほかは易経・太玄経・算木・西夏文字・女真文字・契丹小字・新しい絵文字で、
-  日本語の本文にはまず出てこない
+いまは `--check` が終了 0 になるので、**CI の lint ジョブがこれを検査する**
+（`.github/workflows/ci.yml`。UCD は `build/ucd/<版>/` にキャッシュし、キャッシュがあれば
+`--offline` でネットワークに出ない）。表を手で触った / 版だけ上げて再生成を忘れた、は CI で止まる。
 
 ## East Asian Width の表が linebreak と layout に 2 つあるのはなぜか
 
@@ -126,13 +128,13 @@ EastAsianWidth.txt から手で起こしたもの**で、18.0.0 の W / F と 32
 表の正しさは `--check`（生成元との機械的な一致）で担保し、禁則の正しさは
 JIS X 4051 / JLREQ を出典に書いたテーブル駆動テストで担保する、という今の分担を続ける。
 
-## CI に入れるか（未決）
+## CI での検査（issue #24 で入れた）
 
-`--check` を lint ジョブに足せば「表を手で触った」「版だけ上げて再生成を忘れた」を防げる。
-判断材料:
+lint ジョブ（`.github/workflows/ci.yml`）が `scripts/gen_unicode_tables.py --check --offline` を
+走らせる。「表を手で触った」「版だけ上げて再生成を忘れた」はここで止まる。
 
-- 取得するのは 3 ファイル・約 1 MB。`build/ucd/<版>/` をキャッシュすればほぼ毎回ヒットする
-- ネットワークが落ちると lint も落ちる。`--offline` とキャッシュの組み合わせで避けられる
-- あるいは UCD を取らずに済むよう、生成物のハッシュだけを検査する手もある（弱い）
-
-CI への組み込みはオーケストレーターが判断する（issue #11 の「方針」）。
+- 取得するのは 3 ファイル・約 1 MB。`build/ucd/` を `actions/cache` で保持する
+  （鍵は `scripts/gen_unicode_tables.py` のハッシュ。`UCD_VERSION` がこのファイルにあるため）
+- 取得するのはキャッシュが外れたときの `--fetch` ステップだけ。検査そのものは `--offline` なので、
+  **ネットワークが落ちても lint は落ちない**（キャッシュがあるかぎり）
+- 版を上げた PR は、その 1 回だけ新しい版を取りに行く（スクリプトが変わるので鍵も変わる）

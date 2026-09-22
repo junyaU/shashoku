@@ -1,4 +1,5 @@
 #include <string>
+#include <string_view>
 
 #include <gtest/gtest.h>
 
@@ -234,6 +235,30 @@ TEST(StyleDump, GoldenOutput) {
     }
   ]
 })");
+}
+
+// 別名（`word-wrap`）で書いても、ダンプに出るのは写し先の名前だけ（issue #25）。
+// CSSOM を持たないので旧名が残る場所はエラーの文面だけ、という決定（A35）をここで固定する。
+TEST(StyleDump, WordWrapDumpsAsOverflowWrap) {
+  const auto dump_of = [](const std::string& declarations) {
+    const html::Node tree = test_root(test_element("div", {test_attr("style", declarations)}));
+    const Result<StyledNode> styled = resolve(tree);
+    EXPECT_TRUE(styled.has_value())
+        << declarations << ": " << (styled ? "" : styled.error().message);
+    return styled ? dump_json(*styled) : std::string{};
+  };
+
+  for (const std::string_view value : {"normal", "anywhere", "break-word"}) {
+    SCOPED_TRACE(value);
+    const std::string alias = dump_of("word-wrap: " + std::string{value});
+    ASSERT_FALSE(alias.empty());
+    // 写し先で書いたときとバイト単位で一致する
+    EXPECT_EQ(alias, dump_of("overflow-wrap: " + std::string{value}));
+    // 旧名は出力に現れない
+    EXPECT_EQ(alias.find("word-wrap"), std::string::npos) << alias;
+    EXPECT_NE(alias.find(R"("overflow-wrap": ")" + std::string{value} + '"'), std::string::npos)
+        << alias;
+  }
 }
 
 }  // namespace

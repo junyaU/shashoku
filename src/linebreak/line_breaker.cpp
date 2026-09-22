@@ -147,6 +147,10 @@ class Analysis {
   std::vector<PunctKind> punct_;
   std::vector<float> trim_before_;  // 字面の前にある詰められるアキ（正の値）
   std::vector<float> trim_after_;   // 字面の後ろにある詰められるアキ（正の値）
+  // ルビの掛け（JLREQ 3.3.8。Item::overhang_*）を契約の範囲に丸めたもの（非負・送り以内）。
+  // 行頭・行末では落とす点だけが trim_* と違う。
+  std::vector<float> overhang_before_;
+  std::vector<float> overhang_after_;
   // JLREQ 3.1.4 の連続約物のアキ詰め。同じ行に並んだときだけ効く。
   std::vector<float> collapse_before_;  // 対 (i-1, i) で items_[i] の前から詰める量
   std::vector<float> collapse_after_;   // 対 (i, i+1) で items_[i] の後ろから詰める量
@@ -176,6 +180,8 @@ Analysis::Analysis(Config config, std::span<const Item> items, Counters* counter
   punct_.assign(n, PunctKind::None);
   trim_before_.assign(n, 0.0F);
   trim_after_.assign(n, 0.0F);
+  overhang_before_.assign(n, 0.0F);
+  overhang_after_.assign(n, 0.0F);
   collapse_before_.assign(n, 0.0F);
   collapse_after_.assign(n, 0.0F);
   opp_.assign(n, 0);
@@ -281,6 +287,11 @@ void Analysis::build_spacing_tables() {
   const std::size_t n = items_.size();
   for (std::size_t i = 0; i < n; ++i) {
     const Item& item = items_[i];
+    // ルビの掛け（JLREQ 3.3.8）。契約は「非負・送り以内」なので、ここで丸めておく
+    // （幅が負になると「アイテムを足すと行の幅が増える」前提が壊れ、行の決定が成り立たない）。
+    const float room = std::max(item.advance, 0.0F);
+    overhang_before_[i] = std::clamp(item.overhang_before, 0.0F, room);
+    overhang_after_[i] = std::clamp(item.overhang_after, 0.0F, room - overhang_before_[i]);
     if (item.kind != ItemKind::Text) {
       continue;
     }
@@ -648,6 +659,19 @@ float Analysis::lay_out(std::size_t begin, std::size_t content_end, bool end_tri
       before += std::max(trim_before_[i] - before, 0.0F) * squeeze;
       after += std::max(trim_after_[i] - after, 0.0F) * squeeze;
     }
+    // ルビの掛け（JLREQ 3.3.8）。**行頭・行末では落とす**（版面の外に出さない）。
+    // アキ詰めと足し合わせる: どちらも「箱を前後にはみ出させる」操作で、描画側の手順は同じ
+    if (i > begin) {
+      before += overhang_before_[i];
+    }
+    if (i + 1 < content_end) {
+      after += overhang_after_[i];
+    }
+    // アキ詰めと掛けを足しても送りより広くは詰めない（幅を負にしない）。アキ詰めだけなら
+    // trim_ の時点で送り以内に丸めてあるので、ここが効くのは両方が重なったときだけ
+    const float room = std::max(items_[i].advance, 0.0F);
+    before = std::min(before, room);
+    after = std::min(after, room - before);
     if (out != nullptr) {
       (*out)[i] = Spacing{-before, -after};
     }
@@ -722,6 +746,9 @@ void Analysis::scan_candidates(std::size_t begin, std::size_t limit, float avail
     if (i > begin) {
       raw -= collapse_before_[i] + collapse_after_[i - 1];
     }
+    // 掛け（JLREQ 3.3.8）は行頭・行末で落ちるが、ここは打ち切りの下限の見積もりなので
+    // **常に引く**（小さめに見積もる = 早く打ち切りすぎない）
+    raw -= overhang_before_[i] + overhang_after_[i];
     tail = strippable(i) ? tail + items_[i].advance : 0.0F;
     pool_hint += trim_before_[i] + trim_after_[i];
     hang_hint = std::max(hang_hint, items_[i].advance);

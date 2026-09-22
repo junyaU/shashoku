@@ -151,8 +151,10 @@ class InlineFormatter {
   // 1 クラスタぶんの配置。通常テキストのアイテムとルビ組の親文字で共有する（#16）。
   Placement place_cluster(const ItemSource& source, float advance, float baseline,
                           FragmentWriter& writer, float& pen) const;
-  void place_ruby(const RubyPiece& piece, float item_start, float advance, float baseline,
-                  FragmentWriter& writer);
+  // ルビ組。`box` は組の箱（ルビが占める範囲。掛けのぶん行の送りの範囲より広い）、
+  // `region` は行の送りの範囲（= 親文字が占める範囲。背景の矩形もこれ）。掛けが無ければ同じ。
+  void place_ruby(const RubyPiece& piece, const Placement& box, const Placement& region,
+                  float baseline, FragmentWriter& writer);
   void place_line(const linebreak::Line& line, const linebreak::Breaks& breaks,
                   const Alignment& alignment, float baseline, std::vector<InlineFragment>& content);
   // 行 [line.begin, line.content_end) の中で、文字位置 char_index 以降から始まる最初のアイテム。
@@ -186,6 +188,9 @@ class InlineFormatter {
   std::vector<Placement> ruby_placement_;
   std::vector<std::uint64_t> style_stamp_;
   std::uint64_t stamp_ = 0;
+  // 空のインラインボックス（#23）。参加する行は (c) が決めた `EmptyInlineBox::item` で
+  // 表され、その値も行も文書順に進むので、段落で 1 本のカーソルで足りる（A22）。
+  std::size_t empty_cursor_ = 0;
   // 背景スコープは begin の昇順（collect_element が外側から push する）。行が進むのに
   // 合わせて「いまの行と交差するスコープ」だけを持つ。
   std::size_t scope_cursor_ = 0;
@@ -251,6 +256,14 @@ Extent InlineFormatter::measure_line(const linebreak::Line& line) {
   // 支柱は内容によらず全行に参加する
   extend_line_height(paragraph_->strut_style, extent);
   style_stamp_[paragraph_->strut_style] = stamp_;
+  // 文字を持たないインラインボックスも、支柱と同じように行の高さに参加する
+  // （CSS 2.1 §10.8。#23）。どの行かは (c) が決めてある（kNone はどの行にも参加せず、
+  // そういう箱は列の末尾にしか来ないのでカーソルはそこで止まる）
+  while (empty_cursor_ < paragraph_->empty_boxes.size() &&
+         paragraph_->empty_boxes[empty_cursor_].item < line.end) {
+    extend_line_height(paragraph_->empty_boxes[empty_cursor_].style, extent);
+    ++empty_cursor_;
+  }
   for (std::size_t i = line.begin; i < line.content_end; ++i) {
     const ItemSource& source = paragraph_->sources[i];
     if (source.image != kNone) {
@@ -366,23 +379,73 @@ Placement InlineFormatter::place_cluster(const ItemSource& source, float advance
   return Placement{.inline_start = start, .inline_end = pen};
 }
 
-// ルビ組: 親文字とルビの短い方を中央に置く（JLREQ の 1:2:1 の配分まではやらない）。
+// 組の内部で短い方に配る空き（JLREQ 3.3.6 の 1:2:…:2:1。§3.8 のルビの規則 2〜5）。
+struct RubySpread {
+  float lead = 0;  // 組の端（前後）に置く空き
+  float gap = 0;   // クラスタとクラスタの間に置く空き
+};
+
+// 余り extra を count 個のクラスタに「端 extra/(2n)、字間 extra/n」で配る。
+// 端はルビ文字サイズの全角（max_lead）が上限で、止めたぶんは字間に回す（同 3.3.6 の注）。
+// クラスタが 1 つのときは配る字間が無いので中央に置く（上限も掛けない）。
+RubySpread spread_of(float extra, std::size_t count, float max_lead) {
+  if (count == 0 || extra <= 0) {
+    return {};
+  }
+  if (count == 1) {
+    return {.lead = extra / 2, .gap = 0};
+  }
+  const auto n = static_cast<float>(count);
+  const float lead = extra / (2 * n);
+  if (lead <= max_lead) {
+    return {.lead = lead, .gap = extra / n};
+  }
+  return {.lead = max_lead, .gap = (extra - (2 * max_lead)) / (n - 1)};
+}
+
+// ルビ組: 組の箱（= max(親文字, ルビ)）の中で、短い方の余りを JLREQ 3.3.6 の比率で配る（#28）。
+// 掛け（JLREQ 3.3.8）があるときは、親文字は**行の送りの範囲**（掛けのぶん狭い）に配り、
+// ルビは組の箱いっぱいに置く（= 前後の仮名にはみ出す）。掛けきれずに残った余りが
+// 親文字の側の配分になるので、規則は 1 本のまま（掛けが無ければ箱と範囲は同じ）。
 // 組の内部の親文字は、通常のインライン内容と同じ規則で配置する（CSS Ruby 1 §2。#16）。
-void InlineFormatter::place_ruby(const RubyPiece& piece, float item_start, float advance,
-                                 float baseline, FragmentWriter& writer) {
+void InlineFormatter::place_ruby(const RubyPiece& piece, const Placement& box,
+                                 const Placement& region, float baseline, FragmentWriter& writer) {
   writer.close();
-  float pen = item_start + ((advance - piece.base_width) / 2);
+  const float region_size = region.inline_end - region.inline_start;
+  const RubySpread base_spread = spread_of(region_size - piece.base_width,
+                                           piece.base_end - piece.base_begin, piece.rt_font_size);
+  float pen = region.inline_start + base_spread.lead;
   for (std::size_t i = piece.base_begin; i < piece.base_end; ++i) {
     const RubyCluster& cluster = paragraph_->ruby_clusters[i];
-    ruby_placement_[i] = place_cluster(cluster.source, cluster.advance, baseline, writer, pen);
+    Placement placed = place_cluster(cluster.source, cluster.advance, baseline, writer, pen);
+    if (i + 1 < piece.base_end) {
+      pen += base_spread.gap;  // 配分の空きはクラスタの**間**にだけ入る（末尾には足さない）
+      // 背景はその空きまで覆う（letter-spacing の字間と同じ扱い。A37）。そうしないと
+      // 隣り合う span の背景の間に隙間が開く
+      placed.inline_end = pen;
+    }
+    ruby_placement_[i] = placed;
   }
   writer.close();
 
-  // ルビ文字に letter-spacing は掛けない（A37 / §3.8 のルビ）
-  float ruby_pen = item_start + ((advance - piece.rt_width) / 2);
+  // ルビ文字に letter-spacing は掛けない（A37 / §3.8 のルビ）。配分は親文字と同じ規則で、
+  // ルビも**クラスタ単位**で置く（1 回で並べると字間を入れる場所が無い）
   const text::ShapedText& ruby = paragraph_->runs[piece.rt_run].shaped;
-  writer.add(ruby, 0, ruby.glyphs.size(), piece.rt_style, ruby_baseline(piece, baseline),
-             piece.rt_text, ruby_pen);
+  const RubySpread rt_spread = spread_of(box.inline_end - box.inline_start - piece.rt_width,
+                                         ruby.clusters.size(), piece.rt_font_size);
+  const float rt_baseline = ruby_baseline(piece, baseline);
+  float ruby_pen = box.inline_start + rt_spread.lead;
+  // 断片のテキストは先頭のクラスタで 1 回だけ渡す（A31: 位置も文字も断片の先頭のもの）
+  std::string text = piece.rt_text;
+  for (std::size_t i = 0; i < ruby.clusters.size(); ++i) {
+    if (i > 0) {
+      ruby_pen += rt_spread.gap;
+    }
+    const text::ShapedCluster& cluster = ruby.clusters[i];
+    writer.add(ruby, cluster.glyph_begin, cluster.glyph_end, piece.rt_style, rt_baseline, text,
+               ruby_pen);
+    text.clear();
+  }
   writer.extend_to(ruby_pen);
   writer.close();
 }
@@ -401,21 +464,28 @@ void InlineFormatter::place_line(const linebreak::Line& line, const linebreak::B
     pen += breaks.spacing[i].before;
     const float item_start = pen;
     const ItemSource& source = paragraph_->sources[i];
+    pen = item_start + paragraph_->items[i].advance + breaks.spacing[i].after;
+    // アイテムが行の中で占める範囲（背景の矩形と、組の内部の位置の基準）。
+    // ルビの掛け（#28(b)）が効いたアイテムでは、箱 [item_start, pen] が行の送りの範囲より
+    // 前後にはみ出している。Atomic に付く Spacing は掛けだけなので、そのぶんを戻せば
+    // 送りの範囲が出る（line_breaker.hpp の Spacing の説明）
+    Placement placed{.inline_start = item_start, .inline_end = pen};
 
     if (source.image != kNone) {
       writer.close();
       place_image(paragraph_->images[source.image], item_start, baseline, content);
     } else if (source.ruby != kNone) {
-      place_ruby(paragraph_->rubies[source.ruby], item_start, paragraph_->items[i].advance,
-                 baseline, writer);
+      const Placement box{.inline_start = item_start,
+                          .inline_end = item_start + paragraph_->items[i].advance};
+      placed.inline_start = item_start - breaks.spacing[i].before;
+      place_ruby(paragraph_->rubies[source.ruby], box, placed, baseline, writer);
     } else {
       float glyph_pen = item_start;
       place_cluster(source, paragraph_->items[i].advance, baseline, writer, glyph_pen);
     }
 
-    pen = item_start + paragraph_->items[i].advance + breaks.spacing[i].after;
     writer.extend_to(pen);
-    placement_[i] = Placement{.inline_start = item_start, .inline_end = pen};
+    placement_[i] = placed;
   }
 }
 

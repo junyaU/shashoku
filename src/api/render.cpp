@@ -476,8 +476,13 @@ std::vector<Warning> to_warnings(const std::vector<layout::MissingGlyph>& missin
   std::vector<Warning> warnings;
   warnings.reserve(missing.size());
   for (const layout::MissingGlyph& glyph : missing) {
-    std::string detail = std::format("no font has a glyph for U+{:04X}",
-                                     static_cast<std::uint32_t>(glyph.codepoint));
+    // 種類は MissingGlyph のまま。文面だけ理由で分ける（A43。WarningKind は増やさない）。
+    const auto codepoint = static_cast<std::uint32_t>(glyph.codepoint);
+    std::string detail =
+        glyph.reason == text::MissingReason::ColorOnly
+            ? std::format("the glyph for U+{:04X} has only color layers (COLR); drawn as tofu",
+                          codepoint)
+            : std::format("no font has a glyph for U+{:04X}", codepoint);
     detail += std::format(" at {}:{}", glyph.location.line, glyph.location.column);
     warnings.push_back(Warning{.kind = WarningKind::MissingGlyph,
                                .detail = std::move(detail),

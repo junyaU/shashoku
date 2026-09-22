@@ -116,6 +116,9 @@ struct CharPlan {
   hb_script_t script = HB_SCRIPT_COMMON;
   Orientation orientation = Orientation::Horizontal;
   bool missing = false;
+  // 豆腐の理由。run の分け方には**入れない**（文面のためだけの値で、同じ run に
+  // 理由の違う豆腐が混ざっても困らない。クラスタごとに持たせる）。
+  MissingReason missing_reason = MissingReason::NotInAnyFont;
   bool attached = false;  // 直前の文字にくっつく（結合文字・異体字セレクタ・ZWJ の後ろ）
 
   [[nodiscard]] bool same_run_as(const CharPlan& other) const {
@@ -369,10 +372,20 @@ Result<CharPlan> ShaperImpl::resolve_char(const std::vector<FontId>& stack, char
   plan.font = stack.front();
   plan.missing = true;
   for (const FontId font : stack) {
-    if (fonts->has_glyph(font, cp)) {
+    // 「cmap にグリフがある」だけでは足りない（A43 / issue #27）。COLR のベースのように
+    // 色データだけを持ち単色の輪郭が空のグリフは、そのフォントでは描けないので次のフォントに
+    // 送る。どのフォントも描けなければ豆腐（□）+ 警告になる（A31）。
+    // cmap 引きは従来どおりフォントごとに 1 回だけ。
+    const GlyphId glyph = fonts->glyph_for(font, cp);
+    if (glyph != 0 && !fonts->is_color_only_glyph(font, glyph)) {
       plan.font = font;
       plan.missing = false;
       break;
+    }
+    if (glyph != 0) {
+      // グリフはあったが色データだけだった。豆腐になるならこちらを理由にする
+      // （警告の文面が変わるだけで、組版は「どのフォントにも無い」ときと同じ）。
+      plan.missing_reason = MissingReason::ColorOnly;
     }
   }
 
@@ -533,8 +546,10 @@ Result<void> ShaperImpl::emit_missing_run(std::size_t begin, std::size_t end,
   FontId font = stack.front();
   GlyphId tofu_glyph = 0;
   for (const FontId candidate : stack) {
+    // □ 自体が色データだけのグリフ（COLR のベース）のフォントは飛ばす。それを選ぶと
+    // 豆腐が空白になり、issue #27 と同じ「静かに消える」壊れ方をする（A43）。
     const GlyphId glyph = fonts->glyph_for(candidate, kTofu);
-    if (glyph != 0) {
+    if (glyph != 0 && !fonts->is_color_only_glyph(candidate, glyph)) {
       font = candidate;
       tofu_glyph = glyph;
       break;
@@ -572,6 +587,7 @@ Result<void> ShaperImpl::emit_missing_run(std::size_t begin, std::size_t end,
     cluster.glyph_end = cluster.glyph_begin + 1;
     cluster.advance = glyph.advance;
     cluster.missing = true;
+    cluster.missing_reason = plan[i].missing_reason;
 
     out.glyphs.push_back(glyph);
     out.clusters.push_back(cluster);
@@ -631,6 +647,9 @@ std::vector<ShapedCluster> join_attached_clusters(std::u32string_view text,
     merged.back().text_end = std::max(merged.back().text_end, cluster.text_end);
     merged.back().glyph_end = std::max(merged.back().glyph_end, cluster.glyph_end);
     merged.back().advance += cluster.advance;
+    if (cluster.missing && !merged.back().missing) {
+      merged.back().missing_reason = cluster.missing_reason;  // 先に豆腐だった方の理由を残す
+    }
     merged.back().missing = merged.back().missing || cluster.missing;
   }
   return merged;
@@ -649,6 +668,9 @@ void normalize_clusters(ShapedText& out, std::size_t text_length) {
       // 覆う範囲が尽きた: 余ったグリフは直前のクラスタに吸収させる。
       fixed.back().glyph_end = std::max(fixed.back().glyph_end, cluster.glyph_end);
       fixed.back().advance += cluster.advance;
+      if (cluster.missing && !fixed.back().missing) {
+        fixed.back().missing_reason = cluster.missing_reason;
+      }
       fixed.back().missing = fixed.back().missing || cluster.missing;
       continue;
     }
@@ -678,6 +700,14 @@ Result<void> check_contract(const std::vector<FontId>& stack, const TextStyle& s
     // 値の表記は number_text() を通す（NaN の符号は CPU で変わる。core/number_text.hpp）。
     return fail(ErrorKind::Internal, std::format("cannot shape: font_size must be finite (got {})",
                                                  number_text(style.font_size)));
+  }
+  // 負も契約違反（issue #26）。style が `font-size: -16px` を止めているので入力からは
+  // 到達しないが、注入点の契約（text_measurer.hpp）を実装でも守る。`0` は CSS 上
+  // 有効なので通す（`-0` は `0` と等しいのでここも通る）。
+  if (style.font_size < 0) {
+    return fail(ErrorKind::Internal,
+                std::format("cannot shape: font_size must be non-negative (got {})",
+                            number_text(style.font_size)));
   }
   return {};
 }

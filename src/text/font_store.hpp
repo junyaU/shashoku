@@ -67,6 +67,23 @@ class FontStore {
     return glyph_for(font, cp) != 0;
   }
 
+  // 色データ（COLR）だけを持ち、単色の輪郭が空のグリフか（A43 / issue #27）。
+  // shashoku は単色の輪郭しか描かないので、これは「そのフォントでは描けないグリフ」であり、
+  // 豆腐に回す。判定は load() のときに済ませてある（FontStore は読み取り専用の共有資源。A34）。
+  [[nodiscard]] bool is_color_only_glyph(FontId font, GlyphId glyph) const noexcept;
+
+  // その文字を**単色で描ける**か（cmap にあり、かつ色データだけのグリフでない）。
+  // フォールバック列を辿るときは has_glyph ではなくこちらで判定する。
+  [[nodiscard]] bool has_drawable_glyph(FontId font, char32_t cp) const noexcept {
+    const GlyphId glyph = glyph_for(font, cp);
+    return glyph != 0 && !is_color_only_glyph(font, glyph);
+  }
+
+  // load() のときに「色データだけのグリフか」を調べたグリフの数。**テスト用の統計**で、
+  // 出力には影響しない。色データを持たないフォント（COLR / COLRv1 が無い）では 0 になる
+  // ＝ グリフごとの判定に一切入らないことを、テストがこの値で固定する。
+  [[nodiscard]] std::size_t color_probe_count(FontId font) const noexcept;
+
  private:
   friend struct detail::FontStoreAccess;
 

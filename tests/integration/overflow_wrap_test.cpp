@@ -121,10 +121,13 @@ struct Case {
   std::string_view wrap;
   float inline_size;                      // 子の inline サイズ
   std::array<std::string_view, 3> lines;  // 行の内容（空文字は「その行は無い」）
+  // 著者が書くプロパティ名。`word-wrap` は `overflow-wrap` の legacy name alias
+  // （CSS Text 3 §5.4。issue #25）で、名前の表で写し替わるだけなので結果は同じ。
+  std::string_view property = "overflow-wrap";
 };
 
 // 横書きと縦書きで同じ期待値を使う（書字方向で結果が変わってはいけない）。
-constexpr std::array<Case, 30> kCases{{
+constexpr std::array<Case, 31> kCases{{
     // --- anywhere: min-content にも効く（CSS Text 3 §5.4）。flex でも親に収まる ---
     {Container::FlexRow, Where::Element, Sizing::None, "anywhere", kBox, {"ABC", "DEF", "GH"}},
     {Container::FlexRow, Where::Span, Sizing::None, "anywhere", kBox, {"ABC", "DEF", "GH"}},
@@ -161,6 +164,16 @@ constexpr std::array<Case, 30> kCases{{
     {Container::FlexColumn, Where::Span, Sizing::None, "normal", kBox, {"ABCDEFGH"}},
     {Container::Block, Where::Element, Sizing::None, "normal", kBox, {"ABCDEFGH"}},
     {Container::Block, Where::Span, Sizing::None, "normal", kBox, {"ABCDEFGH"}},
+
+    // --- legacy name alias: `word-wrap` で書いても同じ。主軸サイズの決まらない flex の子
+    //     （min-content が効くかどうかがそのまま出る場所）で確かめる（issue #25）---
+    {Container::FlexRow,
+     Where::Element,
+     Sizing::None,
+     "anywhere",
+     kBox,
+     {"ABC", "DEF", "GH"},
+     "word-wrap"},
 }};
 
 std::string describe(const Case& test_case, bool vertical) {
@@ -188,7 +201,9 @@ std::string describe(const Case& test_case, bool vertical) {
       out += " flex:1";
       break;
   }
-  out += " overflow-wrap:";
+  out += ' ';
+  out += test_case.property;
+  out += ':';
   out += test_case.wrap;
   return out;
 }
@@ -220,7 +235,8 @@ std::string html_of(const Case& test_case, bool vertical) {
       child = "flex:1;";
       break;
   }
-  const std::string declaration = "overflow-wrap:" + std::string(test_case.wrap);
+  const std::string declaration =
+      std::string(test_case.property) + ":" + std::string(test_case.wrap);
   std::string content = "ABCDEFGH";
   if (test_case.where == Where::Span) {
     content = R"(AB<span style=")" + declaration + R"(">CDEFGH</span>)";

@@ -136,7 +136,11 @@ CSS どおりに効く。`box-sizing` は content-box のみ（A11）なので�
 フォント全体が輪郭を持たない場合（CBDT/CBLC・sbix のカラー絵文字フォント。FreeType は
 `FT_FACE_FLAG_SCALABLE` を立てない）は、`FontStore::load()` が `FontLoad` で落とす（一番早い段で
 落とす。実装済み）。COLR/CPAL のカラー絵文字はベースの輪郭を持つので load は通り、ベースグリフが
-空なら「空白」として通ってしまう。これを警告 + 豆腐に回すかは Shaper 側の判断（未着手）。
+空なら「空白」として通ってしまう。**これは `FontStore` が load のときに見つけて `Shaper` が豆腐に
+回す**（A43。issue #27）。ラスタライザの契約はこの表のまま変えていない: 「輪郭が 0 本のグリフ」は
+ラスタライザから見れば空白グリフと区別がつかないので、**描く前の段（④ の入口）で判定する**。
+`SVG `（OT-SVG）だけを持つカラーフォントも同じ穴だが、**同じ扱い（警告 + 豆腐）にする方針だけを
+決めて実装は別の作業に回した**（A43 の最後）。
 
 **A20. Unicode の表は UCD から生成し、生成物をコミットする。** 行分割クラス（UAX #14）・
 縦書きの字の向き（UAX #50）・東アジア幅（UAX #11）の 3 つの表は
@@ -146,8 +150,22 @@ UCD から生成する。生成物（`src/*/[a-z_]*_table.inc`）はコミット
 生成物の先頭に生成元の版・ハッシュ・スクリプト名が入るので、3 つが同じ版から作られていることは
 ファイルを見れば分かる。`--check` で「再生成した結果がコミット済みの表と一致するか」を検査できる。
 手で足した例外（クラスの寄せ先、既定値のブロック）は結果の範囲ではなく**規則**としてスクリプトに書く。
-更新手順と、`layout` の全角表をいまだけ Unicode 15.1 相当で据え置いている理由は
-[docs/UNICODE_TABLES.md](UNICODE_TABLES.md)。
+更新手順は [docs/UNICODE_TABLES.md](UNICODE_TABLES.md)。
+
+**2026-09-22 追記（issue #24）: 全角表の「据え置き」をやめた。** 表を生成に切り替えた issue #11 では、
+それまで手で起こしてあった `kWideRanges`（Unicode 15.1 相当）と振る舞いを変えないために、生成の最後に
+`LEGACY_WIDE_DEVIATIONS` 32 件を当てて結果を 15.1 に戻していた。これは「結果の範囲での上書き」そのもので
+この判断記録に反しており、しかも `--check`（生成元との機械的な一致）が永久に落ちたままになる。
+32 件を調べると「この文字は据え置くべきだ」という判断は 1 件もなく、25 件は 16.0〜18.0 の版上げの
+取りこぼし、7 件は手起こしの誤り（写し漏れ 3・未割り当ての穴をまたいだ範囲 4）だった。実害として
+U+1B155（小書きカタカナ「コ」）が半角扱いになり、A14 の畳み込みで和文に空白が入っていた。
+**例外リストを削除し、UCD 18.0.0 そのままの表にした**（ゴールデン 16 枚と `examples/` の出力は不変。
+32 区間のコードポイントがどこにも出てこないため）。
+
+版上げ手順への影響: 全角表も他の 2 つと同じく「再生成して差分を読むだけ」になり、`--check` が
+**終了 0 の状態を保つべき検査**になった。**CI の lint ジョブがこれを走らせる**（UCD は
+`build/ucd/<版>/` にキャッシュし、検査は `--offline`。キャッシュが外れたときだけ `--fetch` で取りに行く）。
+以後、表を手で編集したり、`UCD_VERSION` を上げて再生成を忘れたりすると CI が落ちる。
 
 **A21. 計算量の回帰は「時間」ではなく「回数」で測る。** layout に計測カウンタ
 （[src/layout/counters.hpp](../src/layout/counters.hpp)）を置き、`layout()` の最後の引数
@@ -353,6 +371,10 @@ issue #6）。上限は**入力の一部**なので純粋関数の性質は壊�
   「効かせる場所がない」。1 文字だけの要素に `line-break` を書いても何も起きないのと同じ。
   **これは行分割ポリシーの話に限る。** 組の代表の文字から幾何の寸法（ascent / font-size /
   letter-spacing）を取ってはいけない（#16 / #17 で実際に壊れていた。A37）
+- **`Item` に入れるものはポリシーだけではない**（A44 で 1 つ増えた）: ルビ組には
+  「前後の文字にはみ出してよい量」（`overhang_before` / `overhang_after`）も入れる。
+  こちらは代表の文字ではなく**隣のアイテムの文字**と組の寸法から決まるので、
+  アイテムを全部作ったあとの後処理で埋める（`resolve_ruby_overhang()`）
 - **`linebreak::Config` は段落の既定値として残す。** いまは (c) がすべての `Item` に値を入れるので
   `strictness` / `wrap` については使われないが、約物のアキ・あふれ処理（`overflow` /
   `trim_line_end` / `collapse_punctuation_spacing`）は `Config` にしかない
@@ -416,8 +438,8 @@ A19 で `GlyphSource::rasterize()` を `Result` にしたが、計測側は値�
 | 事象 | 返すもの |
 |---|---|
 | 空文字列（グリフが 0 個）、既定無視文字だけの run、`font_size` が 0 | 成功（空の `ShapedText` / 送り 0） |
-| 豆腐（どのフォントにもグリフがない） | 成功 + `ShapedCluster::missing = true`（DESIGN.md §3-6 の唯一の例外） |
-| `FontStore` にフォントが 1 つもない、不正な `FontId`、非有限の `font_size` | `Internal`（呼び出し側のバグ） |
+| 豆腐（どのフォントでも描けない） | 成功 + `ShapedCluster::missing = true` と `missing_reason`（A43。DESIGN.md §3-6 の唯一の例外） |
+| `FontStore` にフォントが 1 つもない、不正な `FontId`、**負**または非有限の `font_size` | `Internal`（呼び出し側のバグ） |
 | `hb_font_get_h_extents()` が偽（hhea / OS/2 が読めない） | `FontLoad` |
 | `hb_font_create()` が空のフォントを返す、`hb_buffer_allocation_successful()` が偽 | `OutOfMemory`（A26 の種類） |
 | グリフ数が 0 でないのに HarfBuzz がグリフ情報を返さない | `Internal` |
@@ -428,8 +450,10 @@ A19 で `GlyphSource::rasterize()` を `Result` にしたが、計測側は値�
 - **フォントが 1 つもない `FontStore` はエラーにした。** それまでは「存在しない FontId 0 の
   `.notdef` を全文字ぶん返す」で通っていて、失敗するのはラスタライズの段（A19 の `Internal`）だった。
   api は空の `FontSet` を `NoFonts` で弾いているので、ここに来るのは呼び出し側のバグ
-- `font_size` が 0 や負のときは従来どおり送り 0 で成功する（CSS の `font-size: 0` は正当な指定で、
-  A19 の `pixel_size` と違ってラスタライザには渡らない）。非有限だけを `Internal` にする
+- `font_size` が **0** のときは送り 0 で成功する（CSS Fonts 4 §2.5 の `font-size: 0` は正当な指定で、
+  A19 の `pixel_size` と違ってラスタライザには渡らない）。**負**と非有限を `Internal` にする
+  （負は issue #26 で足した。style が `font-size: -16px` を宣言の位置つきで止めているので
+  入力からは到達しないが、注入点の契約としては穴だった。A36 の最後を見よ）
 - layout 側の呼び出しは `LayoutEngine::shape()` / `metrics()`（A21 の計測カウンタ）に集約済みなので、
   波及は機械的。**失敗した結果はメモに残さない**（A29 の準備済み段落は `Result` が成功した後でのみ
   `remember()` する）。偽の `TextMeasurer`（`tests/layout/test_support.hpp`）には失敗を注入する口
@@ -658,10 +682,35 @@ suggestion は主軸の min-content サイズ）に使われるので、1 つの
 - **採らなかった案**: `bool` を残して `anywhere_in_min_content` をもう 1 本足す形。差分は小さいが、
   bool 2 本の組み合わせに意味のない状態（緊急分割は不可・min-content には効く）ができて
   契約が読みにくくなる
-- **範囲外**（この判断では直さない）: `min-width` の対応、`word-wrap`（`overflow-wrap` の
-  legacy name alias。CSS Text 3 §5.4 は必須としているが現状は `unsupported-property`）、
+- **範囲外**（この判断では直さない）: `min-width` の対応、
   `anywhere_candidate()` が `Item::no_break_before` を見ないこと（rank 3/4 の候補にはなるので
   実害はないが、緊急分割の候補判定としては見るのが筋）
+
+**A35 への追記（issue #25。legacy name alias）**: 範囲外に置いていた `word-wrap` を入れた。
+CSS Text 3 §5.4 は *"For legacy reasons, UAs must treat `word-wrap` as a legacy name alias of the
+`overflow-wrap` property."* としており、**alias は「未対応の機能」ではない**。写し先の 3 値は
+実装済みなので、止めても利用者には代替の組版が手に入らず、「黙って違う絵を出さない」という
+fail loudly（DESIGN.md §3-6）の目的を果たしていない。旧来の日本語ページはほぼ必ず
+`word-wrap: break-word` を書くので、試用版（#20）で最初の 1 枚が通らない典型例になる。
+
+- **やり方は「名前の表に 1 行足す」だけ**（`value_parser.cpp` の `kPropertyNames` に
+  `{"word-wrap", PropertyName::OverflowWrap}`）。`Declaration::property` が
+  `PropertyId::OverflowWrap` になるので、カスケード（同一ブロックでは後勝ち）・継承・
+  `inherit` / `initial`・計算値・`--dump-stage style` の出力名は、すべて `overflow-wrap` と
+  **完全に同一の経路**を通る。CSS Cascade の「パース時に新しいプロパティへ変換する」を満たす
+- **入口で名前を正規化する案（別表 `kPropertyAliases`）は採らない。** エラーの文面まで
+  `overflow-wrap` に寄り、著者が書いていない名前をエラーに出すことになる。CSSOM を持たない
+  shashoku では旧名が見える場所は**値のエラーの文面だけ**なので、そこは著者の綴りを残す
+  （`` `word-wrap: foo` is not supported (…) ``。種類と位置は従来どおり）
+- **`grid-row-gap` / `grid-column-gap` / `grid-gap` の別名は入れない（決定）。** CSS Box
+  Alignment 3 §8.4 が同じ "legacy name alias" を課しており写し先も対応済みだが、CLAUDE.md の
+  一問「日本語の文章を正しく組むことに寄与するか」に対し `word-wrap` は Yes（旧来の日本語
+  ページの標準的な書き方）、`grid-gap` は No（shashoku に grid は無く、flex に `grid-gap` と
+  書く動機がない）。代わりに `kPropertyHints` に 3 行足して写し先を案内する
+  （`` `grid-gap` is not a supported property (legacy name: use `gap`) ``）
+- **出力は 1 ビットも変わらない。** `examples/` とゴールデン 16 枚の入力に `word-wrap` は無く、
+  `overflow-wrap` の経路自体は触っていない（`release` の CLI で修正前後の
+  `--dump-stage style` / `box` と PNG がバイト一致することを確かめた）
 
 **A36. 各段は「自分が出す数値が有限で上限以内であること」を保証する。A25 の「入力の
 個数・サイズ」とは別の保証として並べる。** `padding: 1e38em` を渡すと `em x font-size` が
@@ -741,6 +790,16 @@ layout の加算で `inf` になる。そこで `RenderLimits` に**長さ・座
   出ていた（`!(height > 0)` が NaN でも真になる）。③ の出口が先に止めるので到達しなくなったが、
   万一届いたら layout の不変条件が破れている = shashoku 側のバグなので、`Internal` で
   「有限でない」と報告する。本当に高さ 0 のときのメッセージは従来どおり
+- **負の値はパース時（②の入口）に止める。有限性・上限とは別の検査**で、`margin` と
+  `letter-spacing` だけが例外（`font-size: 0` は CSS Fonts 4 §2.5 で有効なので通す）。
+  種類は `UnsupportedValue` + 宣言（属性）の位置で、「範囲外」の `LimitExceeded` とは別物
+  （#19 でこの 2 つを分けた）。計算値の段で負になる経路は無い（`em` の乗算は「非負 x 非負」
+  だけで `calc()` は未対応）ので、ここで弾けば後段は負を見ない。総当たりの表は
+  `tests/style/error_test.cpp` の `NegativeValuesAreRejectedExceptForMarginAndLetterSpacing`。
+  あわせて**注入点の契約**（`text::TextMeasurer`）にも「`font_size` は非負」を明記し、
+  シェーパの入口（`check_contract()`）で `< 0` を `Internal` にした（issue #26）。
+  style が止めているので入力からは到達しないが、偽の `TextMeasurer` やレイアウトのテストは
+  この入口を直接叩くので、契約の文面と実装を合わせておく
 
 **A37. ルビ組の「代表の文字」は行分割ポリシー専用。組の内部は通常のインライン内容として
 組み、幾何は親文字の全クラスタから出す。**（issue #16 / #17）A28 は「ルビ組の
@@ -884,28 +943,170 @@ release ビルドの動的依存は `libc++.so.1` / `libc++abi.so.1` / `libunwin
 - **`--user-data-dir` は実行ごとの使い捨て**（`<out>/chrome-profile-<pid>`、終了時に消す）。
   ユーザーの普段のプロファイルには触らない
 
-**A41. ルビ組で短い方は「中央に置く」だけ。親文字を伸ばして長い方に合わせない。
-これは判断ではなく、1:2:1 の配分とルビの掛けが未対応であることの帰結。**（issue #15）
+**A41. ルビ組の中は JLREQ 3.3.6 の 1:2:…:2:1 で配る。組の送り `max(親文字, ルビ)` は
+変えない。配分（3.3.6）とルビの掛け（3.3.8）は別々に入れられる。**
+（issue #15 で起票 → issue #28 で書き換え）
 
-§3.8 の「幅は max(親文字, ルビ)、短い方を中央に置く」を、Chrome 比較で出てくる差の
-出どころとして書き起こしたもの。ルビのあるケース（#15 のケース 4 / 5 / 7 / 21）が
-すべて「重なり（字送り）」の差になるので、**その差が何なのかを指せる番号が要る**。
+§3.8 のルビの規則 1〜5 の根拠と、そこに至った経緯。**この番号は 2 回書き換わっている**ので、
+古い版を読んだ記憶があるなら下の「取り消した理由づけ」を読むこと。
 
-Chrome は CSS Ruby の既定（`ruby-align: space-around`）で**親文字の側を均等に広げて**注記の幅に
-合わせる。実測（ケース 5、`<ruby>写植<rt>しゃしょく</rt></ruby>`、16px、字間なし）: 親文字の字送りが
-shashoku は 16.00 px（そのまま）、Chrome は 20.00 px（注記の 40 px に合わせて 2 文字に配分）。
+JLREQ 3.3.6: 「親文字の文字列の字間の空き量の大きさ 2 に対して、ルビ文字の文字列の先頭から
+親文字の文字列の先頭までの空き量…を 1 の比率で空けると体裁がよい」。つまり n 個のクラスタに
+余り E を配るとき **端 = E/(2n)、字間 = E/n**。同じ節の注として、**端の空きはルビ文字サイズの
+全角を上限**とする（極端に短いルビで端だけが大きく開くのを避ける）。
 
-**この差は「意図した差」ではなく「未対応による差」。** JIS X 4051 / JLREQ 3.3.2 の 1:2:1 の配分と
-**ルビの掛け**（親文字の隣の文字へのはみ出し）が未対応だから中央に置くしかない、というだけで、
-中央寄せが正しいと決めたわけではない（README の「既知の制限」の「ルビ」を参照）。
-掛けが無いまま親文字の側を広げても JLREQ には近づかない（広げたぶんが行全体を間延びさせる）ので、
-**1:2:1 と掛けを入れるときにまとめて実装する**。
+- **組の送りは `max(B, R)` のまま**（規則 1）。配分は余りを「組の外側（前後の空き）」から
+  「組の内側（字間）」へ移すだけなので、**行分割器に渡す `Item::advance` は 1 ビットも変わらない**。
+  行分割位置・固有寸法・`Spacing`・行の矩形が動かないことをテストで固定してある
+  （`LayoutRuby.DistributionDoesNotChangeTheLineBreaking` と
+  `tests/integration/ruby_distribution_test.cpp`）
+- **クラスタが 1 つなら中央**（規則 5 の但し書き）。配る字間が無いので 1:2:…:2:1 が定義できず、
+  端の上限も掛けない（掛けると 1 文字のルビが組の頭に寄ってしまう）
+- **配分で入れた空きは、手前のクラスタの背景が覆う。** `letter-spacing` の字間と同じ扱い
+  （A37: 親文字の送りは末尾の字間を含む）。そうしないと親文字を分けて包んだ `<span>` の
+  背景の間に隙間が開く。組の端に接するスコープが組の箱の端まで伸びるのは従来どおり
+- **`text-align: justify` でも組の内部は広げない。** JLREQ 3.3.6 は「親文字群は、行の調整処理の
+  際に字間を空ける処理をしてはならない」と定めている。Chrome は justify の行で組の内部にも
+  均等割りの空きを入れる（実測: `<ruby>写植<rt>しゃしょく</rt></ruby>` で写 0・植 20）が、真似しない
+
+**取り消した理由づけ（#15 で書き、#28 で誤りと分かったもの）。**
+
+1. 「Chrome は CSS Ruby の既定（`ruby-align: space-around`）で短い方を長い方の幅まで**均等に
+   広げる**」——**読み違い**。根拠にしていた数値（ケース 5 の親文字の字送り 20.00 px、
+   ケース 3 の注記の字送り 30.92 px）は `Range.getClientRects()` が返す矩形、つまり
+   **「割り当てられた枡」であって字送りではない**（同じことを chrome_compare.md §4-5 が
+   書いているのに、§4-2 がその値を送りとして使っていた）。スクリーンショットのインクで
+   測り直すと、Chrome 153 も**親文字・ルビとも ベタのまま中央**に置いていた。
+   訂正は chrome_compare.md §4-2 に入れてある
+2. 「掛けが無いまま親文字の側を広げても JLREQ には近づかない（広げたぶんが行全体を
+   間延びさせる）ので、1:2:1 と掛けはまとめて入れる」——**誤り**。組の送りはもともと
+   `max(B, R)` なので、配分しても行は 1 px も伸びない。まとめる理由が無かったので、
+   **(a) 配分（この番号）→ (b) 掛け（A44）** の 2 段に分けた。予告どおり (b) は
+   `linebreak::Item` に掛けてよい量を足し、行頭・行末で落とす形で入った
+
+いまの shashoku と Chrome 153 の差は、**(1) 配分そのもの**（shashoku は JLREQ どおりに配り、
+Chrome は中央に置く）と **(2) 掛ける相手**（shashoku は仮名だけ、Chrome は漢字にも掛ける。A44）
+の 2 つ。どちらも shashoku が意図して違えている（JLREQ に従っている）。
 
 なお、**注記を親文字の「送り」の中央に置く**（末尾の字間を含む。A37）点は Chrome と同じだった。
 実測（ケース 1、`<ruby>ABC<rt>x</rt></ruby>`、32px・字間 16px）: 親文字の送りは両者とも
 `[0, 108.906]`（末尾の字間 16px を含む）で、注記の中心も両者 54.45 px。
 インクの中心（`C` の開始 72.48 + グリフの送り ≒ 92.9 の中点 ≒ 46.4 px）ではない。
-**「送りの中央か、インクの中央か」は両エンジンとも送りの中央**。
+**「送りの中央か、インクの中央か」は両エンジンとも送りの中央**。配分を入れたあとも、
+配った結果は組の中で対称（前後の空きが同じ）なので、この性質は保たれている。
+
+**A42. 文字を 1 つも持たないインラインボックスも、行の高さに参加する「文字のない支柱」
+として (a) で記録する。**（issue #23）
+
+CSS 2.1 §10.8 は「空のインライン要素も空のインラインボックスを作る。そのボックスは
+マージン・パディング・ボーダーと line-height を持つので、**内容のある要素と同じように**
+この計算に参加する」と定める。ところが (a) の `collect_element()` は、文字を 1 つも持たない
+インラインボックスを**どこにも記録していなかった**。`CharStyleTable` は「文字ごとの属性の表」
+なので、文字が 0 個なら載る口が無く、行の高さを決める `measure_line()` が見るものが無い。
+指定は読めていて、エラーも警告も出さずに効かない（DESIGN.md §3-6 の fail loudly にも反する）。
+
+- **A37 / #17 と同じ形の壊れ方だが段が違う。** A37 は「代表の文字 1 つでは親文字の 2 文字目
+  以降の寸法が落ちる」で直したのは (c)、こちらは「クラスタが 0 個でも寸法を持つ」で直すのは
+  (a) の収集。どちらも #21 の「1 つの値を 2 つの用途に兼用するのをやめる」の一例
+- **仕組みは新しく作らない。** ブロックの支柱（strut）が「文字を持たない寸法が行の高さに
+  参加する」仕組みをすでに持っているので、それにそろえる: `Collected` / `PreparedParagraph` に
+  `EmptyInlineBox{style, char_pos, item}` の列を足し、`measure_line()` の先頭で支柱と並べて
+  `extend_line_height()` を通す
+- **どの行に参加するかの規則は 1 つだけ**: `char_pos` 以降の最初のアイテムの行 → 無ければ
+  直前（= 最後）のアイテムの行 → ただし最後のアイテムが**強制改行ならどの行にも参加しない**
+  （`A<br><span></span>` は次の行を作らないので、参加する行が無い）。Chrome 153 の実測 8 ケース
+  （issue #23 の表）をすべて満たす規則はこれ。**行の幅に依らないので (c) で決めておける**
+  （= メモした準備済み段落で使い回せる。A29）。行ごとの仕事はカーソル 1 本で O(1) 償却（A22）
+- **行ボックスを作らないことは変えない**（アイテムが 0 個なら段落は行を持たない）。
+  CSS 2.1 §10.8.1 の zero-height line box とも Chrome の実測とも一致している
+- **`linebreak::Item` は増えない**（幅は 0）ので、改行位置・固有寸法（min-content / max-content）・
+  グリフの位置は 1 ビットも変わらない。`examples/` 5 本とゴールデン 16 枚が無変更なことは実測した
+- インライン要素の `padding` / `margin` / `border` は `unsupported-layout` で止まるので、
+  §10.8.1 の「margin / padding / border が 0 でない空のインライン要素」の条件は考えなくてよい
+- 背景は変わらない: 空のインラインボックスの `BackgroundScope` は `begin == end` なので
+  (e) が矩形を出さない（CSS でも幅 0 なので何も塗られない）
+
+**A43. 「グリフがある」と「単色で描ける」を分ける。色データだけのグリフ（COLR のベースが空）は
+豆腐に回す。**（issue #27。A19 が書き残した穴）
+
+`resolve_char()` は `has_glyph()`（cmap にあるか）だけで豆腐を決めていた。COLR/CPAL の
+カラー絵文字は「ベースグリフ + 色レイヤーの列」で字形を表すので、**ベースの輪郭が空**のフォントでは
+「グリフはあるが単色では描くものが無い」状態になる。単色の輪郭しか描かない shashoku では、
+その文字が**警告も豆腐も出ないまま消える**（実測: 自作の最小 COLR フォントで `AAA` が
+終了コード 0・警告 0 件・全ピクセル透明の PNG）。豆腐より静かに壊れるので DESIGN.md §3-6 違反。
+
+- **判定は `FontStore::load()` のとき**に済ませる。`FontStore` は load のあと読み取り専用の
+  共有資源（A34）で `FT_Face` を持たないので、**引くときに FreeType に聞くことはできない**。
+  `FT_Face` がまだ生きている `make_entry()` の中で「色データを持ち、かつ輪郭が空」のグリフ番号を
+  集めて `FontEntry::color_only_glyphs`（昇順・重複なし）に覚え、以後は二分探索で引く
+- **条件**: 色データは HarfBuzz（`hb_ot_color_glyph_get_layers() > 0 || hb_ot_color_glyph_has_paint()`。
+  COLR v0 と COLRv1 の両方）、輪郭は FreeType（`FT_Load_Glyph(FT_LOAD_NO_SCALE)` のあと
+  `outline.n_contours == 0`）に聞く。A7（互いを知らない）はそのまま:
+  両者に別々に聞いて `FontStore` の中で突き合わせる。**`hb_font_get_glyph_extents()` では判定できない**
+  （HarfBuzz は COLR のレイヤーから extents を計算するので、空のベースでも 800×700 を返す）
+- **フォント単位で色データが無ければ 1 グリフも調べない**（`hb_ot_color_has_layers()` /
+  `has_paint()` が両方 false なら即やめる）。COLR を持たないフォント（Noto Sans JP / Noto Sans）は
+  読み込み時間も出力も 1 ビットも変わらない。`FontStore::color_probe_count()` は**テスト用の統計**で、
+  「調べていない」ことを 0 で固定するためだけにある（出力には影響しない）
+- **描けないグリフは「そのフォントには無い」のと同じ扱い**にする。`resolve_char()` の
+  フォールバック列は `has_drawable_glyph()`（cmap にあり、かつ色データだけでない）で辿るので、
+  後ろのフォントがその文字を単色で持っていれば**そちらで描かれる**（豆腐にしない）。
+  どのフォントも描けないときだけ `plan.missing = true` で、あとは A31 の仕組みに乗る:
+  □ が描かれ、`ShapedCluster::missing` → `LayoutEngine` → `Warning{MissingGlyph, 位置}`
+- **`WarningKind` は増やさない。理由は列挙を 1 つ通して detail の文面だけ分ける。**
+  利用者にとっては「その字が出せなかった」であり、原因が cmap に無いのか色データだけなのかで
+  対処は変わらないので、公開 API の種類を増やす価値はない。一方で原因が分からないと直せないので、
+  **`text::MissingReason { NotInAnyFont, ColorOnly }`**（`text_measurer.hpp`）を
+  `ShapedCluster::missing_reason` → `layout::MissingGlyph::reason` → `api::to_warnings()` と
+  1 本通し、文面だけを分ける:
+  `the glyph for U+0041 has only color layers (COLR); drawn as tofu at 1:28`。
+  **既定は `NotInAnyFont` で、従来の豆腐の文面は 1 文字も変わらない**（`tests/integration` の
+  既存の期待値がそのまま通ることで固定）。理由は**組版には一切効かない**: 送りも豆腐のグリフも
+  同じで、run の分け方（`CharPlan::same_run_as`）にも重複除去のキー（`MissingGlyph::operator<`）にも
+  入れない。`--dump-stage box` には既定以外のときだけ `"reason": "color-only"` が増える
+  （既定値のキーは出さない = 従来のダンプはバイト単位で不変）
+- **豆腐の `□` を探すときも「描けるか」で見る**（`emit_missing_run()`）。`□`（U+25A1）自体が
+  色データだけのグリフであるフォントを選ぶと、豆腐が空白になって同じ壊れ方をするため
+- **却下した案**: (B) エラーで止める → 絵文字 1 文字で文章全体が組めなくなる。豆腐を警告に
+  している唯一の例外の趣旨に反する。(C) COLRv0 のレイヤーを単色で重ねて描く →
+  「日本語の文章を正しく組むことに寄与するか」に No。重ねた結果は黒い塊で □ より情報が多くない
+- **OT-SVG（`SVG ` テーブルだけを持つフォント）も同じ扱いにする**: `hb_ot_color_has_svg()` で
+  同じように検出できるが、検証用のフォントが無いので**この作業では実装しない**。
+  実装するときは `collect_color_only_glyphs()` に条件を足すだけで済む（判定の置き場は同じ）
+
+**A44. ルビの掛け（JLREQ 3.3.8）は「アイテムがはみ出してよい量」として `linebreak::Item` に
+持たせ、行頭・行末で落とすのは行分割器の仕事にする。文字クラスの判定は layout に残す。**
+（issue #28 の (b)。A41 が予告した形）
+
+掛けは 2 つのことを同時に要求する: **(1) 掛けてよい相手かは隣の文字の分割クラスで決まる**
+（layout が知っている）、**(2) 行頭・行末では掛けてはいけない**（行が決まるまで分からない）。
+(2) は行分割の**あと**にしか判定できないので、`trim_line_start` / `trim_line_end` と同じ形にした。
+
+- **契約**: `Item::overhang_before` / `overhang_after`（px、非負）。行の幅は
+  `advance − overhang_before − overhang_after` で測り、行頭・行末では該当する側を落とす。
+  効いた量は `Spacing` に負の値で入るので、**描画側の手順（`pen += before` …）は変わらない**。
+  §3.4 (4') が規則、§3.8 の規則 6 が layout 側の決め方
+- **`linebreak` は「掛けてよい相手か」を知らない。** 量だけを受け取る。禁則テーブルと同じ
+  分類を linebreak 側で公開して layout から呼ぶ案もあったが、**cl-15 / cl-16（仮名）と
+  cl-19（漢字等）の区別は UAX #14 のクラスには無い**（どちらも ID）ので、結局 layout に
+  仮名の表が要る。依存の向き（A2 の「linebreak は何にも依存しない」）を保つ方を採った
+- **量の決め方**（§3.8 の規則 6）は「前後に掛けられるなら 1:1、片側だけならその側に寄せ、
+  片側あたり `<rt>` の 1em を上限」。**1 文字に掛けてよいのは 1em まで**という JLREQ の上限を
+  「片側あたり」と読んだ（隣の 1 文字を超えて掛けると、その先の文字まで覆ってしまう）
+- **掛けた側の文字は動かない。** 動くのは組（親文字とルビ）と、組より後ろの文字の位置だけ。
+  ルビが隣の仮名の上に**重なる**のが掛けなので、隣の文字を避けさせては意味がない
+- **背景の矩形は掛けを含まない**（= 組が行の中で占める送りの範囲）。掛けは「ルビの帯が
+  隣にはみ出す」だけで、親文字の箱が広がるわけではない。A37 / (a) の「組の箱の矩形」と
+  同じ考え方で、`Spacing` に入った掛けを戻して求める（Atomic のアイテムに付く `Spacing` は
+  掛けだけなので一意に戻せる。§3.4 (4')）
+- **改行位置と固有寸法は変わりうる。** 掛けは行の幅を縮めるので、(a) と違って
+  `Item::advance` の実効値が変わる。`min_content_width()` にも同じ規則で効き、区間の端では
+  落ちるので「返した幅で必ず収まる」性質は保たれる（性質テストに掛けを混ぜて検査）
+- **Chrome との差**: Chrome 153 は**漢字にも掛ける**（実測: `名<ruby>桜<rt>さくら</rt></ruby>木` で
+  桜 16 / 木 32）。JLREQ 3.3.8 は漢字等（cl-19）への掛けを認めていないので真似しない。
+  片側だけ掛けられるときに Chrome は片側 1/2 だけ掛ける（`私は東京に住む` の `に` が 68 = 4px）が、
+  shashoku は余りを掛けられる側に寄せる（= 8px）。JLREQ に「片側だけのときは半分」という
+  規定は無く、掛けられる側に寄せた方が組の前後の不自然な空きが消えるため
 
 ---
 
@@ -1045,6 +1246,16 @@ BK CR LF NL SP ZW WJ GL CM ZWJ OP CL CP QU EX IS SY NS CJ IN B2 BA BB HY PR PO N
 - `trim_line_end`: 行末の終わり括弧・句読点が収まらないとき、後ろの半角空きを捨てて収める
 - `trim_line_start`: 行頭の始め括弧の前の半角空きを捨てる
 
+**(4') はみ出してよい量**（`Item::overhang_before` / `overhang_after`。ルビの掛け = JLREQ 3.3.8 を
+行分割器の側から見たもの。A44）: アイテムが前 / 後ろの隣のアイテムに**掛けてよい量**（px、非負）。
+行の幅は `advance − overhang_before − overhang_after` で測り、**行頭に来たアイテムの
+`overhang_before` と行末に来たアイテムの `overhang_after` は落とす**（`trim_line_*` と同じ形。
+版面の外に出さないため）。効いた量は (4) のアキ詰めと合わせて `Spacing` に負の値で返るので、
+**描画側の手順は変わらない**。`min_content_width()` にも同じ規則で効く（区間の端では落ちる）。
+**掛けてよい相手か**（JLREQ 3.3.8 の文字クラス）は呼び出し側が判定し、linebreak は量だけを
+受け取る（何にも依存しない原則を保つ）。契約外の値（負・`advance` より大きい）は丸める:
+行の幅が負になると「アイテムを足すと行の幅は増える」という前提が壊れ、行の決定が成り立たない。
+
 **(5) あふれ処理**:
 - `Oidashi`: (3) のまま。禁則文字は手前の文字を道連れにして次の行へ行く
 - `Burasage`: 行末に来た句読点（`、。，．`）1 文字が収まらないとき、それを行の外に出す
@@ -1060,7 +1271,8 @@ BK CR LF NL SP ZW WJ GL CM ZWJ OP CL CP QU EX IS SY NS CJ IN B2 BA BB HY PR PO N
 `break_opportunities()` が true の位置か ForcedBreak の直後か緊急分割の発動
 （= 両側のアイテムがともに `Normal` 以外の位置。(7)）/ `min_content_width()` の幅で組んだ行は
 どれも `overflows` にならない / 同じ入力には同じ出力。
-ファジングにはアイテムごとのポリシーをランダムな範囲で混ぜた入力も含める。
+ファジングにはアイテムごとのポリシーをランダムな範囲で混ぜた入力と、**(4') の掛けを
+ランダムに（契約を破る値も含めて）混ぜた入力**も含める。
 
 **(7) アイテムごとのポリシー**（A23）: `Item::strictness` / `Item::wrap` は
 インライン要素（`<span>`）での上書き。nullopt なら `Config` の値を使い、すべて nullopt なら
@@ -1114,12 +1326,16 @@ class FreeTypeGlyphSource final : public raster::GlyphSource { /* FontStore を�
      片方の face にしか無い文字の保険として残す）
 
   `metrics()` が返すのもこの列の先頭のフォント。豆腐の `□` を探す順もこの列
-- run 分割: コードポイントごとにフォールバック列を cmap 引きし、最初にグリフを持つフォントを採用。
+- run 分割: コードポイントごとにフォールバック列を cmap 引きし、**最初にそれを単色で描ける**
+  フォントを採用。cmap にグリフがあっても、色データだけを持ち輪郭が空のグリフ（COLR のベース）は
+  描けないので次のフォントに送る（`FontStore::has_drawable_glyph()`。A43）。
   同じフォントが続く区間をまとめて HarfBuzz に渡す。結合文字・異体字セレクタ・ZWJ は直前の
   文字と同じ run に入れる（別フォントに割らない）
-- 豆腐: どのフォントにもないコードポイントは `ShapedCluster::missing` で返し（**Shaper は
+- 豆腐: どのフォントでも描けないコードポイントは `ShapedCluster::missing` と
+  `missing_reason`（`NotInAnyFont` / `ColorOnly`。文面のためだけの値。A43）で返し（**Shaper は
   溜めない**。警告を組み立てるのは ③ レイアウト。A31）、`□`（U+25A1）を
-  **フォールバック列の順に全フォントから探して**、最初に見つかったフォントのグリフを
+  **フォールバック列の順に全フォントから探して**（ここでも「単色で描けるか」で見る。A43）、
+  最初に見つかったフォントのグリフを
   1em の送りで出す（第一フォントだけを見ると、欧文フォントが先頭のときに幅の狭い `.notdef` が
   1em の枠の左端に出て不揃いになる）。どのフォントにも `□` が無ければ第一フォントの `.notdef`。
   縦書きでも同じグリフを立てる。`ShapedCluster::missing = true`
@@ -1142,7 +1358,10 @@ class FreeTypeGlyphSource final : public raster::GlyphSource { /* FontStore を�
   `ShapedText` を返してよいのは入力が空文字列のときだけで、「測れなかった」を空で表さない
 - `FontStore::load()`: 輪郭を持たないフォント（`FT_IS_SCALABLE` が偽。埋め込みビットマップ専用の
   カラー絵文字フォントなど）は `FontLoad` で拒否する。ラスタライザは輪郭しか扱えないので、
-  「全部の字が消えた PNG」になる前に一番早い段で落とす（A19）
+  「全部の字が消えた PNG」になる前に一番早い段で落とす（A19）。
+  **フォント全体ではなくグリフ単位で「色データだけ」のもの**（COLR/CPAL のベースで輪郭が空）は
+  load のときに拾って覚え、`is_color_only_glyph()` / `has_drawable_glyph()` で引く（A43）。
+  色データを持たないフォントでは 1 グリフも調べない（`color_probe_count()` が 0 のまま）
 - テスト用フォント: リポジトリに置かず、CMake の configure 時に版（コミット SHA）とハッシュを
   固定してダウンロードする（`cmake/TestAssets.cmake`）。Noto Sans JP（OFL）+ 欧文フォント 1 つ
   （フォールバックのテスト用）。パスはコンパイル定義でテストに渡す。
@@ -1197,8 +1416,11 @@ std::string dump_json(const StyledNode& root);
 - 対応プロパティは DESIGN.md §4 の一覧 + 次のショートハンド / 別名:
   `margin` `padding`（1〜4 値）、`border`（`<幅> solid <色>` / `none`）、`border-width`
   `border-style`（solid / none）`border-color`、`flex`（`none` / `auto` / 1〜3 値）、
-  `gap` `row-gap` `column-gap`、`background`（色のみ。`background-color` の別名）。
+  `gap` `row-gap` `column-gap`、`background`（色のみ。`background-color` の別名）、
+  `word-wrap`（`overflow-wrap` の legacy name alias。CSS Text 3 §5.4。名前の表で写し替えるだけで、
+  カスケード・継承・計算値・ダンプの名前はすべて `overflow-wrap` と同じ。A35）。
   一覧にないプロパティは `UnsupportedProperty`、値が対応外なら `UnsupportedValue`
+  （別名に対応外の値を書いたときの文面は**著者の綴り**のまま。`` `word-wrap: foo` is not supported … ``）
 - **`UnsupportedProperty` の文面には代替案を一言添える**（#20。試用版で「未対応です」だけでは
   次に何をすればよいか分からない）。`value_parser.cpp` の `kPropertyHints` に
   **未対応だと分かっているものだけ**を載せ、`` `box-sizing` is not a supported property
@@ -1249,12 +1471,16 @@ std::string dump_json(const BoxTree&);
   行内のテキスト断片（FontId・サイズ・色・sideways・グリフごとの inline 位置と offset・
   ベースライン / 中心軸の block 位置・**元ノードの位置**）、画像断片、インライン背景。
   ブロックも**元要素の位置**（`BlockBox::location`。A36）を持つ。
-  加えて豆腐の記録（`BoxTree::missing_glyphs`。A31）を持つ。**絵には影響しない**
-  （paint は読まない）が、api が `Warning` にし、`dump_json()` が出す
+  加えて豆腐の記録（`BoxTree::missing_glyphs`。A31。コードポイント・位置・理由
+  （`text::MissingReason`。A43））を持つ。**絵には影響しない**
+  （paint は読まない）が、api が `Warning` にし、`dump_json()` が出す。
+  理由は報告順にも重複除去にも効かない（順序は今までどおり位置 → コードポイント）
 - **block**: 幅は親から降り、高さは子から戻る。`width: auto` は利用可能幅いっぱい。
   `margin: 0 auto` の中央寄せ。兄弟間のマージン相殺（A10）。子が inline と block の混在なら
   inline の連続を無名ブロックで包む
-- **inline**: インライン整形文脈ごとに、(a) 空白の畳み込み（A14）→ (b) **シェーピング属性**が
+- **inline**: インライン整形文脈ごとに、(a) 空白の畳み込み（A14。文字を 1 つも持たない
+  インラインボックスは「文字のない支柱」として位置つきで別に記録する。A42）
+  → (b) **シェーピング属性**が
   同じ区間ごとに `TextMeasurer::shape()`（色・letter-spacing・line-height の境界では切らない。A27）
   → (c) クラスタを `linebreak::Item` に変換（装飾・行高と**行分割ポリシー**はクラスタ先頭の
   文字のものを対応付け（A27 / A28）、letter-spacing を advance に加算、`<br>` は ForcedBreak、
@@ -1265,8 +1491,9 @@ std::string dump_json(const BoxTree&);
   `TextFragment` は「同じ FontId・サイズ・色・sideways の連続」で切る（1 回の shape 結果を、
   装飾の境界とフォールバックの境界で複数の断片に切る。位置は動かない）。
   行の高さは行内の各断片の `line-height` の最大、ベースラインは半行間（half-leading）で決める。
-  (b) のあと、豆腐のクラスタ（`ShapedCluster::missing`）を文字ごとの属性の表の位置の層と
-  突き合わせて `LayoutEngine` に記録する（A31。段落が何度組まれても重複しない）。
+  ブロックの支柱と**空のインラインボックス**（A42）も、文字を持たないまま同じ計算に参加する。
+  (b) のあと、豆腐のクラスタ（`ShapedCluster::missing` と `missing_reason`）を文字ごとの属性の
+  表の位置の層と突き合わせて `LayoutEngine` に記録する（A31 / A43。段落が何度組まれても重複しない）。
   ファイルは段の境界で分けてある（A27 の末尾）。(a)〜(c) の結果 `PreparedParagraph` は
   行の幅に依らないので、固有寸法の計測と実際の配置で同じものを使える
   （`inline_intrinsic()` の min-content / max-content にもアイテムごとのポリシーが効く）
@@ -1278,13 +1505,36 @@ std::string dump_json(const BoxTree&);
   issue #5 の 2^depth）。配置の `layout_block()` は従来どおり毎回 1 回ずつ実行するので、
   座標は 1 ビットも変わらない。固有寸法（`content_intrinsic()`）と準備済み段落も同じメモに乗る
 - **ルビ**（Phase 7）: `<ruby>` 内の「親文字の並び + `<rt>`」を 1 組とし、組ごとに 1 つの Atomic。
-  幅は max(親文字, ルビ)、短い方を中央に置く。行ボックスはルビのぶん block-start 側に広がる。
+  行ボックスはルビのぶん block-start 側に広がる。
   **組の内部は通常のインライン内容と同じ規則で配置する**（字間・装飾・背景。CSS Ruby 1 §2
   「ruby base は inline box として扱う」。A37）。Atomic なのは**行分割だけ**で、親文字は
   クラスタごとに `letter-spacing` 込みの送りで並ぶ（= 計測と配置が同じ数値を使う）。
   行の高さは親文字の**全クラスタ**の ascent / descent / `line-height` から求め、ルビはその
   外側に置く（注釈側は行の高さに参加しない。CSS Ruby 1 §3.4）。`<rt>` の `letter-spacing` は
-  **適用しない**（A37 に根拠）。組の内部の**行分割**指定が効かないのは従来どおり（A28）
+  **適用しない**（A37 に根拠）。組の内部の**行分割**指定が効かないのは従来どおり（A28）。
+  組の中の位置は **JLREQ 3.3.6 の 1:2:…:2:1 の配分**で決める（B = 親文字の送りの合計、
+  R = ルビの送りの合計、E = 余り、n = 配る側のクラスタ数。A41 / issue #28）:
+  1. 組の送りは `W = max(B, R)`。**配分は組の送りを変えない**（行分割位置・固有寸法・
+     `Spacing` は 1 ビットも動かない。変えるのは組の内部の位置だけ）
+  2. `B < R`: ルビはベタで組の先頭から。親文字は `E = R − B` を**端 `E/(2n)`、字間 `E/n`** で配る
+  3. `B > R`: 親文字はベタで組の先頭から。ルビは `E = B − R` を同じ比率で配る
+  4. `B == R`: 両方ベタ
+  5. 端の空きは**ルビ文字サイズの全角**（`<rt>` の `font-size` の 1em）が上限で、上限で
+     止めたぶんは字間に回す（JLREQ 3.3.6 の注。極端に短いルビで端だけが大きく開くのを避ける）。
+     **クラスタが 1 つ**のときは配る字間が無いので中央に置き、この上限は適用しない
+  6. **ルビの掛け**（JLREQ 3.3.8。A44）: `B < R` の組は、余り `E` のうち前後の文字に
+     はみ出してよい量を**掛ける**。掛けてよい相手は隣の**平仮名・片仮名**（長音・小書きを含む。
+     cl-15 / cl-16 / cl-10 / cl-11）だけで、漢字等（cl-19）・欧文・数字・約物・`<img>`・
+     ほかのルビ組・`<br>` には掛けない。量は**前後の両方に掛けられるなら 1:1**、片側だけなら
+     その側に寄せ、**片側あたりルビ文字サイズの全角**（`<rt>` の 1em）が上限。
+     **行頭・行末では掛けない**（版面の外に出さない。落とすのは行分割器 = §3.4 (4')）。
+     掛けたぶんだけ組の送りが縮むので、**改行位置・固有寸法は変わりうる**。
+     掛けきれずに残った余りは規則 2〜5 で組の内部に配る（= 親文字は「行の送りの範囲」に、
+     ルビは「組の箱」に置く。掛けが無ければ 2 つは同じ）
+
+  配分で入れた空きは `letter-spacing` の字間と同じ扱いで、**手前のクラスタの背景が覆う**
+  （隣り合う `<span>` の背景の間に隙間を開けない）。組の端に接する背景スコープは従来どおり
+  組の箱の端まで（A37）。**背景の矩形は掛けを含まない**「行の送りの範囲」で決める（A44）
 - **縦書き**（Phase 8）: 論理座標のまま。`TextStyle::direction = Vertical` で測るだけ
 - **計算量**: 1 つの IFC を組む仕事は、アイテム数 N に対して線形。行ごとに段落全体を舐めたり、
   段落全体ぶんの作業バッファを確保したりしない（A22）。flex の入れ子は深さ d に対して d²
@@ -1336,6 +1586,9 @@ HarfBuzz / `src/` の型は名前も出さない（`tests/api/public_header_chec
 （0 なら `InvalidOption`）。どちらも `scale` を掛けて切り上げる。豆腐は `Warning` として返す:
 `BoxTree::missing_glyphs`（③ が入力位置の昇順 → コードポイントの昇順に並べたもの。A31）を
 そのまま写し、`detail` の末尾に `to_string(RenderError)` と同じ書式で ` at L:C` を付ける。
+文面は `MissingGlyph::reason` で 2 通り（`no font has a glyph for U+XXXX` /
+`the glyph for U+XXXX has only color layers (COLR); drawn as tofu`。A43）。`WarningKind` は
+どちらも `MissingGlyph`。
 api は並べ替えない（順序を決めるのは ③ の仕事）。CLI は `warning[missing-glyph]: <detail>` を
 stderr に出す。
 

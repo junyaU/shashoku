@@ -28,6 +28,10 @@ class ParagraphBuilder {
  private:
   [[nodiscard]] Result<void> build_ruby_item(std::size_t group_index);
   void build_atomic_item(std::size_t at);
+  // (c'') ルビの掛け（JLREQ 3.3.8）。隣のアイテムを見るので、アイテムを全部作ってから決める。
+  void resolve_ruby_overhang();
+  // (c') 空のインラインボックスを行に割り当てる（#23）。行の幅に依らないのでここで決める。
+  void resolve_empty_boxes();
   [[nodiscard]] Result<std::size_t> build_text_items(std::size_t begin);
   // [begin, end) を 1 回でシェーピングする。返すのは runs の添字。
   [[nodiscard]] Result<std::size_t> shape_run(std::size_t begin, std::size_t end);
@@ -82,7 +86,8 @@ void ParagraphBuilder::record_missing(const text::ShapedText& shaped, std::size_
     if (at >= out_->chars.size()) {
       continue;  // 起きないはずだが、クラスタの範囲を信用して添字を外に出さない
     }
-    engine_->record_missing_glyph(out_->chars[at].cp, out_->styles.location(out_->chars[at].style));
+    engine_->record_missing_glyph(out_->chars[at].cp, out_->styles.location(out_->chars[at].style),
+                                  cluster.missing_reason);
   }
 }
 
@@ -91,7 +96,7 @@ void ParagraphBuilder::record_missing_ruby(const text::ShapedText& shaped,
   const SourceLocation& location = out_->styles.location(rt_style);
   for (const text::ShapedCluster& cluster : shaped.clusters) {
     if (cluster.missing && cluster.text_begin < rt_text.size()) {
-      engine_->record_missing_glyph(rt_text[cluster.text_begin], location);
+      engine_->record_missing_glyph(rt_text[cluster.text_begin], location, cluster.missing_reason);
     }
   }
 }
@@ -249,6 +254,75 @@ Result<std::size_t> ParagraphBuilder::build_text_items(std::size_t begin) {
   return end;
 }
 
+// JLREQ 3.3.8: ルビを掛けてよい相手は**平仮名・片仮名**（長音・小書きの仮名を含む。
+// cl-15 / cl-16 / cl-10 / cl-11）だけ。漢字等（cl-19）・欧文・数字・約物には掛けない。
+// <img> やほかのルビ組（Atomic）・<br> にも掛けない。
+// 半角片仮名（U+FF66〜）と仮名の繰返し記号（ゝゞヽヾ）は対象外にしてある: 和文の本文では
+// 使わないうえ、掛けてよいかの根拠が JLREQ に無い。
+bool accepts_ruby_overhang(const linebreak::Item& item) {
+  if (item.kind != linebreak::ItemKind::Text) {
+    return false;
+  }
+  const char32_t cp = item.cp;
+  return (cp >= U'ぁ' && cp <= U'ゖ') ||  // 平仮名（ぁ〜ゖ。小書きを含む）
+         (cp >= U'ァ' && cp <= U'ヺ') ||  // 片仮名（ァ〜ヺ。小書きを含む）
+         cp == U'ー';                     // 長音符
+}
+
+// (c'') ルビの掛け（JLREQ 3.3.8）。ルビが親文字より長い組は、はみ出した量 E を前後の仮名に
+// 掛けてよい。掛ける量の上限は**ルビ文字サイズの全角**（`<rt>` の 1em）で、前後の両方に
+// 掛けられるなら 1:1 に、片側だけならその側に寄せる。**行頭・行末で落とすのは行分割器の仕事**
+// （どの行に来るかはここでは決まらない。line_breaker.hpp の Item::overhang_*）。
+// 掛けきれずに残った余りは、配置のときに (a) の配分（JLREQ 3.3.6）で組の内部に配る。
+void ParagraphBuilder::resolve_ruby_overhang() {
+  for (std::size_t i = 0; i < out_->items.size(); ++i) {
+    const std::size_t ruby = out_->sources[i].ruby;
+    if (ruby == kNone) {
+      continue;
+    }
+    const RubyPiece& piece = out_->rubies[ruby];
+    const float excess = piece.rt_width - piece.base_width;
+    if (excess <= 0) {
+      continue;  // ルビが親文字からはみ出していない組は掛けない
+    }
+    const float limit = piece.rt_font_size;
+    const bool before = i > 0 && accepts_ruby_overhang(out_->items[i - 1]);
+    const bool after = i + 1 < out_->items.size() && accepts_ruby_overhang(out_->items[i + 1]);
+    if (before && after) {
+      out_->items[i].overhang_before = std::min(excess / 2, limit);
+      out_->items[i].overhang_after = out_->items[i].overhang_before;
+    } else if (before) {
+      out_->items[i].overhang_before = std::min(excess, limit);
+    } else if (after) {
+      out_->items[i].overhang_after = std::min(excess, limit);
+    }
+  }
+}
+
+// (c') 空のインラインボックス（文字を 1 つも持たない <span> など）が参加する行を決める。
+// 規則は 1 つだけ（issue #23。CSS 2.1 §10.8 / §10.8.1 と Chrome の実測に一致する）:
+//   * `char_pos` 以降の最初のアイテムの行
+//   * 無ければ直前（= 最後）のアイテムの行
+//   * ただし最後のアイテムが強制改行なら**どの行にも参加しない**
+//     （`A<br><span></span>` の空 span は次の行を作らないので、参加する行が無い）
+// ここで決めるのは、**行の幅に依らない**から（= メモした準備済み段落で使い回せる。A29）。
+// アイテムの char_begin は狭義単調増加なので二分探索できる。
+void ParagraphBuilder::resolve_empty_boxes() {
+  for (EmptyInlineBox& box : out_->empty_boxes) {
+    const auto found =
+        std::ranges::lower_bound(out_->sources, box.char_pos, {}, &ItemSource::char_begin);
+    if (found != out_->sources.end()) {
+      box.item = static_cast<std::size_t>(found - out_->sources.begin());
+      continue;
+    }
+    if (out_->items.empty() || out_->items.back().kind == linebreak::ItemKind::ForcedBreak) {
+      box.item = kNone;
+      continue;
+    }
+    box.item = out_->items.size() - 1;
+  }
+}
+
 Result<void> ParagraphBuilder::build() {
   std::size_t i = 0;
   while (i < out_->chars.size()) {
@@ -271,6 +345,8 @@ Result<void> ParagraphBuilder::build() {
     }
     i = *end;
   }
+  resolve_ruby_overhang();
+  resolve_empty_boxes();
   return {};
 }
 
@@ -295,6 +371,7 @@ Result<PreparedParagraph> prepare_paragraph(const InlineInput& input, LayoutEngi
   out.chars = std::move(collected->chars);
   out.styles = std::move(collected->styles);
   out.scopes = std::move(collected->scopes);
+  out.empty_boxes = std::move(collected->empty_boxes);
   out.images = std::move(collected->images);
 
   // 支柱も文字と同じ表に入れる（行の高さの計算が 1 本道になる）。

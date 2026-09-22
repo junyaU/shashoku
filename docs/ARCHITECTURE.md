@@ -417,7 +417,7 @@ A19 で `GlyphSource::rasterize()` を `Result` にしたが、計測側は値�
 |---|---|
 | 空文字列（グリフが 0 個）、既定無視文字だけの run、`font_size` が 0 | 成功（空の `ShapedText` / 送り 0） |
 | 豆腐（どのフォントにもグリフがない） | 成功 + `ShapedCluster::missing = true`（DESIGN.md §3-6 の唯一の例外） |
-| `FontStore` にフォントが 1 つもない、不正な `FontId`、非有限の `font_size` | `Internal`（呼び出し側のバグ） |
+| `FontStore` にフォントが 1 つもない、不正な `FontId`、**負**または非有限の `font_size` | `Internal`（呼び出し側のバグ） |
 | `hb_font_get_h_extents()` が偽（hhea / OS/2 が読めない） | `FontLoad` |
 | `hb_font_create()` が空のフォントを返す、`hb_buffer_allocation_successful()` が偽 | `OutOfMemory`（A26 の種類） |
 | グリフ数が 0 でないのに HarfBuzz がグリフ情報を返さない | `Internal` |
@@ -428,8 +428,10 @@ A19 で `GlyphSource::rasterize()` を `Result` にしたが、計測側は値�
 - **フォントが 1 つもない `FontStore` はエラーにした。** それまでは「存在しない FontId 0 の
   `.notdef` を全文字ぶん返す」で通っていて、失敗するのはラスタライズの段（A19 の `Internal`）だった。
   api は空の `FontSet` を `NoFonts` で弾いているので、ここに来るのは呼び出し側のバグ
-- `font_size` が 0 や負のときは従来どおり送り 0 で成功する（CSS の `font-size: 0` は正当な指定で、
-  A19 の `pixel_size` と違ってラスタライザには渡らない）。非有限だけを `Internal` にする
+- `font_size` が **0** のときは送り 0 で成功する（CSS Fonts 4 §2.5 の `font-size: 0` は正当な指定で、
+  A19 の `pixel_size` と違ってラスタライザには渡らない）。**負**と非有限を `Internal` にする
+  （負は issue #26 で足した。style が `font-size: -16px` を宣言の位置つきで止めているので
+  入力からは到達しないが、注入点の契約としては穴だった。A36 の最後を見よ）
 - layout 側の呼び出しは `LayoutEngine::shape()` / `metrics()`（A21 の計測カウンタ）に集約済みなので、
   波及は機械的。**失敗した結果はメモに残さない**（A29 の準備済み段落は `Result` が成功した後でのみ
   `remember()` する）。偽の `TextMeasurer`（`tests/layout/test_support.hpp`）には失敗を注入する口
@@ -766,6 +768,16 @@ layout の加算で `inf` になる。そこで `RenderLimits` に**長さ・座
   出ていた（`!(height > 0)` が NaN でも真になる）。③ の出口が先に止めるので到達しなくなったが、
   万一届いたら layout の不変条件が破れている = shashoku 側のバグなので、`Internal` で
   「有限でない」と報告する。本当に高さ 0 のときのメッセージは従来どおり
+- **負の値はパース時（②の入口）に止める。有限性・上限とは別の検査**で、`margin` と
+  `letter-spacing` だけが例外（`font-size: 0` は CSS Fonts 4 §2.5 で有効なので通す）。
+  種類は `UnsupportedValue` + 宣言（属性）の位置で、「範囲外」の `LimitExceeded` とは別物
+  （#19 でこの 2 つを分けた）。計算値の段で負になる経路は無い（`em` の乗算は「非負 x 非負」
+  だけで `calc()` は未対応）ので、ここで弾けば後段は負を見ない。総当たりの表は
+  `tests/style/error_test.cpp` の `NegativeValuesAreRejectedExceptForMarginAndLetterSpacing`。
+  あわせて**注入点の契約**（`text::TextMeasurer`）にも「`font_size` は非負」を明記し、
+  シェーパの入口（`check_contract()`）で `< 0` を `Internal` にした（issue #26）。
+  style が止めているので入力からは到達しないが、偽の `TextMeasurer` やレイアウトのテストは
+  この入口を直接叩くので、契約の文面と実装を合わせておく
 
 **A37. ルビ組の「代表の文字」は行分割ポリシー専用。組の内部は通常のインライン内容として
 組み、幾何は親文字の全クラスタから出す。**（issue #16 / #17）A28 は「ルビ組の

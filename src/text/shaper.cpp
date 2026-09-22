@@ -679,6 +679,14 @@ Result<void> check_contract(const std::vector<FontId>& stack, const TextStyle& s
     return fail(ErrorKind::Internal, std::format("cannot shape: font_size must be finite (got {})",
                                                  number_text(style.font_size)));
   }
+  // 負も契約違反（issue #26）。style が `font-size: -16px` を止めているので入力からは
+  // 到達しないが、注入点の契約（text_measurer.hpp）を実装でも守る。`0` は CSS 上
+  // 有効なので通す（`-0` は `0` と等しいのでここも通る）。
+  if (style.font_size < 0) {
+    return fail(ErrorKind::Internal,
+                std::format("cannot shape: font_size must be non-negative (got {})",
+                            number_text(style.font_size)));
+  }
   return {};
 }
 

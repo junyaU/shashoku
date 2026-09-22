@@ -186,6 +186,9 @@ class InlineFormatter {
   std::vector<Placement> ruby_placement_;
   std::vector<std::uint64_t> style_stamp_;
   std::uint64_t stamp_ = 0;
+  // 空のインラインボックス（#23）。参加する行は (c) が決めた `EmptyInlineBox::item` で
+  // 表され、その値も行も文書順に進むので、段落で 1 本のカーソルで足りる（A22）。
+  std::size_t empty_cursor_ = 0;
   // 背景スコープは begin の昇順（collect_element が外側から push する）。行が進むのに
   // 合わせて「いまの行と交差するスコープ」だけを持つ。
   std::size_t scope_cursor_ = 0;
@@ -251,6 +254,14 @@ Extent InlineFormatter::measure_line(const linebreak::Line& line) {
   // 支柱は内容によらず全行に参加する
   extend_line_height(paragraph_->strut_style, extent);
   style_stamp_[paragraph_->strut_style] = stamp_;
+  // 文字を持たないインラインボックスも、支柱と同じように行の高さに参加する
+  // （CSS 2.1 §10.8。#23）。どの行かは (c) が決めてある（kNone はどの行にも参加せず、
+  // そういう箱は列の末尾にしか来ないのでカーソルはそこで止まる）
+  while (empty_cursor_ < paragraph_->empty_boxes.size() &&
+         paragraph_->empty_boxes[empty_cursor_].item < line.end) {
+    extend_line_height(paragraph_->empty_boxes[empty_cursor_].style, extent);
+    ++empty_cursor_;
+  }
   for (std::size_t i = line.begin; i < line.content_end; ++i) {
     const ItemSource& source = paragraph_->sources[i];
     if (source.image != kNone) {

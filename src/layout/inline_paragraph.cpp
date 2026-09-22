@@ -28,6 +28,8 @@ class ParagraphBuilder {
  private:
   [[nodiscard]] Result<void> build_ruby_item(std::size_t group_index);
   void build_atomic_item(std::size_t at);
+  // (c') 空のインラインボックスを行に割り当てる（#23）。行の幅に依らないのでここで決める。
+  void resolve_empty_boxes();
   [[nodiscard]] Result<std::size_t> build_text_items(std::size_t begin);
   // [begin, end) を 1 回でシェーピングする。返すのは runs の添字。
   [[nodiscard]] Result<std::size_t> shape_run(std::size_t begin, std::size_t end);
@@ -249,6 +251,30 @@ Result<std::size_t> ParagraphBuilder::build_text_items(std::size_t begin) {
   return end;
 }
 
+// (c') 空のインラインボックス（文字を 1 つも持たない <span> など）が参加する行を決める。
+// 規則は 1 つだけ（issue #23。CSS 2.1 §10.8 / §10.8.1 と Chrome の実測に一致する）:
+//   * `char_pos` 以降の最初のアイテムの行
+//   * 無ければ直前（= 最後）のアイテムの行
+//   * ただし最後のアイテムが強制改行なら**どの行にも参加しない**
+//     （`A<br><span></span>` の空 span は次の行を作らないので、参加する行が無い）
+// ここで決めるのは、**行の幅に依らない**から（= メモした準備済み段落で使い回せる。A29）。
+// アイテムの char_begin は狭義単調増加なので二分探索できる。
+void ParagraphBuilder::resolve_empty_boxes() {
+  for (EmptyInlineBox& box : out_->empty_boxes) {
+    const auto found =
+        std::ranges::lower_bound(out_->sources, box.char_pos, {}, &ItemSource::char_begin);
+    if (found != out_->sources.end()) {
+      box.item = static_cast<std::size_t>(found - out_->sources.begin());
+      continue;
+    }
+    if (out_->items.empty() || out_->items.back().kind == linebreak::ItemKind::ForcedBreak) {
+      box.item = kNone;
+      continue;
+    }
+    box.item = out_->items.size() - 1;
+  }
+}
+
 Result<void> ParagraphBuilder::build() {
   std::size_t i = 0;
   while (i < out_->chars.size()) {
@@ -271,6 +297,7 @@ Result<void> ParagraphBuilder::build() {
     }
     i = *end;
   }
+  resolve_empty_boxes();
   return {};
 }
 
@@ -295,6 +322,7 @@ Result<PreparedParagraph> prepare_paragraph(const InlineInput& input, LayoutEngi
   out.chars = std::move(collected->chars);
   out.styles = std::move(collected->styles);
   out.scopes = std::move(collected->scopes);
+  out.empty_boxes = std::move(collected->empty_boxes);
   out.images = std::move(collected->images);
 
   // 支柱も文字と同じ表に入れる（行の高さの計算が 1 本道になる）。

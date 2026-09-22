@@ -455,12 +455,13 @@ TEST(LayoutRuby, MonorubyDistributesEachPairIndependently) {
 }
 
 // text-align: justify でも組の内部の配分は変わらない（組は 1 アイテムで、広がるのは組の外側）。
+// 組の後ろは漢字にしてある: 仮名だとルビの掛け（#28(b)）が効いて配分が変わるため。
 TEST(LayoutRuby, JustifyKeepsTheDistributionInsideThePair) {
   for (const bool vertical : {false, true}) {
     SCOPED_TRACE(vertical);
     FakeMeasurer measurer;
     std::vector<Tree> children{
-        block({ruby({text("写植"), rt("しゃしょく")}), text("はむかしのなまえです")},
+        block({ruby({text("写植"), rt("しゃしょく")}), text("東京都府県市区町村")},
               [](ComputedStyle& style) { style.text_align = style::TextAlign::Justify; })};
     const auto root = vertical ? build_vertical(std::move(children)) : build(std::move(children));
     const auto options = vertical ? vertical_options(400, 150) : make_options(150);
@@ -478,13 +479,14 @@ TEST(LayoutRuby, JustifyKeepsTheDistributionInsideThePair) {
 }
 
 // 禁則で組が行頭・行末に来ても、組の内部の配分は行の中での位置に付いていく。
+// 前後の文字は漢字にしてある: 仮名だとルビの掛け（#28(b)）が効いて配分が変わるため。
 TEST(LayoutRuby, DistributionFollowsThePairToTheLineEdges) {
   for (const bool vertical : {false, true}) {
     SCOPED_TRACE(vertical);
     FakeMeasurer measurer;
     const auto options = vertical ? vertical_options(400, 88) : make_options(88);
-    // 行末: あいう（48）+ 組（40）= 88 でちょうど収まる
-    std::vector<Tree> tail{block({text("あいう"), ruby({text("写植"), rt("しゃしょく")})})};
+    // 行末: 東京都（48）+ 組（40）= 88 でちょうど収まる
+    std::vector<Tree> tail{block({text("東京都"), ruby({text("写植"), rt("しゃしょく")})})};
     const auto at_end = vertical ? build_vertical(std::move(tail)) : build(std::move(tail));
     const auto a = run_layout(at_end, options, measurer);
     ASSERT_TRUE(a.has_value());
@@ -492,8 +494,8 @@ TEST(LayoutRuby, DistributionFollowsThePairToTheLineEdges) {
     EXPECT_EQ(base_glyph_positions(*all_lines(*a)[0]),
               (std::vector<float>{0, 16, 32, 50, 70}));  // 組は 48 から。48 + 2 / 48 + 22
     EXPECT_EQ(ruby_glyph_positions(*all_lines(*a)[0]), (std::vector<float>{48, 56, 64, 72, 80}));
-    // 行頭: あいうえ（64）+ 組（40）= 104 > 88 なので組が次の行の頭に落ちる
-    std::vector<Tree> head{block({text("あいうえ"), ruby({text("写植"), rt("しゃしょく")})})};
+    // 行頭: 東京都府（64）+ 組（40）= 104 > 88 なので組が次の行の頭に落ちる
+    std::vector<Tree> head{block({text("東京都府"), ruby({text("写植"), rt("しゃしょく")})})};
     const auto at_start = vertical ? build_vertical(std::move(head)) : build(std::move(head));
     const auto b = run_layout(at_start, options, measurer);
     ASSERT_TRUE(b.has_value());
@@ -1068,6 +1070,259 @@ TEST(LayoutRuby, LetterSpacingCombinations) {
       }
     }
   }
+}
+
+// ---- JLREQ 3.3.8 のルビの掛け。issue #28 (b) -------------------------------------------
+//
+// ルビが親文字より長いとき、余り E のうち前後の文字に**はみ出してよい量**を掛ける。
+// 掛けてよい相手は平仮名・片仮名（長音・小書きを含む。JLREQ の cl-15 / cl-16 / cl-10 /
+// cl-11）だけで、漢字等（cl-19）・欧文・数字・約物には掛けない。掛ける量の上限は
+// ルビ文字サイズの全角（<rt> の 1em）。行頭・行末では掛けない（版面の外に出さない）。
+// 掛けたぶんだけ組の送りが縮むので、**改行位置が変わりうる**。
+// 掛けきれずに残った余りは (a) の配分（1:2:…:2:1）で組の内部に配る。
+
+// 組の前後に置く文字と、その結果の期待値（行の先頭からのペン位置）。
+struct OverhangCase {
+  std::string_view name;
+  std::string_view lead;          // 組の前の文字（空なら組が段落の先頭）
+  bool break_after_lead = false;  // lead の直後で改行する（組が行頭に来る）
+  std::string_view trail;         // 組の後ろの文字（空なら組が段落の末尾）
+  std::string_view annotation = "さくら";  // ルビ（全角 1 文字 = 8px）
+  std::vector<float> base;                 // 親文字のペン位置
+  std::vector<float> ruby;                 // ルビのペン位置
+  float trail_start = 0;  // 組の後ろの文字のペン位置（trail が空なら見ない）
+};
+
+// 親文字は「桜」1 文字（16px）。ルビ 3 文字なら W = 24、余り E = 8。
+std::vector<OverhangCase> overhang_cases() {
+  return {
+      // 行の中。掛けられる側の数で配り方が変わる
+      {.name = "both-kana",  // 前後 4px ずつ → 組の送りは 16（= 親文字）になる
+       .lead = "の",
+       .trail = "の",
+       .base = {16},
+       .ruby = {12, 20, 28},
+       .trail_start = 32},
+      {.name = "lead-kana-only",  // 前だけ。上限 8px まで前に寄せる
+       .lead = "の",
+       .trail = "木",
+       .base = {16},
+       .ruby = {8, 16, 24},
+       .trail_start = 32},
+      {.name = "trail-kana-only",
+       .lead = "木",
+       .trail = "の",
+       .base = {16},
+       .ruby = {16, 24, 32},
+       .trail_start = 32},
+      {.name = "no-kana",  // 漢字等には掛けない → (a) の配分のまま（1 クラスタは中央）
+       .lead = "木",
+       .trail = "木",
+       .base = {20},
+       .ruby = {16, 24, 32},
+       .trail_start = 40},
+      {.name = "katakana-and-choon",  // 片仮名・長音も掛けてよい
+       .lead = "ー",
+       .trail = "ア",
+       .base = {16},
+       .ruby = {12, 20, 28},
+       .trail_start = 32},
+      {.name = "punctuation-is-not-kana",  // 約物・数字・欧文には掛けない
+       .lead = "、",
+       .trail = "A",
+       .base = {20},
+       .ruby = {16, 24, 32},
+       .trail_start = 40},
+      // 行頭・行末では掛けない。掛けきれなかった余りは組の内部に配る
+      {.name = "line-start",  // 段落の先頭（前に文字が無い）
+       .lead = "",
+       .trail = "の",
+       .base = {0},
+       .ruby = {0, 8, 16},
+       .trail_start = 16},
+      {.name = "after-break",  // <br> は掛けてよい相手ではない（前は無しと同じ）
+       .lead = "の",
+       .break_after_lead = true,
+       .trail = "の",
+       .base = {0},
+       .ruby = {0, 8, 16},
+       .trail_start = 16},
+      {.name = "line-end",  // 段落の末尾（後ろに文字が無い）
+       .lead = "の",
+       .trail = "",
+       .base = {16},
+       .ruby = {8, 16, 24}},
+      // 上限（ルビ文字サイズの全角 = 8px）。掛けきれない余りは (a) の配分に回る
+      {.name = "capped",  // E = 24 だが前後 8px ずつしか掛けられない
+       .lead = "の",
+       .trail = "の",
+       .annotation = "さくらです",
+       .base = {20},  // 残り 8 を 1 クラスタに配る = 中央
+       .ruby = {8, 16, 24, 32, 40},
+       .trail_start = 40},
+      // 掛ける余りが無い組は動かない
+      {.name = "equal-width",
+       .lead = "の",
+       .trail = "の",
+       .annotation = "さく",
+       .base = {16},
+       .ruby = {16, 24},
+       .trail_start = 32},
+      {.name = "shorter-ruby",  // ルビの方が短い組は掛けない（はみ出していない）
+       .lead = "の",
+       .trail = "の",
+       .annotation = "さ",
+       .base = {16},
+       .ruby = {20},
+       .trail_start = 32},
+  };
+}
+
+void check_overhang(const OverhangCase& test_case, bool vertical) {
+  const std::string label =
+      std::string(test_case.name) + " vertical=" + std::to_string(static_cast<int>(vertical));
+  FakeMeasurer measurer;
+  std::vector<Tree> children;
+  if (!test_case.lead.empty()) {
+    children.push_back(text(test_case.lead));
+    if (test_case.break_after_lead) {
+      children.push_back(br());
+    }
+  }
+  children.push_back(ruby({text("桜"), rt(test_case.annotation)}));
+  if (!test_case.trail.empty()) {
+    children.push_back(text(test_case.trail));
+  }
+  std::vector<Tree> root_children{block(std::move(children))};
+  const auto root =
+      vertical ? build_vertical(std::move(root_children)) : build(std::move(root_children));
+  const auto tree = vertical ? run_layout(root, vertical_options(400, 400), measurer)
+                             : run_layout(root, make_options(400), measurer);
+  ASSERT_TRUE(tree.has_value()) << label;
+  const std::vector<const LineBox*> lines = all_lines(*tree);
+  // 組のある行（改行を挟んだケースでは 2 行目）
+  const LineBox& line = *lines[test_case.break_after_lead ? 1 : 0];
+
+  std::vector<float> expected_base = test_case.base;
+  if (!test_case.break_after_lead && !test_case.lead.empty()) {
+    expected_base.insert(expected_base.begin(), 0);  // 前の文字は必ず 0 から
+  }
+  if (!test_case.trail.empty()) {
+    expected_base.push_back(test_case.trail_start);
+  }
+  EXPECT_EQ(base_glyph_positions(line), expected_base) << label;
+  EXPECT_EQ(ruby_glyph_positions(line), test_case.ruby) << label;
+}
+
+TEST(LayoutRuby, OverhangCombinations) {
+  for (const OverhangCase& test_case : overhang_cases()) {
+    for (const bool vertical : {false, true}) {
+      check_overhang(test_case, vertical);
+    }
+  }
+}
+
+// issue #28 の再現: 前後の仮名に 4px ずつ掛かり、行の送りが 6 字ぶんに収まる。
+TEST(LayoutRuby, OverhangPullsTheFollowingTextIn) {
+  FakeMeasurer measurer;
+  const auto root =
+      build({block({text("あの"), ruby({text("桜"), rt("さくら")}), text("のえだ")})});
+  const auto tree = run_layout(root, 400, measurer);
+  ASSERT_TRUE(tree.has_value());
+  const LineBox& line = *all_lines(*tree)[0];
+  // あ 0・の 16・桜 32・の 48・え 64・だ 80（掛けが無ければ 桜 36・の 56 …）
+  EXPECT_EQ(base_glyph_positions(line), (std::vector<float>{0, 16, 32, 48, 64, 80}));
+  EXPECT_EQ(ruby_glyph_positions(line), (std::vector<float>{28, 36, 44}));
+}
+
+// 漢字等（cl-19）には掛けない。issue の「名桜木」の行。
+TEST(LayoutRuby, DoesNotOverhangOntoKanji) {
+  FakeMeasurer measurer;
+  const auto root = build({block({text("名"), ruby({text("桜"), rt("さくら")}), text("木")})});
+  const auto tree = run_layout(root, 400, measurer);
+  ASSERT_TRUE(tree.has_value());
+  const LineBox& line = *all_lines(*tree)[0];
+  EXPECT_EQ(base_glyph_positions(line), (std::vector<float>{0, 20, 40}));
+}
+
+// 親文字が複数クラスタの組: 掛けで余りが無くなれば親文字はベタに戻る（(a) の配分が消える）。
+TEST(LayoutRuby, OverhangRemovesTheDistributionWhenTheExcessFits) {
+  FakeMeasurer measurer;
+  const auto root =
+      build({block({text("の"), ruby({text("写植"), rt("しゃしょく")}), text("の")})});
+  const auto tree = run_layout(root, 400, measurer);
+  ASSERT_TRUE(tree.has_value());
+  const LineBox& line = *all_lines(*tree)[0];
+  // 前後 4px ずつ掛かり、親文字は自分の送り（32）にベタで収まる（配分は 0）
+  EXPECT_EQ(base_glyph_positions(line), (std::vector<float>{0, 16, 32, 48}));
+  EXPECT_EQ(ruby_glyph_positions(line), (std::vector<float>{12, 20, 28, 36, 44}));
+}
+
+// 行頭・行末の組は版面の外に出ない。
+TEST(LayoutRuby, PairAtTheLineEdgesStaysInsideTheColumn) {
+  FakeMeasurer measurer;
+  const auto root = build({block({ruby({text("桜"), rt("さくら")}), text("あいうえお")})});
+  const auto tree = run_layout(root, 400, measurer);
+  ASSERT_TRUE(tree.has_value());
+  const LineBox& line = *all_lines(*tree)[0];
+  // 組は [0, 24]: ルビは 0 から始まり、後ろの「あ」にだけ 8px 掛かる
+  EXPECT_EQ(ruby_glyph_positions(line), (std::vector<float>{0, 8, 16}));
+  EXPECT_EQ(base_glyph_positions(line), (std::vector<float>{0, 16, 32, 48, 64, 80}));
+}
+
+// 折り返しで組が行頭に来たら、前への掛けは落ちる（版面の外に出さない）。
+// 落ちたぶんの余りは組の内部の配分（JLREQ 3.3.6）に戻る。
+TEST(LayoutRuby, OverhangIsDroppedWhenThePairFallsToTheLineStart) {
+  for (const bool vertical : {false, true}) {
+    SCOPED_TRACE(vertical);
+    FakeMeasurer measurer;
+    // のののの（64）+ 組（24）+ のの: 幅 64 で組が 2 行目の先頭に落ちる
+    std::vector<Tree> children{
+        block({text("のののの"), ruby({text("桜"), rt("さくら")}), text("のの")})};
+    const auto root = vertical ? build_vertical(std::move(children)) : build(std::move(children));
+    const auto options = vertical ? vertical_options(400, 64) : make_options(64);
+    const auto tree = run_layout(root, options, measurer);
+    ASSERT_TRUE(tree.has_value());
+    const std::vector<const LineBox*> lines = all_lines(*tree);
+    ASSERT_EQ(lines.size(), 2U);
+    // 2 行目: 前の掛け（4）は落ち、後ろの掛け（4）だけが効く。
+    // 送りの範囲は [0, 20] なので、余り 4 が 1 クラスタの中央に戻って 桜 は 2
+    EXPECT_EQ(ruby_glyph_positions(*lines[1]), (std::vector<float>{0, 8, 16}));
+    EXPECT_EQ(base_glyph_positions(*lines[1]), (std::vector<float>{2, 20, 36}));
+  }
+}
+
+// 掛けで行が縮むので、改行位置が変わりうる。
+TEST(LayoutRuby, OverhangChangesWhereTheLineBreaks) {
+  FakeMeasurer measurer;
+  // の + 組（24）+ のの = 16 + 24 + 32 = 72。掛けで 8 縮んで 64 に収まる
+  const auto make = [] {
+    return build({block({text("の"), ruby({text("桜"), rt("さくら")}), text("のの")})});
+  };
+  const auto tree = run_layout(make(), 64, measurer);
+  ASSERT_TRUE(tree.has_value());
+  EXPECT_EQ(all_lines(*tree).size(), 1U);
+  // 掛けられない相手（漢字）なら同じ幅で 2 行になる
+  const auto kanji = build({block({text("木"), ruby({text("桜"), rt("さくら")}), text("木木")})});
+  const auto kanji_tree = run_layout(kanji, 64, measurer);
+  ASSERT_TRUE(kanji_tree.has_value());
+  EXPECT_EQ(all_lines(*kanji_tree).size(), 2U);
+}
+
+// 組の箱（背景の矩形）は掛けを含まない送りの範囲で決める。
+TEST(LayoutRuby, BackgroundIgnoresTheOverhang) {
+  FakeMeasurer measurer;
+  const auto filled = [](ComputedStyle& style) { style.background_color = Color{0, 255, 0, 255}; };
+  const auto root = build(
+      {block({text("の"), inline_box({ruby({text("桜"), rt("さくら")})}, filled), text("の")})});
+  const auto tree = run_layout(root, 400, measurer);
+  ASSERT_TRUE(tree.has_value());
+  const LineBox& line = *all_lines(*tree)[0];
+  const std::vector<const InlineBackground*> painted = backgrounds(line);
+  ASSERT_EQ(painted.size(), 1U);
+  // ルビは [12, 36] にはみ出すが、背景は親文字の送りの範囲 [16, 32]
+  EXPECT_FLOAT_EQ(painted[0]->rect.inline_start, 16);
+  EXPECT_FLOAT_EQ(painted[0]->rect.inline_end(), 32);
 }
 
 // ---- flex / 固有寸法 ----------------------------------------------------------------

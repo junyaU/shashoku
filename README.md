@@ -285,7 +285,7 @@ shashoku は純粋関数です（[DESIGN.md §3-5](docs/DESIGN.md)）。グロ�
 
 ## 既知の制限
 
-- **ルビ**: 親文字とルビの幅が違うときは JLREQ 3.3.6 の 1:2:…:2:1 で配りますが、**隣の文字へのはみ出し（ルビの掛け。JLREQ 3.3.8）はしません**。`<rt>` に `letter-spacing` は効きません（ARCHITECTURE.md A37）。**縦中横**（`text-combine-upright`）もありません
+- **ルビ**: 親文字とルビの幅が違うときは JLREQ 3.3.6 の 1:2:…:2:1 で配り、はみ出したぶんは隣の**仮名**にだけ掛けます（JLREQ 3.3.8。漢字・欧文・数字・約物には掛けません）。`<rt>` に `letter-spacing` は効きません（ARCHITECTURE.md A37）。**縦中横**（`text-combine-upright`）はありません
 - **flexbox**: 単一行のみ（`flex-wrap` なし）。`align-self` `order` `flex-flow` なし
 - **ボックス**: `box-sizing` は content-box のみ。`max-width` / `min-width` なし。枠線と角丸は **4 辺・4 隅共通のみ**（`border-top` や隅ごとの半径は不可）。マージンの相殺は**隣り合う兄弟ブロック間だけ**（親子間はしません）
 - **画像**: **PNG のみ**（JPEG / SVG / WebP は非対応）。URL もファイルパスも解釈せず、バイト列で渡します

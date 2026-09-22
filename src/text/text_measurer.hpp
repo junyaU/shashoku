@@ -42,6 +42,13 @@ struct ShapedGlyph {
   bool operator==(const ShapedGlyph&) const = default;
 };
 
+// 豆腐になった理由（A-new / issue #27）。**警告の文面を分けるためだけ**に運ぶ値で、
+// 組版には一切効かない（送りも豆腐のグリフも理由によらず同じ）。
+enum class MissingReason : std::uint8_t {
+  NotInAnyFont,  // どのフォントの cmap にもグリフが無かった（従来の豆腐）
+  ColorOnly,  // グリフはあるが色データだけで、単色の輪郭が空（COLR のベース）
+};
+
 // 行分割の最小単位。1 クラスタ = 分割してはいけない文字のまとまり
 // （基底文字 + 結合文字、異体字セレクタ付き漢字、合字、サロゲート相当の 1 文字など）。
 struct ShapedCluster {
@@ -50,7 +57,9 @@ struct ShapedCluster {
   std::uint32_t glyph_begin = 0;  // ShapedText::glyphs の [glyph_begin, glyph_end)
   std::uint32_t glyph_end = 0;
   float advance = 0;     // クラスタ内グリフの advance の合計
-  bool missing = false;  // どのフォントにもグリフがなかった（豆腐）
+  bool missing = false;  // どのフォントでも描けなかった（豆腐）
+  // missing が true のときだけ意味を持つ。false のときは既定値のまま。
+  MissingReason missing_reason = MissingReason::NotInAnyFont;
 
   bool operator==(const ShapedCluster&) const = default;
 };

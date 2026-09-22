@@ -82,7 +82,8 @@ void ParagraphBuilder::record_missing(const text::ShapedText& shaped, std::size_
     if (at >= out_->chars.size()) {
       continue;  // 起きないはずだが、クラスタの範囲を信用して添字を外に出さない
     }
-    engine_->record_missing_glyph(out_->chars[at].cp, out_->styles.location(out_->chars[at].style));
+    engine_->record_missing_glyph(out_->chars[at].cp, out_->styles.location(out_->chars[at].style),
+                                  cluster.missing_reason);
   }
 }
 
@@ -91,7 +92,7 @@ void ParagraphBuilder::record_missing_ruby(const text::ShapedText& shaped,
   const SourceLocation& location = out_->styles.location(rt_style);
   for (const text::ShapedCluster& cluster : shaped.clusters) {
     if (cluster.missing && cluster.text_begin < rt_text.size()) {
-      engine_->record_missing_glyph(rt_text[cluster.text_begin], location);
+      engine_->record_missing_glyph(rt_text[cluster.text_begin], location, cluster.missing_reason);
     }
   }
 }

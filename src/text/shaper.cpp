@@ -116,6 +116,9 @@ struct CharPlan {
   hb_script_t script = HB_SCRIPT_COMMON;
   Orientation orientation = Orientation::Horizontal;
   bool missing = false;
+  // 豆腐の理由。run の分け方には**入れない**（文面のためだけの値で、同じ run に
+  // 理由の違う豆腐が混ざっても困らない。クラスタごとに持たせる）。
+  MissingReason missing_reason = MissingReason::NotInAnyFont;
   bool attached = false;  // 直前の文字にくっつく（結合文字・異体字セレクタ・ZWJ の後ろ）
 
   [[nodiscard]] bool same_run_as(const CharPlan& other) const {
@@ -372,10 +375,17 @@ Result<CharPlan> ShaperImpl::resolve_char(const std::vector<FontId>& stack, char
     // 「cmap にグリフがある」だけでは足りない（A-new / issue #27）。COLR のベースのように
     // 色データだけを持ち単色の輪郭が空のグリフは、そのフォントでは描けないので次のフォントに
     // 送る。どのフォントも描けなければ豆腐（□）+ 警告になる（A31）。
-    if (fonts->has_drawable_glyph(font, cp)) {
+    // cmap 引きは従来どおりフォントごとに 1 回だけ。
+    const GlyphId glyph = fonts->glyph_for(font, cp);
+    if (glyph != 0 && !fonts->is_color_only_glyph(font, glyph)) {
       plan.font = font;
       plan.missing = false;
       break;
+    }
+    if (glyph != 0) {
+      // グリフはあったが色データだけだった。豆腐になるならこちらを理由にする
+      // （警告の文面が変わるだけで、組版は「どのフォントにも無い」ときと同じ）。
+      plan.missing_reason = MissingReason::ColorOnly;
     }
   }
 
@@ -536,8 +546,10 @@ Result<void> ShaperImpl::emit_missing_run(std::size_t begin, std::size_t end,
   FontId font = stack.front();
   GlyphId tofu_glyph = 0;
   for (const FontId candidate : stack) {
+    // □ 自体が色データだけのグリフ（COLR のベース）のフォントは飛ばす。それを選ぶと
+    // 豆腐が空白になり、issue #27 と同じ「静かに消える」壊れ方をする（A-new）。
     const GlyphId glyph = fonts->glyph_for(candidate, kTofu);
-    if (glyph != 0) {
+    if (glyph != 0 && !fonts->is_color_only_glyph(candidate, glyph)) {
       font = candidate;
       tofu_glyph = glyph;
       break;
@@ -575,6 +587,7 @@ Result<void> ShaperImpl::emit_missing_run(std::size_t begin, std::size_t end,
     cluster.glyph_end = cluster.glyph_begin + 1;
     cluster.advance = glyph.advance;
     cluster.missing = true;
+    cluster.missing_reason = plan[i].missing_reason;
 
     out.glyphs.push_back(glyph);
     out.clusters.push_back(cluster);
@@ -634,6 +647,9 @@ std::vector<ShapedCluster> join_attached_clusters(std::u32string_view text,
     merged.back().text_end = std::max(merged.back().text_end, cluster.text_end);
     merged.back().glyph_end = std::max(merged.back().glyph_end, cluster.glyph_end);
     merged.back().advance += cluster.advance;
+    if (cluster.missing && !merged.back().missing) {
+      merged.back().missing_reason = cluster.missing_reason;  // 先に豆腐だった方の理由を残す
+    }
     merged.back().missing = merged.back().missing || cluster.missing;
   }
   return merged;
@@ -652,6 +668,9 @@ void normalize_clusters(ShapedText& out, std::size_t text_length) {
       // 覆う範囲が尽きた: 余ったグリフは直前のクラスタに吸収させる。
       fixed.back().glyph_end = std::max(fixed.back().glyph_end, cluster.glyph_end);
       fixed.back().advance += cluster.advance;
+      if (cluster.missing && !fixed.back().missing) {
+        fixed.back().missing_reason = cluster.missing_reason;
+      }
       fixed.back().missing = fixed.back().missing || cluster.missing;
       continue;
     }

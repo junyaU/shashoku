@@ -9,6 +9,7 @@
 #include "core/ids.hpp"
 #include "shashoku/error.hpp"
 #include "style/computed_style.hpp"
+#include "text/text_measurer.hpp"  // MissingReason（豆腐の理由）だけを借りる
 
 // ③ レイアウトの出力（ARCHITECTURE.md §3.8）= ⑤a paint の入力。
 //
@@ -194,6 +195,9 @@ struct MissingGlyph {
   // その文字を含むテキストノードの先頭（StyledNode::location）。文字単位の桁ではない
   // （文字参照や空白の畳み込みを遡らないと出せないため。A31）。
   SourceLocation location;
+  // ④ が返した豆腐の理由（A-new）。**api が警告の文面を選ぶためだけ**に運ぶ。
+  // 報告順（operator<）には入れない: 順序は今までどおり (位置, コードポイント) で決まる。
+  text::MissingReason reason = text::MissingReason::NotInAnyFont;
 
   bool operator==(const MissingGlyph&) const = default;
   // 報告順（入力位置の昇順 → コードポイントの昇順）。決定的であること。

@@ -33,8 +33,9 @@ enum class ColrBase : std::uint8_t {
 };
 
 // このフォントの中身を知っているテストのための定数。
-inline constexpr char32_t kColrCodepoint = U'A';         // cmap にある唯一の文字
+inline constexpr char32_t kColrCodepoint = U'A';         // cmap にある文字
 inline constexpr char32_t kColrMissingCodepoint = U'B';  // cmap に無い（従来の豆腐の対照）
+inline constexpr char32_t kColrTofuCodepoint = U'□';  // U+25A1。豆腐に使われるグリフ
 inline constexpr GlyphId kColrNotdefGlyph = 0;
 inline constexpr GlyphId kColrBaseGlyph = 1;  // 'A'。COLR のベース
 inline constexpr GlyphId kColrFirstLayerGlyph = 2;  // 色レイヤー（輪郭あり・色データ無し）
@@ -112,7 +113,8 @@ struct SfntTable {
 }  // namespace detail
 
 // 704 バイトの COLR / CPAL フォントを組み立てる。
-inline std::vector<std::uint8_t> build_colr_font(ColrBase base) {
+// map_tofu_to_base を立てると、□（U+25A1）も同じ（色データだけの）ベースに割り当てる。
+inline std::vector<std::uint8_t> build_colr_font(ColrBase base, bool map_tofu_to_base = false) {
   using detail::box_glyph;
   using detail::put_i16;
   using detail::put_tag;
@@ -252,25 +254,47 @@ inline std::vector<std::uint8_t> build_colr_font(ColrBase base) {
   put_u16(os2, 0x20);  // usBreakChar
   put_u16(os2, 0);     // usMaxContext
 
-  // --- cmap: format 4 のサブテーブル 1 つ。'A' → gid 1 だけ ----------------------
-  // 区間は ['A','A'] と番兵の [0xFFFF, 0xFFFF]。idDelta で gid を作る（idRangeOffset は 0）。
+  // --- cmap: format 4 のサブテーブル 1 つ ----------------------------------------
+  // 1 文字 = 1 区間（[cp, cp]）に、番兵の [0xFFFF, 0xFFFF] を足したもの。
+  // gid は idDelta で作る（idRangeOffset は全区間 0）。
+  std::vector<std::pair<char32_t, GlyphId>> mappings{{kColrCodepoint, kColrBaseGlyph}};
+  if (map_tofu_to_base) {
+    // □（U+25A1）も色データだけのベースに割り当てる。豆腐を描くグリフ自体が
+    // 「色でしか描けない」ときの経路を作るための変種。
+    mappings.emplace_back(kColrTofuCodepoint, kColrBaseGlyph);
+  }
+  const auto segment_count = static_cast<std::uint16_t>(mappings.size() + 1);  // + 番兵
+  // searchRange / entrySelector / rangeShift は二分探索の補助（OpenType の定義どおり）。
+  std::uint16_t power = 1;  // = 2^entry_selector ≦ segment_count
+  std::uint16_t entry_selector = 0;
+  while (power * 2 <= segment_count) {
+    power = static_cast<std::uint16_t>(power * 2);
+    ++entry_selector;
+  }
   std::vector<std::uint8_t> sub;
-  put_u16(sub, 4);   // format
-  put_u16(sub, 32);  // length（14 + 区間 2 つ分 18）
-  put_u16(sub, 0);   // language
-  put_u16(sub, 4);   // segCountX2
-  put_u16(sub, 4);   // searchRange
-  put_u16(sub, 1);   // entrySelector
-  put_u16(sub, 0);   // rangeShift
-  put_u16(sub, 0x0041);
-  put_u16(sub, 0xFFFF);  // endCode[]
+  put_u16(sub, 4);                                    // format
+  put_u16(sub, 16U + (8U * segment_count));           // length
+  put_u16(sub, 0);                                    // language
+  put_u16(sub, 2U * segment_count);                   // segCountX2
+  put_u16(sub, 2U * power);                           // searchRange
+  put_u16(sub, entry_selector);                       // entrySelector
+  put_u16(sub, (2U * segment_count) - (2U * power));  // rangeShift
+  for (const auto& [cp, glyph] : mappings) {
+    put_u16(sub, static_cast<std::uint32_t>(cp));  // endCode[]
+  }
+  put_u16(sub, 0xFFFF);  // endCode[] 番兵
   put_u16(sub, 0);       // reservedPad
-  put_u16(sub, 0x0041);
-  put_u16(sub, 0xFFFF);                                // startCode[]
-  put_u16(sub, static_cast<std::uint16_t>(1 - 0x41));  // idDelta: 'A' → gid 1
-  put_u16(sub, 1);                                     // idDelta（番兵）
-  put_u16(sub, 0);
-  put_u16(sub, 0);  // idRangeOffset[]
+  for (const auto& [cp, glyph] : mappings) {
+    put_u16(sub, static_cast<std::uint32_t>(cp));  // startCode[]
+  }
+  put_u16(sub, 0xFFFF);  // startCode[] 番兵
+  for (const auto& [cp, glyph] : mappings) {
+    put_u16(sub, static_cast<std::uint16_t>(glyph - static_cast<int>(cp)));  // idDelta[]
+  }
+  put_u16(sub, 1);  // idDelta[] 番兵（0xFFFF + 1 = 0 = .notdef）
+  for (std::uint16_t i = 0; i < segment_count; ++i) {
+    put_u16(sub, 0);  // idRangeOffset[]
+  }
 
   std::vector<std::uint8_t> cmap;
   put_u16(cmap, 0);   // version
@@ -346,6 +370,13 @@ inline const std::vector<std::uint8_t>& colr_font_empty_base() {
 // ベースが輪郭を持つ COLR フォント（Segoe UI Emoji のような作り）。単色で描ける。
 inline const std::vector<std::uint8_t>& colr_font_outlined_base() {
   static const std::vector<std::uint8_t> bytes = build_colr_font(ColrBase::Outlined);
+  return bytes;
+}
+
+// □（U+25A1）まで色データだけのベースに割り当てたフォント。豆腐を描くグリフ自体が
+// 「色でしか描けない」場合に、空白の豆腐を選んでしまわないかを見るための変種。
+inline const std::vector<std::uint8_t>& colr_font_with_color_only_tofu() {
+  static const std::vector<std::uint8_t> bytes = build_colr_font(ColrBase::Empty, true);
   return bytes;
 }
 

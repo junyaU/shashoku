@@ -179,6 +179,10 @@ std::string dump_json(const BoxTree& tree) {
       writer.key("codepoint")
           .value(std::format("U+{:04X}", static_cast<std::uint32_t>(missing.codepoint)));
       writer.key("location").value(location_text(missing.location));
+      // 理由は既定（どのフォントにも無い）以外のときだけ出す（既定値のキーは出さない）。
+      if (missing.reason == text::MissingReason::ColorOnly) {
+        writer.key("reason").value("color-only");
+      }
       writer.end_object();
     }
     writer.end_array();

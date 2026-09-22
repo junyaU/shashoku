@@ -120,6 +120,7 @@ TEST(TextColorFont, ColorOnlyGlyphsAreShapedAsTofu) {
 
   for (const ShapedCluster& cluster : shaped.clusters) {
     EXPECT_TRUE(cluster.missing) << "色レイヤーしか無い 'A' は豆腐として報告される";
+    EXPECT_EQ(cluster.missing_reason, MissingReason::ColorOnly);
     EXPECT_EQ(cluster.advance, 64.0F);  // 送りは 1em のまま（レイアウトは変わらない）
   }
   // 豆腐は □ か .notdef で描かれる。COLR のベース（空の輪郭）は選ばれない。
@@ -154,6 +155,9 @@ TEST(TextColorFont, MatchesTheBehaviorOfACharacterMissingFromCmap) {
 
   EXPECT_TRUE(shaped.clusters[0].missing);
   EXPECT_TRUE(shaped.clusters[1].missing);
+  // 理由だけが違う（警告の文面がここで分かれる。組版は同じ）。
+  EXPECT_EQ(shaped.clusters[0].missing_reason, MissingReason::ColorOnly);
+  EXPECT_EQ(shaped.clusters[1].missing_reason, MissingReason::NotInAnyFont);
   // 同じ豆腐のグリフ・同じ送りで描かれる（どちらも 1em の □ / .notdef）。
   EXPECT_EQ(shaped.glyphs[0].font, shaped.glyphs[1].font);
   EXPECT_EQ(shaped.glyphs[0].glyph_id, shaped.glyphs[1].glyph_id);
@@ -181,6 +185,26 @@ TEST(TextColorFont, VerticalWritingGetsTheSameTofu) {
     EXPECT_FALSE(glyph.sideways);           // 豆腐は縦書きでも立てる
     EXPECT_EQ(glyph.x_offset, -64.0F / 2);  // 中心軸の左右に 1em を半分ずつ
   }
+}
+
+// □（U+25A1）自体が色データだけのフォントでも、空白の豆腐を選ばない。
+TEST(TextColorFont, DoesNotPickAColorOnlyGlyphAsTofu) {
+  FontStore store;
+  const FontId font = *store.load(assets::colr_font_with_color_only_tofu());
+  Shaper shaper(store);
+  FreeTypeGlyphSource glyphs(store);
+
+  // このフォントでは □ も色データだけのベース（gid 1）に割り当てられている。
+  EXPECT_EQ(store.glyph_for(font, assets::kColrTofuCodepoint), kColrBaseGlyph);
+  EXPECT_FALSE(store.has_drawable_glyph(font, assets::kColrTofuCodepoint));
+
+  const ShapedText shaped = shape_ok(shaper, U"AB", style_at());
+  ASSERT_EQ(shaped.glyphs.size(), 2U);
+  for (const ShapedGlyph& glyph : shaped.glyphs) {
+    // □ が使えないので .notdef に落ちる。空の輪郭（gid 1）は選ばない。
+    EXPECT_EQ(glyph.glyph_id, kColrNotdefGlyph);
+  }
+  EXPECT_GT(total_ink(shaped, glyphs, 64.0F), 0U);
 }
 
 // ---- 色データを持つが輪郭もあるグリフは、従来どおり単色で描く ----

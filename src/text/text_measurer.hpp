@@ -21,7 +21,8 @@ enum class Direction : std::uint8_t { Horizontal, Vertical };
 struct TextStyle {
   std::vector<std::string> font_family;  // 優先順。総称ファミリや FontStore にない名前は読み飛ばす
   int font_weight = 400;
-  float font_size = 16;  // px
+  // px。**非負かつ有限**（`0` は CSS Fonts 4 §2.5 で有効なので通す）。破ると Internal
+  float font_size = 16;
   Direction direction = Direction::Horizontal;
 
   bool operator==(const TextStyle&) const = default;
@@ -86,7 +87,8 @@ class TextMeasurer {
   // 空の結果としてしか表せず、文字の欠けた PNG が「成功」として出てしまう）。
   // 成功して空の ShapedText を返してよいのは **本当にグリフが 0 個のとき**だけ
   // （空文字列。入力が空でなければ clusters は必ず入力全体を覆う）。
-  //   Internal     … 呼び出し側の契約違反（フォントを 1 つも持たない、非有限の font_size）
+  //   Internal     … 呼び出し側の契約違反（フォントを 1 つも持たない、負または非有限の
+  //                   font_size。`font_size == 0` は有効。issue #26 / A36）
   //   FontLoad     … フォントからメトリクス / グリフを読めない
   //   OutOfMemory  … シェーピングエンジンが作業領域を確保できなかった
   // 豆腐（どのフォントにもグリフがない文字）はエラーではない。□ を返し、

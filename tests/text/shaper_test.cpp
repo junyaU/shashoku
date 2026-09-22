@@ -234,5 +234,39 @@ TEST(TextShaper, NonFiniteFontSizeIsAnInternalError) {
   EXPECT_EQ(shaped.error().kind, ErrorKind::Internal);
 }
 
+// 負の font_size も同じく呼び出し側の契約違反（issue #26。A36）。style が
+// `font-size: -16px` を宣言の位置つきで止めているので入力からは到達しないが、
+// TextMeasurer は注入点（偽物を書く人・レイアウトのテストが直接呼ぶ入口）なので、
+// 契約の文面と入口の検査を合わせておく。境目はちょうど `< 0`: `font-size: 0` は
+// CSS Fonts 4 §2.5 の `<length-percentage [0,∞]>` で有効なので通す。
+TEST(TextShaper, NegativeFontSizeIsAnInternalErrorButZeroIsFine) {
+  FontStore store;
+  ASSERT_TRUE(store.load(noto_sans_jp_regular()).has_value());
+  Shaper shaper(store);
+
+  for (const float size : {-16.0F, -0.5F}) {
+    SCOPED_TRACE(size);
+    const Result<ShapedText> shaped = shaper.shape(U"あ", japanese_style(size));
+    ASSERT_FALSE(shaped.has_value()) << "should have failed";
+    EXPECT_EQ(shaped.error().kind, ErrorKind::Internal);
+    EXPECT_NE(shaped.error().message.find("non-negative"), std::string::npos)
+        << shaped.error().message;
+
+    const Result<FontMetrics> metrics = shaper.metrics(japanese_style(size));
+    ASSERT_FALSE(metrics.has_value()) << "should have failed";
+    EXPECT_EQ(metrics.error().kind, ErrorKind::Internal);
+  }
+
+  // 0 は通る（`-0` も `0` と等しいので通る）
+  for (const float size : {0.0F, -0.0F}) {
+    SCOPED_TRACE(size);
+    const Result<ShapedText> zero = shaper.shape(U"あ", japanese_style(size));
+    ASSERT_TRUE(zero.has_value()) << to_string(zero.error());
+    ASSERT_EQ(zero->clusters.size(), 1U);
+    EXPECT_FLOAT_EQ(zero->clusters.front().advance, 0.0F);
+    EXPECT_TRUE(shaper.metrics(japanese_style(size)).has_value());
+  }
+}
+
 }  // namespace
 }  // namespace shashoku::text

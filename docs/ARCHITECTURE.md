@@ -431,7 +431,7 @@ A19 で `GlyphSource::rasterize()` を `Result` にしたが、計測側は値�
 |---|---|
 | 空文字列（グリフが 0 個）、既定無視文字だけの run、`font_size` が 0 | 成功（空の `ShapedText` / 送り 0） |
 | 豆腐（どのフォントにもグリフがない） | 成功 + `ShapedCluster::missing = true`（DESIGN.md §3-6 の唯一の例外） |
-| `FontStore` にフォントが 1 つもない、不正な `FontId`、非有限の `font_size` | `Internal`（呼び出し側のバグ） |
+| `FontStore` にフォントが 1 つもない、不正な `FontId`、**負**または非有限の `font_size` | `Internal`（呼び出し側のバグ） |
 | `hb_font_get_h_extents()` が偽（hhea / OS/2 が読めない） | `FontLoad` |
 | `hb_font_create()` が空のフォントを返す、`hb_buffer_allocation_successful()` が偽 | `OutOfMemory`（A26 の種類） |
 | グリフ数が 0 でないのに HarfBuzz がグリフ情報を返さない | `Internal` |
@@ -442,8 +442,10 @@ A19 で `GlyphSource::rasterize()` を `Result` にしたが、計測側は値�
 - **フォントが 1 つもない `FontStore` はエラーにした。** それまでは「存在しない FontId 0 の
   `.notdef` を全文字ぶん返す」で通っていて、失敗するのはラスタライズの段（A19 の `Internal`）だった。
   api は空の `FontSet` を `NoFonts` で弾いているので、ここに来るのは呼び出し側のバグ
-- `font_size` が 0 や負のときは従来どおり送り 0 で成功する（CSS の `font-size: 0` は正当な指定で、
-  A19 の `pixel_size` と違ってラスタライザには渡らない）。非有限だけを `Internal` にする
+- `font_size` が **0** のときは送り 0 で成功する（CSS Fonts 4 §2.5 の `font-size: 0` は正当な指定で、
+  A19 の `pixel_size` と違ってラスタライザには渡らない）。**負**と非有限を `Internal` にする
+  （負は issue #26 で足した。style が `font-size: -16px` を宣言の位置つきで止めているので
+  入力からは到達しないが、注入点の契約としては穴だった。A36 の最後を見よ）
 - layout 側の呼び出しは `LayoutEngine::shape()` / `metrics()`（A21 の計測カウンタ）に集約済みなので、
   波及は機械的。**失敗した結果はメモに残さない**（A29 の準備済み段落は `Result` が成功した後でのみ
   `remember()` する）。偽の `TextMeasurer`（`tests/layout/test_support.hpp`）には失敗を注入する口
@@ -672,10 +674,35 @@ suggestion は主軸の min-content サイズ）に使われるので、1 つの
 - **採らなかった案**: `bool` を残して `anywhere_in_min_content` をもう 1 本足す形。差分は小さいが、
   bool 2 本の組み合わせに意味のない状態（緊急分割は不可・min-content には効く）ができて
   契約が読みにくくなる
-- **範囲外**（この判断では直さない）: `min-width` の対応、`word-wrap`（`overflow-wrap` の
-  legacy name alias。CSS Text 3 §5.4 は必須としているが現状は `unsupported-property`）、
+- **範囲外**（この判断では直さない）: `min-width` の対応、
   `anywhere_candidate()` が `Item::no_break_before` を見ないこと（rank 3/4 の候補にはなるので
   実害はないが、緊急分割の候補判定としては見るのが筋）
+
+**A35 への追記（issue #25。legacy name alias）**: 範囲外に置いていた `word-wrap` を入れた。
+CSS Text 3 §5.4 は *"For legacy reasons, UAs must treat `word-wrap` as a legacy name alias of the
+`overflow-wrap` property."* としており、**alias は「未対応の機能」ではない**。写し先の 3 値は
+実装済みなので、止めても利用者には代替の組版が手に入らず、「黙って違う絵を出さない」という
+fail loudly（DESIGN.md §3-6）の目的を果たしていない。旧来の日本語ページはほぼ必ず
+`word-wrap: break-word` を書くので、試用版（#20）で最初の 1 枚が通らない典型例になる。
+
+- **やり方は「名前の表に 1 行足す」だけ**（`value_parser.cpp` の `kPropertyNames` に
+  `{"word-wrap", PropertyName::OverflowWrap}`）。`Declaration::property` が
+  `PropertyId::OverflowWrap` になるので、カスケード（同一ブロックでは後勝ち）・継承・
+  `inherit` / `initial`・計算値・`--dump-stage style` の出力名は、すべて `overflow-wrap` と
+  **完全に同一の経路**を通る。CSS Cascade の「パース時に新しいプロパティへ変換する」を満たす
+- **入口で名前を正規化する案（別表 `kPropertyAliases`）は採らない。** エラーの文面まで
+  `overflow-wrap` に寄り、著者が書いていない名前をエラーに出すことになる。CSSOM を持たない
+  shashoku では旧名が見える場所は**値のエラーの文面だけ**なので、そこは著者の綴りを残す
+  （`` `word-wrap: foo` is not supported (…) ``。種類と位置は従来どおり）
+- **`grid-row-gap` / `grid-column-gap` / `grid-gap` の別名は入れない（決定）。** CSS Box
+  Alignment 3 §8.4 が同じ "legacy name alias" を課しており写し先も対応済みだが、CLAUDE.md の
+  一問「日本語の文章を正しく組むことに寄与するか」に対し `word-wrap` は Yes（旧来の日本語
+  ページの標準的な書き方）、`grid-gap` は No（shashoku に grid は無く、flex に `grid-gap` と
+  書く動機がない）。代わりに `kPropertyHints` に 3 行足して写し先を案内する
+  （`` `grid-gap` is not a supported property (legacy name: use `gap`) ``）
+- **出力は 1 ビットも変わらない。** `examples/` とゴールデン 16 枚の入力に `word-wrap` は無く、
+  `overflow-wrap` の経路自体は触っていない（`release` の CLI で修正前後の
+  `--dump-stage style` / `box` と PNG がバイト一致することを確かめた）
 
 **A36. 各段は「自分が出す数値が有限で上限以内であること」を保証する。A25 の「入力の
 個数・サイズ」とは別の保証として並べる。** `padding: 1e38em` を渡すと `em x font-size` が
@@ -755,6 +782,16 @@ layout の加算で `inf` になる。そこで `RenderLimits` に**長さ・座
   出ていた（`!(height > 0)` が NaN でも真になる）。③ の出口が先に止めるので到達しなくなったが、
   万一届いたら layout の不変条件が破れている = shashoku 側のバグなので、`Internal` で
   「有限でない」と報告する。本当に高さ 0 のときのメッセージは従来どおり
+- **負の値はパース時（②の入口）に止める。有限性・上限とは別の検査**で、`margin` と
+  `letter-spacing` だけが例外（`font-size: 0` は CSS Fonts 4 §2.5 で有効なので通す）。
+  種類は `UnsupportedValue` + 宣言（属性）の位置で、「範囲外」の `LimitExceeded` とは別物
+  （#19 でこの 2 つを分けた）。計算値の段で負になる経路は無い（`em` の乗算は「非負 x 非負」
+  だけで `calc()` は未対応）ので、ここで弾けば後段は負を見ない。総当たりの表は
+  `tests/style/error_test.cpp` の `NegativeValuesAreRejectedExceptForMarginAndLetterSpacing`。
+  あわせて**注入点の契約**（`text::TextMeasurer`）にも「`font_size` は非負」を明記し、
+  シェーパの入口（`check_contract()`）で `< 0` を `Internal` にした（issue #26）。
+  style が止めているので入力からは到達しないが、偽の `TextMeasurer` やレイアウトのテストは
+  この入口を直接叩くので、契約の文面と実装を合わせておく
 
 **A37. ルビ組の「代表の文字」は行分割ポリシー専用。組の内部は通常のインライン内容として
 組み、幾何は親文字の全クラスタから出す。**（issue #16 / #17）A28 は「ルビ組の
@@ -1242,8 +1279,11 @@ std::string dump_json(const StyledNode& root);
 - 対応プロパティは DESIGN.md §4 の一覧 + 次のショートハンド / 別名:
   `margin` `padding`（1〜4 値）、`border`（`<幅> solid <色>` / `none`）、`border-width`
   `border-style`（solid / none）`border-color`、`flex`（`none` / `auto` / 1〜3 値）、
-  `gap` `row-gap` `column-gap`、`background`（色のみ。`background-color` の別名）。
+  `gap` `row-gap` `column-gap`、`background`（色のみ。`background-color` の別名）、
+  `word-wrap`（`overflow-wrap` の legacy name alias。CSS Text 3 §5.4。名前の表で写し替えるだけで、
+  カスケード・継承・計算値・ダンプの名前はすべて `overflow-wrap` と同じ。A35）。
   一覧にないプロパティは `UnsupportedProperty`、値が対応外なら `UnsupportedValue`
+  （別名に対応外の値を書いたときの文面は**著者の綴り**のまま。`` `word-wrap: foo` is not supported … ``）
 - **`UnsupportedProperty` の文面には代替案を一言添える**（#20。試用版で「未対応です」だけでは
   次に何をすればよいか分からない）。`value_parser.cpp` の `kPropertyHints` に
   **未対応だと分かっているものだけ**を載せ、`` `box-sizing` is not a supported property

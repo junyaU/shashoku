@@ -98,18 +98,54 @@ TEST(LayoutRuby, SinglePair) {
                   fake_ascent(kBase) + fake_ascent(kRuby) + fake_descent(kRuby));
 }
 
-// ルビが親文字より長い: 親文字を中央に置く。
-TEST(LayoutRuby, LongerRubyCentresTheBase) {
+// ---- JLREQ 3.3.6 の配分（1:2:…:2:1）。issue #28 ----------------------------------------
+//
+// 組の送り W = max(B, R) は変えず、短い方の余り E = |B − R| を「端 E/(2n)、字間 E/n」で配る
+// （JLREQ 3.3.6:「親文字の文字列の字間の空き量の大きさ 2 に対して、ルビ文字の文字列の先頭から
+// 親文字の文字列の先頭までの空き量…を 1 の比率で空けると体裁がよい」）。端の空きはルビ文字
+// サイズの全角が上限で、止めたぶんは字間に回す（同 3.3.6 の注）。クラスタが 1 つなら中央。
+
+// 規則を（実装の式ではなく上の文から）もう一度素直に書いたもの。count 個・送り step の
+// クラスタを、送り advance の組に配ったときのペン位置。cap は端の空きの上限。
+std::vector<float> distributed_positions(std::size_t count, float step, float advance, float cap) {
+  std::vector<float> out;
+  if (count == 0) {
+    return out;
+  }
+  const auto n = static_cast<float>(count);
+  const float extra = advance - (n * step);
+  float lead = 0;
+  float gap = 0;
+  if (extra > 0) {
+    if (count == 1) {
+      lead = extra / 2;  // 中央（上限は掛けない）
+    } else {
+      lead = extra / (2 * n);
+      gap = extra / n;
+      if (lead > cap) {
+        lead = cap;
+        gap = (extra - (2 * cap)) / (n - 1);
+      }
+    }
+  }
+  for (std::size_t i = 0; i < count; ++i) {
+    out.push_back(lead + (static_cast<float>(i) * (step + gap)));
+  }
+  return out;
+}
+
+// ルビが親文字より長い: 親文字を「端 E/(2n)、字間 E/n」で配る（JLREQ 3.3.6。issue #28）。
+TEST(LayoutRuby, LongerRubyDistributesTheBase) {
   FakeMeasurer measurer;
-  const auto root = build({block({ruby({text("東"), rt("とうきょう")})})});
+  const auto root = build({block({ruby({text("写植"), rt("しゃしょく")})})});
   const auto tree = run_layout(root, 400, measurer);
   ASSERT_TRUE(tree.has_value());
   const LineBox& line = *all_lines(*tree)[0];
-  // 組の送り = max(16, 8 × 5) = 40
-  EXPECT_FLOAT_EQ(base_fragments(line)[0]->inline_start, 12);  // (40 − 16) / 2
+  // 組の送り = max(16 × 2, 8 × 5) = 40。余り E = 8 を 2 クラスタに配る（端 2 / 字間 4）
+  EXPECT_EQ(base_glyph_positions(line), (std::vector<float>{2, 22}));
   EXPECT_FLOAT_EQ(ruby_fragments(line)[0]->inline_start, 0);
-  // 行内の送りは 40（次の文字がそこから始まる）
-  const auto next = build({block({ruby({text("東"), rt("とうきょう")}), text("都")})});
+  // 行内の送りは 40 のまま（次の文字がそこから始まる = 行分割は変わらない）
+  const auto next = build({block({ruby({text("写植"), rt("しゃしょく")}), text("都")})});
   const auto tree2 = run_layout(next, 400, measurer);
   ASSERT_TRUE(tree2.has_value());
   const LineBox& line2 = *all_lines(*tree2)[0];
@@ -119,15 +155,352 @@ TEST(LayoutRuby, LongerRubyCentresTheBase) {
   EXPECT_FLOAT_EQ(base[1]->inline_start, 40);
 }
 
-// ルビが親文字より短い: ルビを中央に置く。
-TEST(LayoutRuby, ShorterRubyIsCentred) {
+// ルビが親文字より短い: ルビを同じ比率で配る。
+TEST(LayoutRuby, ShorterRubyIsDistributed) {
   FakeMeasurer measurer;
-  const auto root = build({block({ruby({text("東京"), rt("とう")})})});
+  const auto root = build({block({ruby({text("図書館"), rt("としょ")})})});
   const auto tree = run_layout(root, 400, measurer);
   ASSERT_TRUE(tree.has_value());
   const LineBox& line = *all_lines(*tree)[0];
-  EXPECT_FLOAT_EQ(base_fragments(line)[0]->inline_start, 0);
-  EXPECT_FLOAT_EQ(ruby_fragments(line)[0]->inline_start, 8);  // (32 − 16) / 2
+  // 組の送り = max(48, 24) = 48。余り E = 24 を 3 クラスタに配る（端 4 / 字間 8）
+  EXPECT_EQ(base_glyph_positions(line), (std::vector<float>{0, 16, 32}));
+  EXPECT_EQ(ruby_glyph_positions(line), (std::vector<float>{4, 20, 36}));
+}
+
+// クラスタが 1 つなら中央に置く（配分する先の字間が無い）。上限（規則 5）も掛けない。
+TEST(LayoutRuby, SingleClusterIsCentred) {
+  FakeMeasurer measurer;
+  // 親文字が 1 文字: (40 − 16) / 2 = 12
+  const auto base_one = build({block({ruby({text("東"), rt("とうきょう")})})});
+  const auto a = run_layout(base_one, 400, measurer);
+  ASSERT_TRUE(a.has_value());
+  EXPECT_EQ(base_glyph_positions(*all_lines(*a)[0]), (std::vector<float>{12}));
+  // ルビが 1 文字: (64 − 8) / 2 = 28。端 28 はルビの全角 8 を超えるが、中央置きなので止めない
+  const auto ruby_one = build({block({ruby({text("東京都府"), rt("と")})})});
+  const auto b = run_layout(ruby_one, 400, measurer);
+  ASSERT_TRUE(b.has_value());
+  EXPECT_EQ(ruby_glyph_positions(*all_lines(*b)[0]), (std::vector<float>{28}));
+}
+
+// 端の空きはルビ文字サイズの全角が上限で、止めたぶんは字間に回る（JLREQ 3.3.6 の注）。
+TEST(LayoutRuby, EdgeSpaceIsCappedAtOneRubyEm) {
+  FakeMeasurer measurer;
+  const auto root = build({block({ruby({text("図書館員"), rt("とし")}), text("へ")})});
+  const auto tree = run_layout(root, 400, measurer);
+  ASSERT_TRUE(tree.has_value());
+  const LineBox& line = *all_lines(*tree)[0];
+  // 組の送り = 64、余り E = 48、m = 2。端は 48/4 = 12 ではなく上限 8 で止まり、
+  // 字間が (48 − 8 × 2) / (2 − 1) = 32 になる
+  EXPECT_EQ(ruby_glyph_positions(line), (std::vector<float>{8, 48}));
+  // 組の送りは 64 のまま
+  const std::vector<const TextFragment*> base = base_fragments(line);
+  ASSERT_EQ(base.size(), 2U);
+  EXPECT_FLOAT_EQ(base[1]->inline_start, 64);
+}
+
+// 親文字とルビの送りが等しい組は両方ベタ（配分する余りが無い）。
+TEST(LayoutRuby, EqualWidthsSetBothSolid) {
+  FakeMeasurer measurer;
+  const auto root = build({block({ruby({text("東京"), rt("とうきょ")})})});
+  const auto tree = run_layout(root, 400, measurer);
+  ASSERT_TRUE(tree.has_value());
+  const LineBox& line = *all_lines(*tree)[0];
+  EXPECT_EQ(base_glyph_positions(line), (std::vector<float>{0, 16}));
+  EXPECT_EQ(ruby_glyph_positions(line), (std::vector<float>{0, 8, 16, 24}));
+}
+
+// 配分は「組の内部の位置」だけを動かす。行分割器に渡る送り・行の範囲・固有寸法は変わらない。
+TEST(LayoutRuby, DistributionDoesNotChangeTheLineBreaking) {
+  FakeMeasurer measurer;
+  // 組の送り 40（親文字 32 / ルビ 40）+ 「都」16 + 「市」16 = 72
+  const auto make = [] {
+    return std::vector<Tree>{ruby({text("写植"), rt("しゃしょく")}), text("都市")};
+  };
+  const auto tree = run_layout(build({block(make())}), 400, measurer);
+  ASSERT_TRUE(tree.has_value());
+  const LineBox& line = *all_lines(*tree)[0];
+  EXPECT_FLOAT_EQ(line.rect.inline_start, 0);
+  EXPECT_FLOAT_EQ(line.rect.inline_size, 400);
+  // 組の直後の文字 = 行分割器に渡した Atomic の送り（40）そのもの
+  EXPECT_EQ(base_glyph_positions(line), (std::vector<float>{2, 22, 40, 56}));
+
+  // 固有寸法: max-content は組 40 + 2 文字 32 = 72、min-content は組の送り 40
+  // （組は Atomic なので割れない）。flex の fit-content で測る（#5 と同じ手）
+  const auto in_flex = [&make] {
+    return build({flex({block(make())}, [](ComputedStyle& style) {
+      style.flex_direction = style::FlexDirection::Column;
+      style.align_items = style::AlignItems::FlexStart;
+    })});
+  };
+  const auto wide = run_layout(in_flex(), 400, measurer);
+  ASSERT_TRUE(wide.has_value());
+  EXPECT_FLOAT_EQ(wide->root.blocks()->front().blocks()->front().rect.inline_size, 72);
+  const auto narrow = run_layout(in_flex(), 20, measurer);
+  ASSERT_TRUE(narrow.has_value());
+  EXPECT_FLOAT_EQ(narrow->root.blocks()->front().blocks()->front().rect.inline_size, 40);
+}
+
+// 組み合わせの回帰テスト（issue #28）。
+// {横書き, 縦書き} × {B < R, B > R, B == R} × {クラスタ 1 個, 2 個以上} × {字間なし, あり}。
+// 期待値は規則から手で出したもの（実装の式を書き写さない）。親文字もルビも全角だけなので、
+// B = 文字数 × (16 + 字間)、R = 文字数 × 8 で数えられる。
+struct DistributionCase {
+  std::string_view name;
+  std::size_t base_chars = 0;
+  std::size_t ruby_chars = 0;
+  float letter_spacing = 0;
+  std::vector<float> base;  // 親文字のペン位置
+  std::vector<float> ruby;  // ルビのペン位置
+};
+
+std::vector<DistributionCase> distribution_cases() {
+  return {
+      // B == R: 両方ベタ
+      {.name = "equal-single", .base_chars = 1, .ruby_chars = 2, .base = {0}, .ruby = {0, 8}},
+      {.name = "equal-multi",
+       .base_chars = 2,
+       .ruby_chars = 4,
+       .base = {0, 16},
+       .ruby = {0, 8, 16, 24}},
+      // B < R: 親文字を配る（n = 1 は中央）
+      {.name = "longer-ruby-single",
+       .base_chars = 1,
+       .ruby_chars = 5,
+       .base = {12},
+       .ruby = {0, 8, 16, 24, 32}},
+      {.name = "longer-ruby-two",  // E = 8, n = 2 → 端 2 / 字間 4
+       .base_chars = 2,
+       .ruby_chars = 5,
+       .base = {2, 22},
+       .ruby = {0, 8, 16, 24, 32}},
+      {.name = "longer-ruby-three",  // E = 24, n = 3 → 端 4 / 字間 8
+       .base_chars = 3,
+       .ruby_chars = 9,
+       .base = {4, 28, 52},
+       .ruby = {0, 8, 16, 24, 32, 40, 48, 56, 64}},
+      // B > R: ルビを配る（m = 1 は中央）
+      {.name = "shorter-ruby-single",
+       .base_chars = 2,
+       .ruby_chars = 1,
+       .base = {0, 16},
+       .ruby = {12}},
+      {.name = "shorter-ruby-three",  // E = 24, m = 3 → 端 4 / 字間 8
+       .base_chars = 3,
+       .ruby_chars = 3,
+       .base = {0, 16, 32},
+       .ruby = {4, 20, 36}},
+      // 端の空きの上限（ルビ文字サイズの全角 = 8）で止まり、余りが字間に回る
+      {.name = "capped-two",  // E = 48, m = 2 → 端 12 ではなく 8、字間 32
+       .base_chars = 4,
+       .ruby_chars = 2,
+       .base = {0, 16, 32, 48},
+       .ruby = {8, 48}},
+      {.name = "capped-wide",  // E = 64, m = 2 → 端 8、字間 48
+       .base_chars = 5,
+       .ruby_chars = 2,
+       .base = {0, 16, 32, 48, 64},
+       .ruby = {8, 64}},
+      // 字間あり（#16 / A37 と両立する。ルビ側に字間は入らない）
+      {.name = "spacing-longer-ruby",  // B = 48, R = 56 → E = 8, n = 2 → 端 2 / 字間 4
+       .base_chars = 2,
+       .ruby_chars = 7,
+       .letter_spacing = 8,
+       .base = {2, 30},
+       .ruby = {0, 8, 16, 24, 32, 40, 48}},
+      {.name = "spacing-shorter-ruby",  // B = 48, R = 24 → E = 24, m = 3 → 端 4 / 字間 8
+       .base_chars = 2,
+       .ruby_chars = 3,
+       .letter_spacing = 8,
+       .base = {0, 24},
+       .ruby = {4, 20, 36}},
+      {.name = "spacing-single-base",  // B = 24, R = 32 → E = 8, n = 1 → 中央 4
+       .base_chars = 1,
+       .ruby_chars = 4,
+       .letter_spacing = 8,
+       .base = {4},
+       .ruby = {0, 8, 16, 24}},
+  };
+}
+
+void check_distribution(const DistributionCase& test_case, bool vertical) {
+  const std::string label =
+      std::string(test_case.name) + " vertical=" + std::to_string(static_cast<int>(vertical));
+  constexpr std::string_view kBaseChars = "東京都府県市区町村";  // 全角 9 文字
+  constexpr std::string_view kRubyChars = "あいうえおかきくけこ";
+  FakeMeasurer measurer;
+  std::vector<Tree> parts;
+  for (std::size_t i = 0; i < test_case.base_chars; ++i) {
+    parts.push_back(text(kBaseChars.substr(i * 3, 3)));  // 全角 1 文字 = UTF-8 で 3 バイト
+  }
+  parts.push_back(rt(kRubyChars.substr(0, test_case.ruby_chars * 3)));
+  const float spacing = test_case.letter_spacing;
+  std::vector<Tree> children{block({ruby(std::move(parts))}, [spacing](ComputedStyle& style) {
+    style.letter_spacing = spacing;
+  })};
+  const auto root = vertical ? build_vertical(std::move(children)) : build(std::move(children));
+  const auto tree = vertical ? run_layout(root, vertical_options(400, 400), measurer)
+                             : run_layout(root, make_options(400), measurer);
+  ASSERT_TRUE(tree.has_value()) << label;
+  const LineBox& line = *all_lines(*tree)[0];
+  EXPECT_EQ(base_glyph_positions(line), test_case.base) << label;
+  EXPECT_EQ(ruby_glyph_positions(line), test_case.ruby) << label;
+
+  // 組の送りは max(B, R) のまま（配分は組の内部だけを動かす）
+  const float base_width = static_cast<float>(test_case.base_chars) * (kBase + spacing);
+  const float ruby_width = static_cast<float>(test_case.ruby_chars) * kRuby;
+  const float advance = std::max(base_width, ruby_width);
+  // 前後の空きが同じ（配分は組の中で対称）
+  EXPECT_NEAR(test_case.base.front(), advance - (test_case.base.back() + kBase + spacing),
+              kTolerance)
+      << label;
+  EXPECT_NEAR(test_case.ruby.front(), advance - (test_case.ruby.back() + kRuby), kTolerance)
+      << label;
+}
+
+TEST(LayoutRuby, DistributionCombinations) {
+  for (const DistributionCase& test_case : distribution_cases()) {
+    for (const bool vertical : {false, true}) {
+      check_distribution(test_case, vertical);
+    }
+  }
+}
+
+// 親文字の font-size が混ざっていても、余りはクラスタの**間**に等しく配る（#17 と両立）。
+// 行の高さは配分で変わらない（親文字の全クラスタの最大のまま）。
+TEST(LayoutRuby, DistributionWithMixedFontSizesInTheBase) {
+  const auto big = [](ComputedStyle& style) { style.font_size = 32; };
+  for (const bool vertical : {false, true}) {
+    SCOPED_TRACE(vertical);
+    FakeMeasurer measurer;
+    const auto make = [&big](std::string_view annotation) {
+      return std::vector<Tree>{
+          block({ruby({text("あ"), inline_box({text("い")}, big), rt(annotation)})})};
+    };
+    const auto options = vertical ? vertical_options(400, 400) : make_options(400);
+    // 親文字 16 + 32 = 48、ルビ 7 × 8 = 56 → E = 8、n = 2（端 2 / 字間 4）
+    const auto wide =
+        vertical ? build_vertical(make("あいうえおかき")) : build(make("あいうえおかき"));
+    const auto a = run_layout(wide, options, measurer);
+    ASSERT_TRUE(a.has_value());
+    EXPECT_EQ(base_glyph_positions(*all_lines(*a)[0]), (std::vector<float>{2, 22}));
+    // 配らない同じ親文字（ルビ 1 文字）と行の高さ・ベースラインが同じ
+    const auto narrow = vertical ? build_vertical(make("あ")) : build(make("あ"));
+    const auto b = run_layout(narrow, options, measurer);
+    ASSERT_TRUE(b.has_value());
+    EXPECT_FLOAT_EQ(all_lines(*a)[0]->rect.block_size, all_lines(*b)[0]->rect.block_size);
+    EXPECT_FLOAT_EQ(all_lines(*a)[0]->baseline, all_lines(*b)[0]->baseline);
+  }
+}
+
+// 親文字の一部を覆う background-color は、配分後のクラスタ位置に追従する（#16 と両立）。
+// 配分で入れた空きは letter-spacing の字間と同じ扱いで、手前のクラスタの背景が覆う
+// （隣り合う span の背景の間に隙間を開けない）。組の端に接するスコープは組の箱の端まで
+// （A37。中央寄せのときと同じ扱い）。
+TEST(LayoutRuby, BackgroundFollowsTheDistributedCluster) {
+  const auto filled = [](ComputedStyle& style) { style.background_color = Color{0, 255, 0, 255}; };
+  // 親文字 4 × 16 = 64、ルビ 12 × 8 = 96 → E = 32、n = 4（端 4 / 字間 8）
+  // → 親文字は 4 / 28 / 52 / 76（中央置きのままなら 16 / 32 / 48 / 64）
+  struct Case {
+    std::size_t wrapped = 0;  // background-color を掛ける親文字の位置
+    float inline_start = 0;
+    float inline_end = 0;
+  };
+  for (const Case& test_case :
+       {Case{.wrapped = 0, .inline_start = 0, .inline_end = 28},   // 組の頭に接する
+        Case{.wrapped = 1, .inline_start = 28, .inline_end = 52},  // 真ん中（16 + 字間 8）
+        Case{.wrapped = 3, .inline_start = 76, .inline_end = 96}}) {  // 組の末尾に接する
+    for (const bool vertical : {false, true}) {
+      SCOPED_TRACE(std::to_string(test_case.wrapped) +
+                   " vertical=" + std::to_string(static_cast<int>(vertical)));
+      FakeMeasurer measurer;
+      const std::vector<std::string> base_chars{"写", "植", "機", "械"};
+      std::vector<Tree> parts;
+      for (std::size_t i = 0; i < base_chars.size(); ++i) {
+        parts.push_back(i == test_case.wrapped ? inline_box({text(base_chars[i])}, filled)
+                                               : text(base_chars[i]));
+      }
+      parts.push_back(rt("しゃしょくきかいですかね"));  // 12 文字
+      std::vector<Tree> children{block({ruby(std::move(parts))})};
+      const auto root = vertical ? build_vertical(std::move(children)) : build(std::move(children));
+      const auto options = vertical ? vertical_options(400, 400) : make_options(400);
+      const auto tree = run_layout(root, options, measurer);
+      ASSERT_TRUE(tree.has_value());
+      const LineBox& line = *all_lines(*tree)[0];
+      EXPECT_EQ(base_glyph_positions(line), (std::vector<float>{4, 28, 52, 76}));
+      const std::vector<const InlineBackground*> painted = backgrounds(line);
+      ASSERT_EQ(painted.size(), 1U);
+      EXPECT_FLOAT_EQ(painted[0]->rect.inline_start, test_case.inline_start);
+      EXPECT_FLOAT_EQ(painted[0]->rect.inline_end(), test_case.inline_end);
+    }
+  }
+}
+
+// モノルビ（1 つの <ruby> に 2 組）は組ごとに独立して配る。
+TEST(LayoutRuby, MonorubyDistributesEachPairIndependently) {
+  for (const bool vertical : {false, true}) {
+    SCOPED_TRACE(vertical);
+    FakeMeasurer measurer;
+    std::vector<Tree> children{
+        block({ruby({text("写植"), rt("しゃしょく"), text("機械"), rt("きか")})})};
+    const auto root = vertical ? build_vertical(std::move(children)) : build(std::move(children));
+    const auto options = vertical ? vertical_options(400, 400) : make_options(400);
+    const auto tree = run_layout(root, options, measurer);
+    ASSERT_TRUE(tree.has_value());
+    const LineBox& line = *all_lines(*tree)[0];
+    // 1 組目: B = 32 < R = 40 → 親文字を配る（端 2 / 字間 4）。送り 40
+    // 2 組目: B = 32 > R = 16 → ルビを配る（端 4 / 字間 8）。送り 32
+    EXPECT_EQ(base_glyph_positions(line), (std::vector<float>{2, 22, 40, 56}));
+    EXPECT_EQ(ruby_glyph_positions(line), (std::vector<float>{0, 8, 16, 24, 32, 44, 60}));
+  }
+}
+
+// text-align: justify でも組の内部の配分は変わらない（組は 1 アイテムで、広がるのは組の外側）。
+TEST(LayoutRuby, JustifyKeepsTheDistributionInsideThePair) {
+  for (const bool vertical : {false, true}) {
+    SCOPED_TRACE(vertical);
+    FakeMeasurer measurer;
+    std::vector<Tree> children{
+        block({ruby({text("写植"), rt("しゃしょく")}), text("はむかしのなまえです")},
+              [](ComputedStyle& style) { style.text_align = style::TextAlign::Justify; })};
+    const auto root = vertical ? build_vertical(std::move(children)) : build(std::move(children));
+    const auto options = vertical ? vertical_options(400, 150) : make_options(150);
+    const auto tree = run_layout(root, options, measurer);
+    ASSERT_TRUE(tree.has_value());
+    const std::vector<const LineBox*> lines = all_lines(*tree);
+    ASSERT_GE(lines.size(), 2U);  // 最終行でない = 両端揃えが効く行
+    const std::vector<float> base = base_glyph_positions(*lines[0]);
+    ASSERT_GE(base.size(), 2U);
+    // 行頭の組: 端 2 / 字間 4 のまま（均等割りの空きは組の外側にだけ入る）
+    EXPECT_FLOAT_EQ(base[0], 2);
+    EXPECT_FLOAT_EQ(base[1], 22);
+    EXPECT_EQ(ruby_glyph_positions(*lines[0]), (std::vector<float>{0, 8, 16, 24, 32}));
+  }
+}
+
+// 禁則で組が行頭・行末に来ても、組の内部の配分は行の中での位置に付いていく。
+TEST(LayoutRuby, DistributionFollowsThePairToTheLineEdges) {
+  for (const bool vertical : {false, true}) {
+    SCOPED_TRACE(vertical);
+    FakeMeasurer measurer;
+    const auto options = vertical ? vertical_options(400, 88) : make_options(88);
+    // 行末: あいう（48）+ 組（40）= 88 でちょうど収まる
+    std::vector<Tree> tail{block({text("あいう"), ruby({text("写植"), rt("しゃしょく")})})};
+    const auto at_end = vertical ? build_vertical(std::move(tail)) : build(std::move(tail));
+    const auto a = run_layout(at_end, options, measurer);
+    ASSERT_TRUE(a.has_value());
+    ASSERT_EQ(all_lines(*a).size(), 1U);
+    EXPECT_EQ(base_glyph_positions(*all_lines(*a)[0]),
+              (std::vector<float>{0, 16, 32, 50, 70}));  // 組は 48 から。48 + 2 / 48 + 22
+    EXPECT_EQ(ruby_glyph_positions(*all_lines(*a)[0]), (std::vector<float>{48, 56, 64, 72, 80}));
+    // 行頭: あいうえ（64）+ 組（40）= 104 > 88 なので組が次の行の頭に落ちる
+    std::vector<Tree> head{block({text("あいうえ"), ruby({text("写植"), rt("しゃしょく")})})};
+    const auto at_start = vertical ? build_vertical(std::move(head)) : build(std::move(head));
+    const auto b = run_layout(at_start, options, measurer);
+    ASSERT_TRUE(b.has_value());
+    ASSERT_EQ(all_lines(*b).size(), 2U);
+    EXPECT_EQ(base_glyph_positions(*all_lines(*b)[1]), (std::vector<float>{2, 22}));
+    EXPECT_EQ(ruby_glyph_positions(*all_lines(*b)[1]), (std::vector<float>{0, 8, 16, 24, 32}));
+  }
 }
 
 // 1 つの <ruby> に複数組。
@@ -672,20 +1045,17 @@ void check_letter_spacing(const SpacingCase& test_case, bool vertical, float spa
   const float base_width = static_cast<float>(test_case.base.size()) * step;
   const float rt_width = static_cast<float>(test_case.annotation_chars) * kRuby;
   const float advance = std::max(base_width, rt_width);
-  const float offset = (advance - base_width) / 2;  // 短い方を中央に置く
 
-  std::vector<float> expected_base;
-  for (std::size_t i = 0; i < test_case.base.size(); ++i) {
-    expected_base.push_back(offset + (static_cast<float>(i) * step));
-  }
-  std::vector<float> expected_ruby;
-  for (std::size_t i = 0; i < test_case.annotation_chars; ++i) {
-    expected_ruby.push_back(((advance - rt_width) / 2) + (static_cast<float>(i) * kRuby));
-  }
+  // 短い方に余りを配る（JLREQ 3.3.6。#28）。端の上限はルビ文字サイズの全角
+  const std::vector<float> expected_base =
+      distributed_positions(test_case.base.size(), step, advance, kRuby);
+  const std::vector<float> expected_ruby =
+      distributed_positions(test_case.annotation_chars, kRuby, advance, kRuby);
   EXPECT_EQ(base_glyph_positions(line), expected_base) << label;
   EXPECT_EQ(ruby_glyph_positions(line), expected_ruby) << label;
-  // ルビの中心と、配置後の親文字（送り基準）の中心が一致する
-  EXPECT_FLOAT_EQ(expected_ruby.front() + (rt_width / 2), offset + (base_width / 2)) << label;
+  // 配分は組の中で対称（前後の空きが同じ）。親文字とルビの中心はどちらも組の中心に来る
+  EXPECT_NEAR(expected_base.front(), advance - (expected_base.back() + step), kTolerance) << label;
+  EXPECT_NEAR(expected_ruby.front(), advance - (expected_ruby.back() + kRuby), kTolerance) << label;
 }
 
 // 組み合わせの回帰テスト: {横書き, 縦書き} × {字間 0, 正, 負} ×
@@ -804,10 +1174,10 @@ TEST(LayoutRuby, ColorOnlySpanInTheBaseDoesNotSplitShaping) {
   ASSERT_EQ(base.size(), 2U);
   EXPECT_EQ(base[0]->color, kBlack);
   EXPECT_EQ(base[1]->color, (Color{255, 0, 0, 255}));
-  // ルビの方が長い（8px × 5 = 40）ので、親文字 32px は中央に寄る
-  constexpr float kOffset = ((kRuby * 5) - (kBase * 2)) / 2;
-  EXPECT_FLOAT_EQ(base[0]->inline_start, kOffset);
-  EXPECT_FLOAT_EQ(base[1]->inline_start, kOffset + kBase);
+  // ルビの方が長い（8px × 5 = 40）ので、親文字 32px に余り 8 を配る（端 2 / 字間 4）
+  constexpr float kExtra = (kRuby * 5) - (kBase * 2);
+  EXPECT_FLOAT_EQ(base[0]->inline_start, kExtra / 4);
+  EXPECT_FLOAT_EQ(base[1]->inline_start, (kExtra / 4) + kBase + (kExtra / 2));
 }
 
 // ルビはインラインの仕組みなので、ブロック級の箱にはできない。

@@ -377,23 +377,70 @@ Placement InlineFormatter::place_cluster(const ItemSource& source, float advance
   return Placement{.inline_start = start, .inline_end = pen};
 }
 
-// ルビ組: 親文字とルビの短い方を中央に置く（JLREQ の 1:2:1 の配分まではやらない）。
+// 組の内部で短い方に配る空き（JLREQ 3.3.6 の 1:2:…:2:1。§3.8 のルビの規則 2〜5）。
+struct RubySpread {
+  float lead = 0;  // 組の端（前後）に置く空き
+  float gap = 0;   // クラスタとクラスタの間に置く空き
+};
+
+// 余り extra を count 個のクラスタに「端 extra/(2n)、字間 extra/n」で配る。
+// 端はルビ文字サイズの全角（max_lead）が上限で、止めたぶんは字間に回す（同 3.3.6 の注）。
+// クラスタが 1 つのときは配る字間が無いので中央に置く（上限も掛けない）。
+RubySpread spread_of(float extra, std::size_t count, float max_lead) {
+  if (count == 0 || extra <= 0) {
+    return {};
+  }
+  if (count == 1) {
+    return {.lead = extra / 2, .gap = 0};
+  }
+  const auto n = static_cast<float>(count);
+  const float lead = extra / (2 * n);
+  if (lead <= max_lead) {
+    return {.lead = lead, .gap = extra / n};
+  }
+  return {.lead = max_lead, .gap = (extra - (2 * max_lead)) / (n - 1)};
+}
+
+// ルビ組: 組の送り（= max(親文字, ルビ)）は行分割器に渡した値のまま、短い方の余りを
+// JLREQ 3.3.6 の比率で組の内部に配る（#28。掛け = JLREQ 3.3.8 はまだ無い）。
 // 組の内部の親文字は、通常のインライン内容と同じ規則で配置する（CSS Ruby 1 §2。#16）。
 void InlineFormatter::place_ruby(const RubyPiece& piece, float item_start, float advance,
                                  float baseline, FragmentWriter& writer) {
   writer.close();
-  float pen = item_start + ((advance - piece.base_width) / 2);
+  const RubySpread base_spread =
+      spread_of(advance - piece.base_width, piece.base_end - piece.base_begin, piece.rt_font_size);
+  float pen = item_start + base_spread.lead;
   for (std::size_t i = piece.base_begin; i < piece.base_end; ++i) {
     const RubyCluster& cluster = paragraph_->ruby_clusters[i];
-    ruby_placement_[i] = place_cluster(cluster.source, cluster.advance, baseline, writer, pen);
+    Placement placed = place_cluster(cluster.source, cluster.advance, baseline, writer, pen);
+    if (i + 1 < piece.base_end) {
+      pen += base_spread.gap;  // 配分の空きはクラスタの**間**にだけ入る（末尾には足さない）
+      // 背景はその空きまで覆う（letter-spacing の字間と同じ扱い。A37）。そうしないと
+      // 隣り合う span の背景の間に隙間が開く
+      placed.inline_end = pen;
+    }
+    ruby_placement_[i] = placed;
   }
   writer.close();
 
-  // ルビ文字に letter-spacing は掛けない（A37 / §3.8 のルビ）
-  float ruby_pen = item_start + ((advance - piece.rt_width) / 2);
+  // ルビ文字に letter-spacing は掛けない（A37 / §3.8 のルビ）。配分は親文字と同じ規則で、
+  // ルビも**クラスタ単位**で置く（1 回で並べると字間を入れる場所が無い）
   const text::ShapedText& ruby = paragraph_->runs[piece.rt_run].shaped;
-  writer.add(ruby, 0, ruby.glyphs.size(), piece.rt_style, ruby_baseline(piece, baseline),
-             piece.rt_text, ruby_pen);
+  const RubySpread rt_spread =
+      spread_of(advance - piece.rt_width, ruby.clusters.size(), piece.rt_font_size);
+  const float rt_baseline = ruby_baseline(piece, baseline);
+  float ruby_pen = item_start + rt_spread.lead;
+  // 断片のテキストは先頭のクラスタで 1 回だけ渡す（A31: 位置も文字も断片の先頭のもの）
+  std::string text = piece.rt_text;
+  for (std::size_t i = 0; i < ruby.clusters.size(); ++i) {
+    if (i > 0) {
+      ruby_pen += rt_spread.gap;
+    }
+    const text::ShapedCluster& cluster = ruby.clusters[i];
+    writer.add(ruby, cluster.glyph_begin, cluster.glyph_end, piece.rt_style, rt_baseline, text,
+               ruby_pen);
+    text.clear();
+  }
   writer.extend_to(ruby_pen);
   writer.close();
 }

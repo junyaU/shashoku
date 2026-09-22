@@ -28,15 +28,15 @@ namespace shashoku::text::assets {
 
 // COLR のベースグリフ（'A'）の作り方。
 enum class ColrBase : std::uint8_t {
-  Empty,     // 輪郭が空。色レイヤーだけで絵を作る作り（nanoemoji 系の COLR フォント）
+  Empty,  // 輪郭が空。色レイヤーだけで絵を作る作り（nanoemoji 系の COLR フォント）
   Outlined,  // ベース自身が輪郭を持つ（単色でも「色の落ちた絵」として描ける作り）
 };
 
 // このフォントの中身を知っているテストのための定数。
-inline constexpr char32_t kColrCodepoint = U'A';       // cmap にある唯一の文字
+inline constexpr char32_t kColrCodepoint = U'A';         // cmap にある唯一の文字
 inline constexpr char32_t kColrMissingCodepoint = U'B';  // cmap に無い（従来の豆腐の対照）
 inline constexpr GlyphId kColrNotdefGlyph = 0;
-inline constexpr GlyphId kColrBaseGlyph = 1;       // 'A'。COLR のベース
+inline constexpr GlyphId kColrBaseGlyph = 1;  // 'A'。COLR のベース
 inline constexpr GlyphId kColrFirstLayerGlyph = 2;  // 色レイヤー（輪郭あり・色データ無し）
 inline constexpr GlyphId kColrSecondLayerGlyph = 3;
 inline constexpr std::uint16_t kColrUnitsPerEm = 1000;
@@ -123,7 +123,7 @@ inline std::vector<std::uint8_t> build_colr_font(ColrBase base) {
   // --- glyf / loca: グリフの輪郭とその位置 --------------------------------------
   std::vector<std::vector<std::uint8_t>> glyphs;
   glyphs.push_back(box_glyph(50, 0, 950, 700));  // gid 0 .notdef
-  glyphs.push_back(base == ColrBase::Empty      // gid 1 'A'（COLR のベース）
+  glyphs.push_back(base == ColrBase::Empty       // gid 1 'A'（COLR のベース）
                        ? std::vector<std::uint8_t>{}
                        : box_glyph(120, 20, 880, 680));
   glyphs.push_back(box_glyph(100, 0, 900, 700));    // gid 2 色レイヤー
@@ -164,18 +164,18 @@ inline std::vector<std::uint8_t> build_colr_font(ColrBase base) {
 
   // --- hhea / hmtx: 横組みのメトリクス -------------------------------------------
   std::vector<std::uint8_t> hhea;
-  put_u16(hhea, 1);      // majorVersion
-  put_u16(hhea, 0);      // minorVersion
-  put_i16(hhea, 800);    // ascender
-  put_i16(hhea, -200);   // descender
-  put_i16(hhea, 0);      // lineGap
-  put_u16(hhea, 1000);   // advanceWidthMax
-  put_i16(hhea, 0);      // minLeftSideBearing
-  put_i16(hhea, 0);      // minRightSideBearing
-  put_i16(hhea, 1000);   // xMaxExtent
-  put_i16(hhea, 1);      // caretSlopeRise
-  put_i16(hhea, 0);      // caretSlopeRun
-  put_i16(hhea, 0);      // caretOffset
+  put_u16(hhea, 1);     // majorVersion
+  put_u16(hhea, 0);     // minorVersion
+  put_i16(hhea, 800);   // ascender
+  put_i16(hhea, -200);  // descender
+  put_i16(hhea, 0);     // lineGap
+  put_u16(hhea, 1000);  // advanceWidthMax
+  put_i16(hhea, 0);     // minLeftSideBearing
+  put_i16(hhea, 0);     // minRightSideBearing
+  put_i16(hhea, 1000);  // xMaxExtent
+  put_i16(hhea, 1);     // caretSlopeRise
+  put_i16(hhea, 0);     // caretSlopeRun
+  put_i16(hhea, 0);     // caretOffset
   for (int i = 0; i < 4; ++i) {
     put_i16(hhea, 0);  // reserved
   }
@@ -214,24 +214,24 @@ inline std::vector<std::uint8_t> build_colr_font(ColrBase base) {
 
   // --- OS/2: version 4（96 バイト）。weight / 幅の既定値だけ --------------------
   std::vector<std::uint8_t> os2;
-  put_u16(os2, 4);      // version
-  put_i16(os2, 1000);   // xAvgCharWidth
-  put_u16(os2, 400);    // usWeightClass
-  put_u16(os2, 5);      // usWidthClass
-  put_u16(os2, 0);      // fsType
-  put_i16(os2, 650);    // ySubscriptXSize
-  put_i16(os2, 700);    // ySubscriptYSize
-  put_i16(os2, 0);      // ySubscriptXOffset
-  put_i16(os2, 140);    // ySubscriptYOffset
-  put_i16(os2, 650);    // ySuperscriptXSize
-  put_i16(os2, 700);    // ySuperscriptYSize
-  put_i16(os2, 0);      // ySuperscriptXOffset
-  put_i16(os2, 480);    // ySuperscriptYOffset
-  put_i16(os2, 50);     // yStrikeoutSize
-  put_i16(os2, 250);    // yStrikeoutPosition
-  put_i16(os2, 0);      // sFamilyClass
+  put_u16(os2, 4);               // version
+  put_i16(os2, 1000);            // xAvgCharWidth
+  put_u16(os2, 400);             // usWeightClass
+  put_u16(os2, 5);               // usWidthClass
+  put_u16(os2, 0);               // fsType
+  put_i16(os2, 650);             // ySubscriptXSize
+  put_i16(os2, 700);             // ySubscriptYSize
+  put_i16(os2, 0);               // ySubscriptXOffset
+  put_i16(os2, 140);             // ySubscriptYOffset
+  put_i16(os2, 650);             // ySuperscriptXSize
+  put_i16(os2, 700);             // ySuperscriptYSize
+  put_i16(os2, 0);               // ySuperscriptXOffset
+  put_i16(os2, 480);             // ySuperscriptYOffset
+  put_i16(os2, 50);              // yStrikeoutSize
+  put_i16(os2, 250);             // yStrikeoutPosition
+  put_i16(os2, 0);               // sFamilyClass
   os2.insert(os2.end(), 10, 0);  // panose
-  put_u32(os2, 1);      // ulUnicodeRange1（Basic Latin）
+  put_u32(os2, 1);               // ulUnicodeRange1（Basic Latin）
   put_u32(os2, 0);
   put_u32(os2, 0);
   put_u32(os2, 0);
@@ -266,9 +266,9 @@ inline std::vector<std::uint8_t> build_colr_font(ColrBase base) {
   put_u16(sub, 0xFFFF);  // endCode[]
   put_u16(sub, 0);       // reservedPad
   put_u16(sub, 0x0041);
-  put_u16(sub, 0xFFFF);                                            // startCode[]
-  put_u16(sub, static_cast<std::uint16_t>(1 - 0x41));               // idDelta: 'A' → gid 1
-  put_u16(sub, 1);                                                  // idDelta（番兵）
+  put_u16(sub, 0xFFFF);                                // startCode[]
+  put_u16(sub, static_cast<std::uint16_t>(1 - 0x41));  // idDelta: 'A' → gid 1
+  put_u16(sub, 1);                                     // idDelta（番兵）
   put_u16(sub, 0);
   put_u16(sub, 0);  // idRangeOffset[]
 
@@ -282,14 +282,14 @@ inline std::vector<std::uint8_t> build_colr_font(ColrBase base) {
 
   // --- COLR v0: ベース gid 1 に色レイヤー 2 枚 -----------------------------------
   std::vector<std::uint8_t> colr;
-  put_u16(colr, 0);   // version 0
-  put_u16(colr, 1);   // numBaseGlyphRecords
-  put_u32(colr, 14);  // baseGlyphRecordsOffset
-  put_u32(colr, 20);  // layerRecordsOffset
-  put_u16(colr, 2);   // numLayerRecords
-  put_u16(colr, kColrBaseGlyph);  // BaseGlyphRecord: glyphID
-  put_u16(colr, 0);               // firstLayerIndex
-  put_u16(colr, 2);               // numLayers
+  put_u16(colr, 0);                      // version 0
+  put_u16(colr, 1);                      // numBaseGlyphRecords
+  put_u32(colr, 14);                     // baseGlyphRecordsOffset
+  put_u32(colr, 20);                     // layerRecordsOffset
+  put_u16(colr, 2);                      // numLayerRecords
+  put_u16(colr, kColrBaseGlyph);         // BaseGlyphRecord: glyphID
+  put_u16(colr, 0);                      // firstLayerIndex
+  put_u16(colr, 2);                      // numLayers
   put_u16(colr, kColrFirstLayerGlyph);   // LayerRecord[0]: glyphID
   put_u16(colr, 0);                      // paletteIndex
   put_u16(colr, kColrSecondLayerGlyph);  // LayerRecord[1]
@@ -297,12 +297,12 @@ inline std::vector<std::uint8_t> build_colr_font(ColrBase base) {
 
   // --- CPAL v0: 色 2 つのパレット 1 つ -------------------------------------------
   std::vector<std::uint8_t> cpal;
-  put_u16(cpal, 0);   // version 0
-  put_u16(cpal, 2);   // numPaletteEntries
-  put_u16(cpal, 1);   // numPalettes
-  put_u16(cpal, 2);   // numColorRecords
-  put_u32(cpal, 14);  // colorRecordsArrayOffset
-  put_u16(cpal, 0);   // colorRecordIndices[0]
+  put_u16(cpal, 0);                                   // version 0
+  put_u16(cpal, 2);                                   // numPaletteEntries
+  put_u16(cpal, 1);                                   // numPalettes
+  put_u16(cpal, 2);                                   // numColorRecords
+  put_u32(cpal, 14);                                  // colorRecordsArrayOffset
+  put_u16(cpal, 0);                                   // colorRecordIndices[0]
   cpal.insert(cpal.end(), {0x20, 0x40, 0xE0, 0xFF});  // ColorRecord[0] BGRA: 青
   cpal.insert(cpal.end(), {0xE0, 0xC0, 0x20, 0xFF});  // ColorRecord[1] BGRA: 黄
 

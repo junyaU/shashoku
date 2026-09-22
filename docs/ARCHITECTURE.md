@@ -136,7 +136,11 @@ CSS どおりに効く。`box-sizing` は content-box のみ（A11）なので�
 フォント全体が輪郭を持たない場合（CBDT/CBLC・sbix のカラー絵文字フォント。FreeType は
 `FT_FACE_FLAG_SCALABLE` を立てない）は、`FontStore::load()` が `FontLoad` で落とす（一番早い段で
 落とす。実装済み）。COLR/CPAL のカラー絵文字はベースの輪郭を持つので load は通り、ベースグリフが
-空なら「空白」として通ってしまう。これを警告 + 豆腐に回すかは Shaper 側の判断（未着手）。
+空なら「空白」として通ってしまう。**これは `FontStore` が load のときに見つけて `Shaper` が豆腐に
+回す**（A-new。issue #27）。ラスタライザの契約はこの表のまま変えていない: 「輪郭が 0 本のグリフ」は
+ラスタライザから見れば空白グリフと区別がつかないので、**描く前の段（④ の入口）で判定する**。
+`SVG `（OT-SVG）だけを持つカラーフォントも同じ穴だが、**同じ扱い（警告 + 豆腐）にする方針だけを
+決めて実装は別の作業に回した**（A-new の最後）。
 
 **A20. Unicode の表は UCD から生成し、生成物をコミットする。** 行分割クラス（UAX #14）・
 縦書きの字の向き（UAX #50）・東アジア幅（UAX #11）の 3 つの表は
@@ -907,6 +911,47 @@ shashoku は 16.00 px（そのまま）、Chrome は 20.00 px（注記の 40 px 
 インクの中心（`C` の開始 72.48 + グリフの送り ≒ 92.9 の中点 ≒ 46.4 px）ではない。
 **「送りの中央か、インクの中央か」は両エンジンとも送りの中央**。
 
+**A-new. 「グリフがある」と「単色で描ける」を分ける。色データだけのグリフ（COLR のベースが空）は
+豆腐に回す。**（issue #27。A19 が書き残した穴）
+
+`resolve_char()` は `has_glyph()`（cmap にあるか）だけで豆腐を決めていた。COLR/CPAL の
+カラー絵文字は「ベースグリフ + 色レイヤーの列」で字形を表すので、**ベースの輪郭が空**のフォントでは
+「グリフはあるが単色では描くものが無い」状態になる。単色の輪郭しか描かない shashoku では、
+その文字が**警告も豆腐も出ないまま消える**（実測: 自作の最小 COLR フォントで `AAA` が
+終了コード 0・警告 0 件・全ピクセル透明の PNG）。豆腐より静かに壊れるので DESIGN.md §3-6 違反。
+
+- **判定は `FontStore::load()` のとき**に済ませる。`FontStore` は load のあと読み取り専用の
+  共有資源（A34）で `FT_Face` を持たないので、**引くときに FreeType に聞くことはできない**。
+  `FT_Face` がまだ生きている `make_entry()` の中で「色データを持ち、かつ輪郭が空」のグリフ番号を
+  集めて `FontEntry::color_only_glyphs`（昇順・重複なし）に覚え、以後は二分探索で引く
+- **条件**: 色データは HarfBuzz（`hb_ot_color_glyph_get_layers() > 0 || hb_ot_color_glyph_has_paint()`。
+  COLR v0 と COLRv1 の両方）、輪郭は FreeType（`FT_Load_Glyph(FT_LOAD_NO_SCALE)` のあと
+  `outline.n_contours == 0`）に聞く。A7（互いを知らない）はそのまま:
+  両者に別々に聞いて `FontStore` の中で突き合わせる。**`hb_font_get_glyph_extents()` では判定できない**
+  （HarfBuzz は COLR のレイヤーから extents を計算するので、空のベースでも 800×700 を返す）
+- **フォント単位で色データが無ければ 1 グリフも調べない**（`hb_ot_color_has_layers()` /
+  `has_paint()` が両方 false なら即やめる）。COLR を持たないフォント（Noto Sans JP / Noto Sans）は
+  読み込み時間も出力も 1 ビットも変わらない。`FontStore::color_probe_count()` は**テスト用の統計**で、
+  「調べていない」ことを 0 で固定するためだけにある（出力には影響しない）
+- **描けないグリフは「そのフォントには無い」のと同じ扱い**にする。`resolve_char()` の
+  フォールバック列は `has_drawable_glyph()`（cmap にあり、かつ色データだけでない）で辿るので、
+  後ろのフォントがその文字を単色で持っていれば**そちらで描かれる**（豆腐にしない）。
+  どのフォントも描けないときだけ `plan.missing = true` で、あとは A31 の仕組みに乗る:
+  □ が描かれ、`ShapedCluster::missing` → `LayoutEngine` → `Warning{MissingGlyph, 位置}`
+- **`WarningKind` は増やさない。** 利用者にとっては「その字が出せなかった」であり、原因が
+  cmap に無いのか色データだけなのかで対処は変わらない。公開 API を増やす価値がない。
+  **残した穴**: 警告の detail は「no font has a glyph for U+XXXX at L:C」のままで、COLR が原因で
+  あることは出ない。`layout::MissingGlyph` はコードポイントと位置しか運ばず、文面を組み立てるのは
+  api なので、理由を運ぶには ④ → ③ → api の 3 モジュールの契約（`ShapedCluster` /
+  `layout::MissingGlyph` / `to_warnings()`）を変える必要がある。**`WarningKind` を増やさずに
+  済む足し方は「`MissingGlyph` に理由の列挙を 1 つ持たせて detail の文面だけ分ける」**
+- **却下した案**: (B) エラーで止める → 絵文字 1 文字で文章全体が組めなくなる。豆腐を警告に
+  している唯一の例外の趣旨に反する。(C) COLRv0 のレイヤーを単色で重ねて描く →
+  「日本語の文章を正しく組むことに寄与するか」に No。重ねた結果は黒い塊で □ より情報が多くない
+- **OT-SVG（`SVG ` テーブルだけを持つフォント）も同じ扱いにする**: `hb_ot_color_has_svg()` で
+  同じように検出できるが、検証用のフォントが無いので**この作業では実装しない**。
+  実装するときは `collect_color_only_glyphs()` に条件を足すだけで済む（判定の置き場は同じ）
+
 ---
 
 ## 2. モジュールと依存
@@ -1114,10 +1159,12 @@ class FreeTypeGlyphSource final : public raster::GlyphSource { /* FontStore を�
      片方の face にしか無い文字の保険として残す）
 
   `metrics()` が返すのもこの列の先頭のフォント。豆腐の `□` を探す順もこの列
-- run 分割: コードポイントごとにフォールバック列を cmap 引きし、最初にグリフを持つフォントを採用。
+- run 分割: コードポイントごとにフォールバック列を cmap 引きし、**最初にそれを単色で描ける**
+  フォントを採用。cmap にグリフがあっても、色データだけを持ち輪郭が空のグリフ（COLR のベース）は
+  描けないので次のフォントに送る（`FontStore::has_drawable_glyph()`。A-new）。
   同じフォントが続く区間をまとめて HarfBuzz に渡す。結合文字・異体字セレクタ・ZWJ は直前の
   文字と同じ run に入れる（別フォントに割らない）
-- 豆腐: どのフォントにもないコードポイントは `ShapedCluster::missing` で返し（**Shaper は
+- 豆腐: どのフォントでも描けないコードポイントは `ShapedCluster::missing` で返し（**Shaper は
   溜めない**。警告を組み立てるのは ③ レイアウト。A31）、`□`（U+25A1）を
   **フォールバック列の順に全フォントから探して**、最初に見つかったフォントのグリフを
   1em の送りで出す（第一フォントだけを見ると、欧文フォントが先頭のときに幅の狭い `.notdef` が
@@ -1142,7 +1189,10 @@ class FreeTypeGlyphSource final : public raster::GlyphSource { /* FontStore を�
   `ShapedText` を返してよいのは入力が空文字列のときだけで、「測れなかった」を空で表さない
 - `FontStore::load()`: 輪郭を持たないフォント（`FT_IS_SCALABLE` が偽。埋め込みビットマップ専用の
   カラー絵文字フォントなど）は `FontLoad` で拒否する。ラスタライザは輪郭しか扱えないので、
-  「全部の字が消えた PNG」になる前に一番早い段で落とす（A19）
+  「全部の字が消えた PNG」になる前に一番早い段で落とす（A19）。
+  **フォント全体ではなくグリフ単位で「色データだけ」のもの**（COLR/CPAL のベースで輪郭が空）は
+  load のときに拾って覚え、`is_color_only_glyph()` / `has_drawable_glyph()` で引く（A-new）。
+  色データを持たないフォントでは 1 グリフも調べない（`color_probe_count()` が 0 のまま）
 - テスト用フォント: リポジトリに置かず、CMake の configure 時に版（コミット SHA）とハッシュを
   固定してダウンロードする（`cmake/TestAssets.cmake`）。Noto Sans JP（OFL）+ 欧文フォント 1 つ
   （フォールバックのテスト用）。パスはコンパイル定義でテストに渡す。

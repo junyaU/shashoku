@@ -58,8 +58,8 @@ std::size_t total_ink(const ShapedText& shaped, raster::GlyphSource& glyphs, flo
       ADD_FAILURE() << "rasterize() failed: " << to_string(bitmap.error());
       return 0;
     }
-    ink += static_cast<std::size_t>(std::ranges::count_if(
-        bitmap->coverage, [](std::uint8_t value) { return value != 0; }));
+    ink += static_cast<std::size_t>(
+        std::ranges::count_if(bitmap->coverage, [](std::uint8_t value) { return value != 0; }));
   }
   return ink;
 }
@@ -178,7 +178,7 @@ TEST(TextColorFont, VerticalWritingGetsTheSameTofu) {
   }
   for (const ShapedGlyph& glyph : shaped.glyphs) {
     EXPECT_NE(glyph.glyph_id, kColrBaseGlyph);
-    EXPECT_FALSE(glyph.sideways);            // 豆腐は縦書きでも立てる
+    EXPECT_FALSE(glyph.sideways);           // 豆腐は縦書きでも立てる
     EXPECT_EQ(glyph.x_offset, -64.0F / 2);  // 中心軸の左右に 1em を半分ずつ
   }
 }

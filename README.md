@@ -289,7 +289,7 @@ shashoku は純粋関数です（[DESIGN.md §3-5](docs/DESIGN.md)）。グロ�
 - **flexbox**: 単一行のみ（`flex-wrap` なし）。`align-self` `order` `flex-flow` なし
 - **ボックス**: `box-sizing` は content-box のみ。`max-width` / `min-width` なし。枠線と角丸は **4 辺・4 隅共通のみ**（`border-top` や隅ごとの半径は不可）。マージンの相殺は**隣り合う兄弟ブロック間だけ**（親子間はしません）
 - **画像**: **PNG のみ**（JPEG / SVG / WebP は非対応）。URL もファイルパスも解釈せず、バイト列で渡します
-- **絵文字**: カラー絵文字フォント（CBDT / sbix / COLR）は描けません。グリフが無ければ **□ を描いて警告**を返します（`WarningKind::MissingGlyph`）
+- **絵文字**: カラー絵文字フォント（CBDT / sbix / COLR / OT-SVG）は**色では描けません**。ビットマップ専用のフォント（CBDT / sbix）は読み込みでエラーにします。COLR は**ベースの輪郭があればその輪郭を単色で**描き、輪郭が無い（色レイヤーだけで絵を作る）グリフは **□ を描いて警告**を返します（`WarningKind::MissingGlyph`）。グリフが無いときも同じです
 
 ## やらないこと
 

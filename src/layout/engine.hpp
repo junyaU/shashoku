@@ -118,8 +118,12 @@ class LayoutEngine {
   // 豆腐（A31 / issue #9）。同じ段落は計測と配置で何度も組まれうる（<img> を含む段落や
   // メモ無効のとき）ので、**(位置, コードポイント) をキーに重複を除いて**溜める。
   // 集合の順序がそのまま報告順（入力位置の昇順 → コードポイントの昇順）になる。
-  void record_missing_glyph(char32_t codepoint, const SourceLocation& location) {
-    missing_glyphs_.insert(MissingGlyph{.codepoint = codepoint, .location = location});
+  // 理由（A43）は文面のためだけの値で、重複除去のキーには入れない（同じテキストノードの
+  // 同じ文字なら、フォント列も同じなので理由も必ず同じになる）。
+  void record_missing_glyph(char32_t codepoint, const SourceLocation& location,
+                            text::MissingReason reason = text::MissingReason::NotInAnyFont) {
+    missing_glyphs_.insert(
+        MissingGlyph{.codepoint = codepoint, .location = location, .reason = reason});
   }
   [[nodiscard]] std::vector<MissingGlyph> missing_glyphs() const {
     return {missing_glyphs_.begin(), missing_glyphs_.end()};

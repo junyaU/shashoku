@@ -85,7 +85,12 @@ struct FontEntry {
   ImmutableFont font;  // 読み取り専用の hb_font（上の注意を参照）
   std::string family;
   std::string family_folded;  // ASCII を小文字に畳んだ照合用の名前
-  int weight = 400;           // OS/2 usWeightClass
+  // 色データ（COLR）だけを持ち、単色の輪郭が空のグリフ（A43 / issue #27）。**昇順・重複なし**
+  // で、二分探索で引く。load() のときに作ってからは読むだけ（A34）。色データを持たない
+  // フォントでは必ず空なので、ふつうのフォントの引き当ては空かどうかの判定 1 回で終わる。
+  std::vector<GlyphId> color_only_glyphs;
+  std::size_t color_probe_count = 0;  // 上を作るのに調べたグリフ数（テスト用の統計）
+  int weight = 400;                   // OS/2 usWeightClass
   bool italic = false;
   std::uint16_t upem = 1000;
 

@@ -136,7 +136,11 @@ CSS どおりに効く。`box-sizing` は content-box のみ（A11）なので�
 フォント全体が輪郭を持たない場合（CBDT/CBLC・sbix のカラー絵文字フォント。FreeType は
 `FT_FACE_FLAG_SCALABLE` を立てない）は、`FontStore::load()` が `FontLoad` で落とす（一番早い段で
 落とす。実装済み）。COLR/CPAL のカラー絵文字はベースの輪郭を持つので load は通り、ベースグリフが
-空なら「空白」として通ってしまう。これを警告 + 豆腐に回すかは Shaper 側の判断（未着手）。
+空なら「空白」として通ってしまう。**これは `FontStore` が load のときに見つけて `Shaper` が豆腐に
+回す**（A43。issue #27）。ラスタライザの契約はこの表のまま変えていない: 「輪郭が 0 本のグリフ」は
+ラスタライザから見れば空白グリフと区別がつかないので、**描く前の段（④ の入口）で判定する**。
+`SVG `（OT-SVG）だけを持つカラーフォントも同じ穴だが、**同じ扱い（警告 + 豆腐）にする方針だけを
+決めて実装は別の作業に回した**（A43 の最後）。
 
 **A20. Unicode の表は UCD から生成し、生成物をコミットする。** 行分割クラス（UAX #14）・
 縦書きの字の向き（UAX #50）・東アジア幅（UAX #11）の 3 つの表は
@@ -430,7 +434,7 @@ A19 で `GlyphSource::rasterize()` を `Result` にしたが、計測側は値�
 | 事象 | 返すもの |
 |---|---|
 | 空文字列（グリフが 0 個）、既定無視文字だけの run、`font_size` が 0 | 成功（空の `ShapedText` / 送り 0） |
-| 豆腐（どのフォントにもグリフがない） | 成功 + `ShapedCluster::missing = true`（DESIGN.md §3-6 の唯一の例外） |
+| 豆腐（どのフォントでも描けない） | 成功 + `ShapedCluster::missing = true` と `missing_reason`（A43。DESIGN.md §3-6 の唯一の例外） |
 | `FontStore` にフォントが 1 つもない、不正な `FontId`、**負**または非有限の `font_size` | `Internal`（呼び出し側のバグ） |
 | `hb_font_get_h_extents()` が偽（hhea / OS/2 が読めない） | `FontLoad` |
 | `hb_font_create()` が空のフォントを返す、`hb_buffer_allocation_successful()` が偽 | `OutOfMemory`（A26 の種類） |
@@ -989,6 +993,54 @@ CSS 2.1 §10.8 は「空のインライン要素も空のインラインボッ�
 - 背景は変わらない: 空のインラインボックスの `BackgroundScope` は `begin == end` なので
   (e) が矩形を出さない（CSS でも幅 0 なので何も塗られない）
 
+**A43. 「グリフがある」と「単色で描ける」を分ける。色データだけのグリフ（COLR のベースが空）は
+豆腐に回す。**（issue #27。A19 が書き残した穴）
+
+`resolve_char()` は `has_glyph()`（cmap にあるか）だけで豆腐を決めていた。COLR/CPAL の
+カラー絵文字は「ベースグリフ + 色レイヤーの列」で字形を表すので、**ベースの輪郭が空**のフォントでは
+「グリフはあるが単色では描くものが無い」状態になる。単色の輪郭しか描かない shashoku では、
+その文字が**警告も豆腐も出ないまま消える**（実測: 自作の最小 COLR フォントで `AAA` が
+終了コード 0・警告 0 件・全ピクセル透明の PNG）。豆腐より静かに壊れるので DESIGN.md §3-6 違反。
+
+- **判定は `FontStore::load()` のとき**に済ませる。`FontStore` は load のあと読み取り専用の
+  共有資源（A34）で `FT_Face` を持たないので、**引くときに FreeType に聞くことはできない**。
+  `FT_Face` がまだ生きている `make_entry()` の中で「色データを持ち、かつ輪郭が空」のグリフ番号を
+  集めて `FontEntry::color_only_glyphs`（昇順・重複なし）に覚え、以後は二分探索で引く
+- **条件**: 色データは HarfBuzz（`hb_ot_color_glyph_get_layers() > 0 || hb_ot_color_glyph_has_paint()`。
+  COLR v0 と COLRv1 の両方）、輪郭は FreeType（`FT_Load_Glyph(FT_LOAD_NO_SCALE)` のあと
+  `outline.n_contours == 0`）に聞く。A7（互いを知らない）はそのまま:
+  両者に別々に聞いて `FontStore` の中で突き合わせる。**`hb_font_get_glyph_extents()` では判定できない**
+  （HarfBuzz は COLR のレイヤーから extents を計算するので、空のベースでも 800×700 を返す）
+- **フォント単位で色データが無ければ 1 グリフも調べない**（`hb_ot_color_has_layers()` /
+  `has_paint()` が両方 false なら即やめる）。COLR を持たないフォント（Noto Sans JP / Noto Sans）は
+  読み込み時間も出力も 1 ビットも変わらない。`FontStore::color_probe_count()` は**テスト用の統計**で、
+  「調べていない」ことを 0 で固定するためだけにある（出力には影響しない）
+- **描けないグリフは「そのフォントには無い」のと同じ扱い**にする。`resolve_char()` の
+  フォールバック列は `has_drawable_glyph()`（cmap にあり、かつ色データだけでない）で辿るので、
+  後ろのフォントがその文字を単色で持っていれば**そちらで描かれる**（豆腐にしない）。
+  どのフォントも描けないときだけ `plan.missing = true` で、あとは A31 の仕組みに乗る:
+  □ が描かれ、`ShapedCluster::missing` → `LayoutEngine` → `Warning{MissingGlyph, 位置}`
+- **`WarningKind` は増やさない。理由は列挙を 1 つ通して detail の文面だけ分ける。**
+  利用者にとっては「その字が出せなかった」であり、原因が cmap に無いのか色データだけなのかで
+  対処は変わらないので、公開 API の種類を増やす価値はない。一方で原因が分からないと直せないので、
+  **`text::MissingReason { NotInAnyFont, ColorOnly }`**（`text_measurer.hpp`）を
+  `ShapedCluster::missing_reason` → `layout::MissingGlyph::reason` → `api::to_warnings()` と
+  1 本通し、文面だけを分ける:
+  `the glyph for U+0041 has only color layers (COLR); drawn as tofu at 1:28`。
+  **既定は `NotInAnyFont` で、従来の豆腐の文面は 1 文字も変わらない**（`tests/integration` の
+  既存の期待値がそのまま通ることで固定）。理由は**組版には一切効かない**: 送りも豆腐のグリフも
+  同じで、run の分け方（`CharPlan::same_run_as`）にも重複除去のキー（`MissingGlyph::operator<`）にも
+  入れない。`--dump-stage box` には既定以外のときだけ `"reason": "color-only"` が増える
+  （既定値のキーは出さない = 従来のダンプはバイト単位で不変）
+- **豆腐の `□` を探すときも「描けるか」で見る**（`emit_missing_run()`）。`□`（U+25A1）自体が
+  色データだけのグリフであるフォントを選ぶと、豆腐が空白になって同じ壊れ方をするため
+- **却下した案**: (B) エラーで止める → 絵文字 1 文字で文章全体が組めなくなる。豆腐を警告に
+  している唯一の例外の趣旨に反する。(C) COLRv0 のレイヤーを単色で重ねて描く →
+  「日本語の文章を正しく組むことに寄与するか」に No。重ねた結果は黒い塊で □ より情報が多くない
+- **OT-SVG（`SVG ` テーブルだけを持つフォント）も同じ扱いにする**: `hb_ot_color_has_svg()` で
+  同じように検出できるが、検証用のフォントが無いので**この作業では実装しない**。
+  実装するときは `collect_color_only_glyphs()` に条件を足すだけで済む（判定の置き場は同じ）
+
 ---
 
 ## 2. モジュールと依存
@@ -1196,12 +1248,16 @@ class FreeTypeGlyphSource final : public raster::GlyphSource { /* FontStore を�
      片方の face にしか無い文字の保険として残す）
 
   `metrics()` が返すのもこの列の先頭のフォント。豆腐の `□` を探す順もこの列
-- run 分割: コードポイントごとにフォールバック列を cmap 引きし、最初にグリフを持つフォントを採用。
+- run 分割: コードポイントごとにフォールバック列を cmap 引きし、**最初にそれを単色で描ける**
+  フォントを採用。cmap にグリフがあっても、色データだけを持ち輪郭が空のグリフ（COLR のベース）は
+  描けないので次のフォントに送る（`FontStore::has_drawable_glyph()`。A43）。
   同じフォントが続く区間をまとめて HarfBuzz に渡す。結合文字・異体字セレクタ・ZWJ は直前の
   文字と同じ run に入れる（別フォントに割らない）
-- 豆腐: どのフォントにもないコードポイントは `ShapedCluster::missing` で返し（**Shaper は
+- 豆腐: どのフォントでも描けないコードポイントは `ShapedCluster::missing` と
+  `missing_reason`（`NotInAnyFont` / `ColorOnly`。文面のためだけの値。A43）で返し（**Shaper は
   溜めない**。警告を組み立てるのは ③ レイアウト。A31）、`□`（U+25A1）を
-  **フォールバック列の順に全フォントから探して**、最初に見つかったフォントのグリフを
+  **フォールバック列の順に全フォントから探して**（ここでも「単色で描けるか」で見る。A43）、
+  最初に見つかったフォントのグリフを
   1em の送りで出す（第一フォントだけを見ると、欧文フォントが先頭のときに幅の狭い `.notdef` が
   1em の枠の左端に出て不揃いになる）。どのフォントにも `□` が無ければ第一フォントの `.notdef`。
   縦書きでも同じグリフを立てる。`ShapedCluster::missing = true`
@@ -1224,7 +1280,10 @@ class FreeTypeGlyphSource final : public raster::GlyphSource { /* FontStore を�
   `ShapedText` を返してよいのは入力が空文字列のときだけで、「測れなかった」を空で表さない
 - `FontStore::load()`: 輪郭を持たないフォント（`FT_IS_SCALABLE` が偽。埋め込みビットマップ専用の
   カラー絵文字フォントなど）は `FontLoad` で拒否する。ラスタライザは輪郭しか扱えないので、
-  「全部の字が消えた PNG」になる前に一番早い段で落とす（A19）
+  「全部の字が消えた PNG」になる前に一番早い段で落とす（A19）。
+  **フォント全体ではなくグリフ単位で「色データだけ」のもの**（COLR/CPAL のベースで輪郭が空）は
+  load のときに拾って覚え、`is_color_only_glyph()` / `has_drawable_glyph()` で引く（A43）。
+  色データを持たないフォントでは 1 グリフも調べない（`color_probe_count()` が 0 のまま）
 - テスト用フォント: リポジトリに置かず、CMake の configure 時に版（コミット SHA）とハッシュを
   固定してダウンロードする（`cmake/TestAssets.cmake`）。Noto Sans JP（OFL）+ 欧文フォント 1 つ
   （フォールバックのテスト用）。パスはコンパイル定義でテストに渡す。
@@ -1334,8 +1393,10 @@ std::string dump_json(const BoxTree&);
   行内のテキスト断片（FontId・サイズ・色・sideways・グリフごとの inline 位置と offset・
   ベースライン / 中心軸の block 位置・**元ノードの位置**）、画像断片、インライン背景。
   ブロックも**元要素の位置**（`BlockBox::location`。A36）を持つ。
-  加えて豆腐の記録（`BoxTree::missing_glyphs`。A31）を持つ。**絵には影響しない**
-  （paint は読まない）が、api が `Warning` にし、`dump_json()` が出す
+  加えて豆腐の記録（`BoxTree::missing_glyphs`。A31。コードポイント・位置・理由
+  （`text::MissingReason`。A43））を持つ。**絵には影響しない**
+  （paint は読まない）が、api が `Warning` にし、`dump_json()` が出す。
+  理由は報告順にも重複除去にも効かない（順序は今までどおり位置 → コードポイント）
 - **block**: 幅は親から降り、高さは子から戻る。`width: auto` は利用可能幅いっぱい。
   `margin: 0 auto` の中央寄せ。兄弟間のマージン相殺（A10）。子が inline と block の混在なら
   inline の連続を無名ブロックで包む
@@ -1353,8 +1414,8 @@ std::string dump_json(const BoxTree&);
   装飾の境界とフォールバックの境界で複数の断片に切る。位置は動かない）。
   行の高さは行内の各断片の `line-height` の最大、ベースラインは半行間（half-leading）で決める。
   ブロックの支柱と**空のインラインボックス**（A42）も、文字を持たないまま同じ計算に参加する。
-  (b) のあと、豆腐のクラスタ（`ShapedCluster::missing`）を文字ごとの属性の表の位置の層と
-  突き合わせて `LayoutEngine` に記録する（A31。段落が何度組まれても重複しない）。
+  (b) のあと、豆腐のクラスタ（`ShapedCluster::missing` と `missing_reason`）を文字ごとの属性の
+  表の位置の層と突き合わせて `LayoutEngine` に記録する（A31 / A43。段落が何度組まれても重複しない）。
   ファイルは段の境界で分けてある（A27 の末尾）。(a)〜(c) の結果 `PreparedParagraph` は
   行の幅に依らないので、固有寸法の計測と実際の配置で同じものを使える
   （`inline_intrinsic()` の min-content / max-content にもアイテムごとのポリシーが効く）
@@ -1424,6 +1485,9 @@ HarfBuzz / `src/` の型は名前も出さない（`tests/api/public_header_chec
 （0 なら `InvalidOption`）。どちらも `scale` を掛けて切り上げる。豆腐は `Warning` として返す:
 `BoxTree::missing_glyphs`（③ が入力位置の昇順 → コードポイントの昇順に並べたもの。A31）を
 そのまま写し、`detail` の末尾に `to_string(RenderError)` と同じ書式で ` at L:C` を付ける。
+文面は `MissingGlyph::reason` で 2 通り（`no font has a glyph for U+XXXX` /
+`the glyph for U+XXXX has only color layers (COLR); drawn as tofu`。A43）。`WarningKind` は
+どちらも `MissingGlyph`。
 api は並べ替えない（順序を決めるのは ③ の仕事）。CLI は `warning[missing-glyph]: <detail>` を
 stderr に出す。
 

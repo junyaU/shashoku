@@ -9,6 +9,7 @@ shashoku_add_test(layout_test
     vertical_test.cpp
     ruby_test.cpp
     line_break_test.cpp
+    east_asian_width_test.cpp
     complexity_test.cpp
     geometry_limit_test.cpp
     dump_json_test.cpp

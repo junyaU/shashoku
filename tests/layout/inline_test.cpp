@@ -58,6 +58,10 @@ TEST(LayoutInline, SourceLineBreakBetweenWideCharactersDisappears) {
   // ノード境界をまたいでも同じ
   EXPECT_EQ(flow(measurer, {inline_box({text("あ\n")}), text("い")}, 400),
             (std::vector<std::string>{"あい"}));
+  // BMP 外の和文の文字でも同じ（U+1B155 小書きカタカナ「コ」。issue #24）。
+  // 全角判定の表の網羅は east_asian_width_test.cpp
+  EXPECT_EQ(flow(measurer, {text("あ\n\U0001B155い")}, 400),
+            (std::vector<std::string>{"あ\U0001B155い"}));
 }
 
 TEST(LayoutInline, SourceLineBreakBetweenLatinBecomesASpace) {

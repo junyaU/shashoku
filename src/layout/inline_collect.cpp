@@ -68,6 +68,15 @@ std::size_t style_index(Collected& out, const StyledNode& node, const LayoutEngi
   return out.styles.intern(node.style, engine.map().direction(), node.location);
 }
 
+// 文字を 1 つも持たなかったインラインボックスを覚えておく（CSS 2.1 §10.8。issue #23）。
+// 子を集める前後で chars.size() が変わらなかったときだけ呼ぶ。char_pos はそのときの
+// chars.size() なので、この列は自然に昇順になる（入れ子は内側が先に積まれる）。
+void push_empty_box(Collected& out, const StyledNode& node, const LayoutEngine& engine,
+                    std::size_t char_pos) {
+  out.empty_boxes.push_back(
+      EmptyInlineBox{.style = style_index(out, node, engine), .char_pos = char_pos, .item = kNone});
+}
+
 Result<void> collect_image(const StyledNode& node, LayoutEngine& engine, float percent_basis,
                            Collected& out) {
   const Result<ResolvedImage> image = engine.resolve_image(node, percent_basis);
@@ -172,11 +181,19 @@ Result<void> collect_element(const StyledNode& node, LayoutEngine& engine, float
     return collect_image(node, engine, percent_basis, out);
   }
   if (node.tag == "ruby") {
-    return collect_ruby(node, engine, percent_basis, out);
+    const std::size_t begin = out.chars.size();
+    if (const Result<void> result = collect_ruby(node, engine, percent_basis, out); !result) {
+      return result;
+    }
+    if (out.chars.size() == begin) {
+      push_empty_box(out, node, engine, begin);  // 中身が空の <ruby> は空の span と同じ
+    }
+    return {};
   }
   if (node.tag == "rt") {
     return fail(ErrorKind::UnsupportedLayout, "<rt> is only allowed inside <ruby>", node.location);
   }
+  const std::size_t begin = out.chars.size();
   // background-color があれば、行ごとの背景を出すために文字の範囲を覚える
   std::size_t scope = kNone;
   if (!node.style.background_color.transparent()) {
@@ -189,7 +206,7 @@ Result<void> collect_element(const StyledNode& node, LayoutEngine& engine, float
     const float font_size = node.style.font_size;
     out.scopes.push_back(
         BackgroundScope{.color = node.style.background_color,
-                        .begin = out.chars.size(),
+                        .begin = begin,
                         .end = 0,
                         .start_extent = vertical ? font_size / 2 : metrics->ascent,
                         .size = vertical ? font_size : metrics->ascent + metrics->descent});
@@ -200,6 +217,9 @@ Result<void> collect_element(const StyledNode& node, LayoutEngine& engine, float
   }
   if (scope != kNone) {
     out.scopes[scope].end = out.chars.size();
+  }
+  if (out.chars.size() == begin) {
+    push_empty_box(out, node, engine, begin);
   }
   return {};
 }
@@ -299,6 +319,9 @@ Result<Collected> collect_inline(const InlineInput& input, LayoutEngine& engine)
   for (BackgroundScope& scope : out.scopes) {
     scope.begin = remap(scope.begin);
     scope.end = remap(scope.end);
+  }
+  for (EmptyInlineBox& box : out.empty_boxes) {
+    box.char_pos = remap(box.char_pos);
   }
   out.ruby_at.assign(out.chars.size(), kNone);
   for (std::size_t i = 0; i < out.rubies.size(); ++i) {

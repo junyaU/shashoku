@@ -76,6 +76,8 @@ struct PreparedParagraph {
   // シェーピング属性ごとのメトリクス（CharStyleTable::shaping_index() で引く）。
   std::vector<text::FontMetrics> metrics;
   std::vector<BackgroundScope> scopes;
+  // 文字を持たないインラインボックス（#23）。どの行に参加するかまで解決してある。
+  std::vector<EmptyInlineBox> empty_boxes;
   std::vector<ImagePiece> images;
 
   std::vector<ShapedRun> runs;

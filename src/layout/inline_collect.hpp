@@ -66,6 +66,19 @@ struct BackgroundScope {
   float size = 0;
 };
 
+// 文字を 1 つも持たないインラインボックス（`<span style="font-size:80px"></span>` など）。
+// CSS 2.1 §10.8 は「空のインライン要素も空のインラインボックスを作る。そのボックスは
+// マージン・パディング・ボーダーと line-height を持つので、**内容のある要素と同じように**
+// この計算に参加する」と定める。文字が 1 つも無いと CharStyleTable に載る口が無く、
+// 行の高さを決める measure_line() から落ちていた（issue #23 / A42）。
+// ブロックの支柱（strut）と同じ「文字を持たない寸法」なので、扱いも支柱にそろえる。
+struct EmptyInlineBox {
+  std::size_t style = 0;  // CharStyleTable の添字
+  std::size_t char_pos = 0;  // この箱があった文字位置（畳み込み後の添字に直してある）
+  // どのアイテムの行に参加するか（(c) で埋める。kNone はどの行にも参加しない）。
+  std::size_t item = kNone;
+};
+
 // <ruby> の中の「親文字 + <rt>」1 組。親文字は chars の範囲で持つので、
 // 色・背景・フォールバックによる断片の分割は普通のテキストと同じに効く。
 struct RubyGroup {
@@ -80,6 +93,8 @@ struct Collected {
   std::vector<FlatChar> chars;
   CharStyleTable styles;
   std::vector<BackgroundScope> scopes;  // 外側の span が先（描画順）
+  // 空のインラインボックス。char_pos の昇順（= 文書順。入れ子は内側が先）。
+  std::vector<EmptyInlineBox> empty_boxes;
   std::vector<ImagePiece> images;
   std::vector<RubyGroup> rubies;
   std::vector<std::size_t> ruby_at;  // 文字の位置 → そこから始まるルビ組（なければ kNone）

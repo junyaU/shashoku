@@ -111,6 +111,7 @@ void collect_color_only_glyphs(FT_Face face, hb_face_t* hb_face, FontEntry& entr
   if (hb_ot_color_has_layers(hb_face) == 0 && hb_ot_color_has_paint(hb_face) == 0) {
     return;
   }
+  // maxp の numGlyphs は 16bit なので GlyphId（uint16_t）に必ず収まる。
   const unsigned int glyph_count = hb_face_get_glyph_count(hb_face);
   for (unsigned int glyph = 0; glyph < glyph_count; ++glyph) {
     ++entry.color_probe_count;
@@ -124,8 +125,9 @@ void collect_color_only_glyphs(FT_Face face, hb_face_t* hb_face, FontEntry& entr
     if (FT_Load_Glyph(face, glyph, FT_LOAD_NO_SCALE) != 0) {
       continue;  // 読めないグリフはここでは判断しない。描く段が FontLoad で落とす（A19）
     }
-    // Segoe UI Emoji のようにベースが輪郭（合成グリフ）を持つフォントはここを通らず、
-    // 従来どおり単色の線画として描かれる。
+    // 輪郭が 1 本も無ければ「色でしか描けない」グリフ。Segoe UI Emoji のようにベースが
+    // 全レイヤーを参照する合成グリフのフォントは輪郭を持つので、ここには入らず
+    // 従来どおり単色の線画として描かれる（出力は 1 ビットも変わらない）。
     if (face->glyph->format == FT_GLYPH_FORMAT_OUTLINE && face->glyph->outline.n_contours == 0) {
       entry.color_only_glyphs.push_back(static_cast<GlyphId>(glyph));
     }

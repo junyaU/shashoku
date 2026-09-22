@@ -240,6 +240,22 @@ void sprinkle_policies(std::mt19937& rng, std::vector<Item>& items) {
   }
 }
 
+// ルビの掛け（JLREQ 3.3.8。Item::overhang_*）をランダムに振る。契約の範囲（非負・送り以内）を
+// 守る値だけでなく、**契約を破る値**（負・送りより大きい）も混ぜる: 行分割器はそれを丸めて
+// 不変条件を保つ（line_breaker.hpp の Item の説明）。
+void sprinkle_overhang(std::mt19937& rng, std::vector<Item>& items) {
+  std::uniform_int_distribution<int> pick(0, 5);
+  std::uniform_real_distribution<float> amount(-8.0F, 40.0F);
+  for (Item& item : items) {
+    if (pick(rng) == 0) {
+      item.overhang_before = amount(rng);
+    }
+    if (pick(rng) == 0) {
+      item.overhang_after = amount(rng);
+    }
+  }
+}
+
 TEST(LineBreakProperty, InvariantsWithPerItemPolicies) {
   std::mt19937 rng = seeded_rng(20260925);
   std::uniform_int_distribution<std::size_t> length(0, 40);
@@ -270,6 +286,37 @@ TEST(LineBreakProperty, InvariantsWithPerItemPolicies) {
   }
 }
 
+// ルビの掛けを混ぜても不変条件が保たれる（#28(b)）。掛けは行の幅を**縮める**ので、
+// 「行はこの幅に収まる」「行頭に句読点が出ない」などが崩れやすいところ。
+TEST(LineBreakProperty, InvariantsWithOverhang) {
+  std::mt19937 rng = seeded_rng(20260922);
+  std::uniform_int_distribution<std::size_t> length(0, 40);
+  std::uniform_real_distribution<float> width(1.0F, 220.0F);
+
+  for (int iteration = 0; iteration < 200; ++iteration) {
+    std::vector<Item> items = random_items(rng, length(rng));
+    sprinkle_overhang(rng, items);
+    if (iteration % 2 == 1) {
+      sprinkle_policies(rng, items);
+    }
+    const float available = width(rng);
+    for (const OverflowPolicy overflow :
+         {OverflowPolicy::Oidashi, OverflowPolicy::Oikomi, OverflowPolicy::Burasage}) {
+      for (const Wrap wrap : {Wrap::Normal, Wrap::BreakWord, Wrap::Anywhere}) {
+        Config config;
+        config.overflow = overflow;
+        config.wrap = wrap;
+        SCOPED_TRACE("iteration " + std::to_string(iteration) + " overflow " +
+                     std::to_string(static_cast<int>(overflow)) + " wrap " +
+                     std::to_string(static_cast<int>(wrap)) + " width " +
+                     std::to_string(available));
+        check_invariants(items, config, available);
+      }
+    }
+    check_invariants(items, Config{}, kUnbounded);
+  }
+}
+
 TEST(LineBreakProperty, InvariantsWithUnboundedWidth) {
   std::mt19937 rng = seeded_rng(20260920);
   std::uniform_int_distribution<std::size_t> length(0, 60);
@@ -291,6 +338,9 @@ TEST(LineBreakProperty, MinContentWidthNeverOverflows) {
     std::vector<Item> items = random_items(rng, length(rng));
     if (iteration % 2 == 1) {
       sprinkle_policies(rng, items);  // span 相当の範囲にランダムなポリシーを振る
+    }
+    if (iteration % 3 == 0) {
+      sprinkle_overhang(rng, items);  // ルビの掛け（#28(b)）を混ぜても成り立つこと
     }
     for (const Wrap wrap : {Wrap::Normal, Wrap::BreakWord, Wrap::Anywhere}) {
       Config config;

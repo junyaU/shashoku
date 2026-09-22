@@ -9,6 +9,7 @@ shashoku_add_test(linebreak_test
     item_policy_test.cpp
     min_content_test.cpp
     spacing_test.cpp
+    overhang_test.cpp
     overflow_test.cpp
     property_test.cpp
   LIBS shashoku::linebreak)

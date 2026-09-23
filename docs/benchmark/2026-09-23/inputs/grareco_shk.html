@@ -1,0 +1,465 @@
+<style>
+/* ===== 基本 ===== */
+.wrap{background-color:#eef2f7;padding:26px 28px 44px;color:#141b26;font-size:15px}
+
+/* ---- 見出し ---- */
+.stamprow{display:flex;margin:0 0 14px}
+.stamp{flex:none;font-size:13px;line-height:1.6em;border-width:2px;border-style:solid;border-color:#bf2a53;color:#bf2a53;border-radius:14px;padding:2px 14px}
+.h1{font-weight:700;font-size:34px;line-height:1.35em;letter-spacing:.01em;margin:0 0 10px}
+.mk{background-color:#ffe98a}
+.lead{margin:0;color:#4d5c72;font-size:14px;line-height:1.85em}
+
+/* ---- セクション ---- */
+.sec{background-color:#ffffff;border-width:2px;border-style:solid;border-color:#141b26;border-radius:18px;padding:20px 22px 24px;margin:26px 0 0}
+.h2{display:flex;align-items:center;gap:11px;margin:0 0 8px;font-size:21px;font-weight:700;line-height:1.4em}
+.n{flex:none;width:30px;height:30px;border-radius:15px;background-color:#1660c8;color:#ffffff;display:flex;justify-content:center;align-items:center;font-size:14px;font-weight:700}
+.ttl{flex:1}
+.tag{flex:none;font-size:12px;line-height:1.6em;padding:1px 9px;border-radius:12px;border-width:2px;border-style:solid;border-color:#8496ad;color:#4d5c72;font-weight:400}
+.h3{font-weight:700;font-size:15.5px;line-height:1.5em;margin:22px 0 8px;color:#141b26}
+.p{margin:8px 0;font-size:15px;line-height:1.85em}
+.sub{color:#4d5c72;font-size:13.5px;line-height:1.8em;margin:0 0 4px}
+.b{font-weight:700}
+.code{background-color:#e7edf6;color:#1f3a63;font-size:.92em}
+
+/* ---- 付箋 ---- */
+.stickies{display:flex;gap:16px;margin:14px 0 4px;align-items:stretch}
+.sticky{flex:1;background-color:#fdf0a6;color:#141b26;padding:14px 16px 16px;border-radius:10px;font-size:13.5px;line-height:1.8em}
+.sk-b{background-color:#d8e6ff}
+.sk-g{background-color:#c9edda}
+.sk-r{background-color:#ffdbe3}
+.sb{display:block;font-weight:700;font-size:14.5px;line-height:1.6em;margin:0 0 2px}
+
+/* ---- 吹き出し ---- */
+.bubble{background-color:#f5f8fc;border-width:2px;border-style:solid;border-color:#141b26;border-radius:18px;padding:16px 18px;margin:16px 0 0;font-size:15.5px;line-height:1.9em}
+.big{font-size:18px;line-height:1.9em}
+.who{display:block;font-size:12.5px;line-height:1.6em;color:#1660c8;margin:0 0 4px;font-weight:700}
+.tail{padding:0 0 0 40px;margin:0 0 20px;font-size:17px;line-height:.8em;color:#141b26}
+
+/* ---- 注記 ---- */
+.note{display:flex;gap:12px;align-items:stretch;background-color:#f5f8fc;border-radius:8px;padding:12px 14px;margin:14px 0;font-size:13.5px;line-height:1.8em}
+.nbar{flex:none;width:6px;border-radius:3px;background-color:#9c6905}
+.ntx{flex:1}
+.nb{font-weight:700;color:#9c6905}
+
+/* ---- 番号つきリスト ---- */
+.steps{margin:10px 0 0}
+.step{display:flex;gap:14px;align-items:flex-start;padding:7px 0;font-size:14px;line-height:1.8em}
+.sn{flex:none;width:22px;height:22px;border-radius:13px;border-width:2px;border-style:solid;border-color:#141b26;display:flex;justify-content:center;align-items:center;font-size:13px;font-weight:700}
+.stx{flex:1}
+.sdiv{height:1px;background-color:#c3cedd}
+
+/* ---- 箇条書き ---- */
+.plain{margin:8px 0 0}
+.pl{display:flex;gap:6px;align-items:flex-start;margin:4px 0;font-size:14px;line-height:1.8em}
+.plb{flex:none;color:#8496ad}
+.plt{flex:1}
+
+/* ---- チップ ---- */
+.chips{display:flex;gap:10px;margin:12px 0 0}
+.chip{flex:none;border-width:2px;border-style:solid;border-color:#bf2a53;color:#bf2a53;border-radius:10px;padding:4px 12px;font-size:13px;line-height:1.7em;background-color:#ffffff}
+
+/* ---- 表 ---- */
+.tbl{margin:14px 0 2px}
+.tr{display:flex;align-items:stretch}
+.th{flex:none;width:110px;padding:9px 10px;border-width:1px;border-style:solid;border-color:#c3cedd;background-color:#f5f8fc;font-weight:700;font-size:13px;line-height:1.7em}
+.td{flex:1;padding:9px 10px;border-width:1px;border-style:solid;border-color:#c3cedd;font-size:13.5px;line-height:1.7em}
+.thc{flex:1;padding:9px 10px;border-width:1px;border-style:solid;border-color:#c3cedd;background-color:#f5f8fc;font-weight:700;font-size:13px;line-height:1.7em}
+.th3{flex:none;width:80px;padding:9px 10px;border-width:1px;border-style:solid;border-color:#c3cedd;background-color:#f5f8fc;font-weight:700;font-size:13px;line-height:1.7em}
+.num{font-weight:700;color:#1660c8}
+.bad{font-weight:700;color:#bf2a53}
+.good{font-weight:700;color:#0d7550}
+
+/* ---- 図（共通） ---- */
+.fig{width:600px;margin:18px auto 6px}
+.cap{width:600px;margin:8px auto 0;font-size:12.5px;line-height:1.7em;color:#4d5c72}
+.arrow{text-align:center;font-size:15px;line-height:1.4em;color:#141b26}
+
+/* ---- 図 A ---- */
+.fa-lbl{width:350px;text-align:center;font-size:12.5px;line-height:1.6em;font-weight:700;color:#1660c8}
+.fa-brk{width:350px;height:3px;background-color:#1660c8;border-radius:2px;margin:3px 0 6px}
+.fa-top{display:flex;gap:14px;align-items:stretch}
+.fa-l{flex:none;width:314px;padding:14px 16px;border-width:2px;border-style:solid;border-color:#1660c8;border-radius:12px;background-color:#f5f8fc;text-align:center}
+.fa-r{flex:none;width:200px;padding:14px 16px;border-width:2px;border-style:solid;border-color:#8496ad;border-radius:12px;text-align:center}
+.fa-h{font-size:13.5px;line-height:1.7em;font-weight:700;color:#141b26}
+.fa-s{font-size:11.5px;line-height:1.7em;color:#4d5c72}
+.fa-arr{display:flex;gap:14px;margin:4px 0 0}
+.fa-a1{flex:none;width:350px;text-align:center;font-size:15px;line-height:1.5em}
+.fa-a2{flex:none;width:236px;text-align:center;font-size:15px;line-height:1.5em;color:#8496ad}
+.fa-mid{text-align:center;font-size:11.5px;line-height:1.7em;color:#4d5c72;margin:0 0 4px}
+.fa-base{padding:14px 16px;border-width:2px;border-style:solid;border-color:#141b26;border-radius:14px;background-color:#ffffff}
+.fa-bt{text-align:center;font-size:13.5px;line-height:1.7em;font-weight:700;margin:0 0 10px}
+.fa-row{display:flex;gap:12px;margin:0 0 8px}
+.fa-c{flex:1;padding:5px 8px;border-width:2px;border-style:solid;border-color:#8496ad;border-radius:9px;background-color:#f5f8fc;text-align:center;font-size:12px;line-height:1.6em}
+.fa-n{text-align:center;font-size:11.5px;line-height:1.7em;color:#4d5c72;margin:10px 0 0}
+
+/* ---- 図 B ---- */
+.fb-top{width:208px;margin:0 auto;padding:10px 14px;border-width:2px;border-style:solid;border-color:#141b26;border-radius:12px;background-color:#f5f8fc;text-align:center}
+.fb-t1{font-size:12.5px;line-height:1.7em;font-weight:700}
+.fb-t2{font-size:11px;line-height:1.7em;color:#4d5c72}
+.fb-bar{padding:8px 14px;border-width:2px;border-style:solid;border-color:#141b26;border-radius:8px;background-color:#f5f8fc;text-align:center;font-size:13px;line-height:1.6em;font-weight:700}
+.fb-gate{display:flex;align-items:stretch}
+.fb-post{flex:none;width:10px;border-width:2px;border-style:solid;border-color:#141b26;background-color:#f5f8fc}
+.fb-mid{flex:1;padding:12px 14px}
+.fb-q{padding:10px 12px;border-width:2px;border-style:solid;border-color:#8496ad;border-radius:10px;margin:0 0 10px;display:flex;gap:10px;align-items:flex-start}
+.fb-qn{flex:none;width:34px;font-size:11.5px;line-height:1.7em;font-weight:700;color:#1660c8}
+.fb-qt{flex:1;font-size:12px;line-height:1.7em}
+.fb-br{display:flex;gap:16px;margin:8px 0 0}
+.fb-no{flex:1;text-align:center;font-size:11px;line-height:1.7em;font-weight:700;color:#bf2a53}
+.fb-yes{flex:1;text-align:center;font-size:11px;line-height:1.7em;font-weight:700;color:#0d7550}
+.fb-res{display:flex;gap:16px;margin:4px 0 0;align-items:stretch}
+.fb-ng{flex:1;padding:14px 12px;border-width:2px;border-style:solid;border-color:#bf2a53;border-radius:12px;background-color:#f5f8fc;text-align:center}
+.fb-ok{flex:1;padding:14px 12px;border-width:2px;border-style:solid;border-color:#0d7550;border-radius:12px;background-color:#f5f8fc;text-align:center}
+.fb-hn{font-size:13px;line-height:1.8em;font-weight:700;color:#bf2a53;margin:0 0 6px}
+.fb-hy{font-size:13px;line-height:1.8em;font-weight:700;color:#0d7550;margin:0 0 6px}
+.fb-i{font-size:12px;line-height:1.9em}
+.fb-m{font-size:11px;line-height:1.9em;color:#4d5c72}
+
+/* ---- 図 C ---- */
+.fc{display:flex;gap:16px}
+.fc-l{flex:none;width:240px}
+.fc-r{flex:1}
+.fc-st{height:34px;padding:8px 12px;border-width:2px;border-style:solid;border-color:#141b26;border-radius:10px;background-color:#f5f8fc;display:flex;align-items:center;gap:8px}
+.fc-nm{flex:1;font-size:13.5px;line-height:1.5em;font-weight:700}
+.fc-ph{flex:none;font-size:11px;line-height:1.5em;color:#4d5c72}
+.fc-ar{height:20px;text-align:center;font-size:14px;line-height:20px}
+.fc-ex{height:30px;padding:8px 12px;border-width:2px;border-style:solid;border-color:#bf2a53;border-radius:10px}
+.fc-e1{font-size:12.5px;line-height:15px;font-weight:700;color:#bf2a53}
+.fc-e2{font-size:11px;line-height:15px;color:#4d5c72}
+.fc-g{display:flex;gap:10px;align-items:center}
+.fc-bb{flex:none;width:3px;height:128px;background-color:#1660c8;border-radius:2px}
+.fc-ba{flex:none;width:3px;height:276px;background-color:#9c6905;border-radius:2px}
+.fc-bs{flex:none;width:3px;height:50px;background-color:#bf2a53;border-radius:2px}
+.fc-tx{flex:1}
+.fc-hb{font-size:12px;line-height:1.6em;font-weight:700;color:#1660c8}
+.fc-ha{font-size:11.5px;line-height:1.6em;font-weight:700;color:#9c6905}
+.fc-hs{font-size:12px;line-height:1.6em;font-weight:700;color:#bf2a53}
+.fc-d{font-size:11px;line-height:1.6em;color:#4d5c72}
+.fc-gap{height:20px}
+
+/* ---- 締め ---- */
+.doodle{text-align:center;font-size:24px;line-height:1.4em;color:#8496ad;margin:20px 0 0}
+.foot{margin:12px 0 0;padding:16px 18px;border-width:2px;border-style:solid;border-color:#8496ad;border-radius:16px;font-size:13px;line-height:1.85em;color:#4d5c72;background-color:#ffffff}
+.fb{color:#141b26;font-weight:700}
+</style>
+
+<div class="wrap">
+
+<div class="stamprow"><div class="stamp">2026-09-23 決定 ／ A46・A47</div></div>
+<h1 class="h1">shashoku <span class="mk">設計方針</span>、<br>9/23 に決めたこと</h1>
+<p class="lead">ミッションの書き換え・fail loudly の拡張・機能追加の関門。根拠は同じ日の実測（依頼 10 件 × 4 経路）。</p>
+
+<!-- ===== 1 ===== -->
+<div class="sec">
+  <h2 class="h2"><div class="n">1</div><div class="ttl">一文ミッション</div><div class="tag">A47</div></h2>
+  <div class="bubble big">
+    <span class="who">新（2026-09-23）</span>
+    HTML から、共有・資料利用のための PNG を、<span class="mk">ブラウザなしで</span>生成する。日本語組版を強みとし、問題は<span class="mk">修正できる形で</span>伝える。
+  </div>
+  <div class="tail">▼</div>
+  <div class="stickies">
+    <div class="sticky sk-r">
+      <span class="sb">以前はこうだった</span>
+      「日本語の文章を絶対に破綻させずに、HTML から PNG を一発で生成する組版エンジン」
+    </div>
+    <div class="sticky sk-b">
+      <span class="sb">なぜ変えたか</span>
+      「絶対に破綻させない」は検証しきれない約束なので避けた。
+    </div>
+  </div>
+</div>
+
+<!-- ===== 2 ===== -->
+<div class="sec">
+  <h2 class="h2"><div class="n">2</div><div class="ttl">4 層の位置づけ</div></h2>
+  <div class="tbl">
+    <div class="tr"><div class="th">製品の目的</div><div class="td">HTML から、共有・資料利用できる PNG をブラウザなしで生成する</div></div>
+    <div class="tr"><div class="th">中核原則</div><div class="td">対応範囲を明示し、検出した問題を黙って通さず、修正可能な診断を返す</div></div>
+    <div class="tr"><div class="th">最初の得意分野</div><div class="td">日本語を含む文章主体のカード・図解・資料画像。最初の利用者は日本の開発者</div></div>
+    <div class="tr"><div class="th">当面追わないもの</div><div class="td">任意の Web ページの再現、JavaScript 実行、ブラウザ全体との互換性</div></div>
+  </div>
+
+  <div class="fig">
+    <div class="fa-lbl">保証と検証が及ぶのはここまで</div>
+    <div class="fa-brk"></div>
+    <div class="fa-top">
+      <div class="fa-l">
+        <div class="fa-h">最初の得意分野：日本語</div>
+        <div class="fa-s">文章主体のカード・図解・資料画像</div>
+      </div>
+      <div class="fa-r">
+        <div class="fa-h">英語・その他</div>
+        <div class="fa-s">動くが保証の外</div>
+      </div>
+    </div>
+    <div class="fa-arr">
+      <div class="fa-a1">↓</div>
+      <div class="fa-a2">↓</div>
+    </div>
+    <div class="fa-mid">同じ土台に乗る</div>
+    <div class="fa-base">
+      <div class="fa-bt">土台 ― 言語に依存しない</div>
+      <div class="fa-row"><div class="fa-c">診断</div><div class="fa-c">高さ追従</div></div>
+      <div class="fa-row"><div class="fa-c">単一バイナリ</div><div class="fa-c">決定性</div></div>
+    </div>
+    <div class="fa-n">土台の 4 つは誰にでも効く。</div>
+    <div class="fa-n">絞るのは保証と検証の範囲であって、エンジンではない</div>
+  </div>
+  <p class="cap">図 A：言語に依存しない土台が下、最初の得意分野（日本語）が上。上の層だけが保証と検証の範囲で、英語ほかも同じ土台の上では動く。</p>
+</div>
+
+<!-- ===== 3 ===== -->
+<div class="sec">
+  <h2 class="h2"><div class="n">3</div><div class="ttl">fail loudly、直せる形で</div><div class="tag">A46・鉄則</div></h2>
+  <p class="p">未対応・欠落・はみ出しを黙って通さない。エラーと警告は <span class="mk">AI（と人）が読んで直すためのフィードバック</span>であり、製品の主機能。</p>
+
+  <div class="stickies">
+    <div class="sticky"><span class="sb">約束 1・一度に全部</span>1 回のエラーで止めず、まとめて返す。</div>
+    <div class="sticky sk-b"><span class="sb">約束 2・直し方つき</span>入力位置と、どう直すかを添える。</div>
+    <div class="sticky sk-g"><span class="sb">約束 3・結果にも</span>構文だけでなく、豆腐・固定した紙面からのはみ出し・画像の不在も見る。</div>
+  </div>
+
+  <div class="note">
+    <div class="nbar"></div>
+    <div class="ntx"><span class="nb">扱い</span>：豆腐とはみ出しは警告で続行し、警告はエラーに格上げできる。<span class="nb">黙って無視するモードは入れない。</span>安定した契約は識別子（<span class="code">ErrorKind</span> / <span class="code">WarningKind</span>）と入力位置と JSON 出力で、文面は変えてよい。</div>
+  </div>
+
+  <div class="fig">
+    <div class="fc">
+      <div class="fc-l">
+        <div class="fc-st"><div class="fc-nm">DOM</div><div class="fc-ph">parse</div></div>
+        <div class="fc-ar">↓</div>
+        <div class="fc-st"><div class="fc-nm">スタイル付きツリー</div><div class="fc-ph">style</div></div>
+        <div class="fc-ar">↓</div>
+        <div class="fc-st"><div class="fc-nm">ボックスツリー</div><div class="fc-ph">layout</div></div>
+        <div class="fc-ar">↓</div>
+        <div class="fc-st"><div class="fc-nm">ディスプレイリスト</div><div class="fc-ph">paint</div></div>
+        <div class="fc-ar">↓</div>
+        <div class="fc-st"><div class="fc-nm">Bitmap</div><div class="fc-ph">raster</div></div>
+        <div class="fc-ar">↓</div>
+        <div class="fc-st"><div class="fc-nm">PNG</div><div class="fc-ph">encode</div></div>
+        <div class="fc-ar">↓</div>
+        <div class="fc-ex">
+          <div class="fc-e1">出口</div>
+          <div class="fc-e2">診断の出力（JSON）</div>
+        </div>
+      </div>
+      <div class="fc-r">
+        <div class="fc-g">
+          <div class="fc-bb"></div>
+          <div class="fc-tx">
+            <div class="fc-hb">一括報告</div>
+            <div class="fc-d">構文・値の誤りを</div>
+            <div class="fc-d">1 回で全部、位置つきで</div>
+          </div>
+        </div>
+        <div class="fc-gap"></div>
+        <div class="fc-g">
+          <div class="fc-ba"></div>
+          <div class="fc-tx">
+            <div class="fc-ha">ContentOverflow</div>
+            <div class="fc-ha">・豆腐の警告</div>
+            <div class="fc-d">結果を見る検査。</div>
+            <div class="fc-d">警告で続行する</div>
+          </div>
+        </div>
+        <div class="fc-gap"></div>
+        <div class="fc-g">
+          <div class="fc-bs"></div>
+          <div class="fc-tx">
+            <div class="fc-hs">--strict</div>
+            <div class="fc-d">警告をエラーに格上げ</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="cap">図 C：3 つの約束が働く段。一括報告は前半 2 段（parse・style）、はみ出しと豆腐の警告は layout 以降、strict は出口で警告をエラーに変える。</p>
+
+  <h3 class="h3">言い過ぎないための線（A46 の補正）</h3>
+  <div class="bubble">
+    <span class="who">ここは約束しない</span>
+    成功が意味するのは<span class="b">「対応範囲の中で、検出対象の検査を満たした」</span>ことだけ。絵が正しい保証ではない ― 未検出のレイアウトの誤り・重なり・文字色と背景色の同化は検出しない。
+  </div>
+  <div class="tail">▼</div>
+  <div class="plain">
+    <div class="pl"><div class="plb">・</div><div class="plt">エラーは「唯一の学習経路」ではなく「<span class="b">最も自動処理しやすい経路</span>」。対応範囲の文書・成功例・画像の目視もフィードバック。</div></div>
+    <div class="pl"><div class="plb">・</div><div class="plt">「一括にすれば往復が減る」は<span class="b">期待値</span>。実装後に同じ依頼 10 件で往復回数を測る。</div></div>
+  </div>
+</div>
+
+<!-- ===== 4 ===== -->
+<div class="sec">
+  <h2 class="h2"><div class="n">4</div><div class="ttl">機能追加の関門は二問</div><div class="tag">A47</div></h2>
+  <div class="bubble">
+    <span class="who">新しい関門</span>
+    対象用途で、使える PNG を得る<span class="mk">成功率・修正の手間・運用上の信頼性</span>のどれかを改善するか？　<span class="mk">保守コストに見合う実例</span>が依頼集にあるか？
+  </div>
+  <div class="tail">▼</div>
+
+  <div class="fig">
+    <div class="fb-top">
+      <div class="fb-t1">機能の提案</div>
+      <div class="fb-t2">日本語組版の機能も含む</div>
+    </div>
+    <div class="arrow">↓</div>
+    <div class="fb-bar">関門（二問）</div>
+    <div class="fb-gate">
+      <div class="fb-post"></div>
+      <div class="fb-mid">
+        <div class="fb-q">
+          <div class="fb-qn">問 1</div>
+          <div class="fb-qt">使える PNG の成功率・修正の手間・運用上の信頼性のどれかを改善するか？</div>
+        </div>
+        <div class="fb-q">
+          <div class="fb-qn">問 2</div>
+          <div class="fb-qt">保守コストに見合う実例が依頼集にあるか？</div>
+        </div>
+      </div>
+      <div class="fb-post"></div>
+    </div>
+    <div class="fb-br">
+      <div class="fb-no">どちらか No<br>↓</div>
+      <div class="fb-yes">両方 Yes<br>↓</div>
+    </div>
+    <div class="fb-res">
+      <div class="fb-ng">
+        <div class="fb-hn">通らない</div>
+        <div class="fb-i">グラデーション</div>
+        <div class="fb-i">任意の HTML の</div>
+        <div class="fb-i">無修正変換</div>
+        <div class="fb-i">JavaScript</div>
+      </div>
+      <div class="fb-ok">
+        <div class="fb-hy">通る</div>
+        <div class="fb-i">辺ごとの border</div>
+        <div class="fb-i">エラーの一括報告</div>
+        <div class="fb-i">はみ出しの警告</div>
+        <div class="fb-i">ルビ・縦書き</div>
+        <div class="fb-m">依頼集に実例あり</div>
+      </div>
+    </div>
+  </div>
+  <p class="cap">図 B：すべての機能提案がこの二問を通る。日本語組版の機能も例外にしない。</p>
+
+  <div class="note">
+    <div class="nbar"></div>
+    <div class="ntx"><span class="nb">実例の数え方</span>：固定した依頼集（<span class="code">docs/benchmark/requests.md</span>。2026-09-23 の 10 件から）で測る。「AI がどこかで使った」「誰かが欲しいと言った」は<span class="nb">数えない</span>。</div>
+  </div>
+
+  <div class="stickies">
+    <div class="sticky"><span class="sb">border が通る理由</span>10 件中 8 件で使われ、削ると表の罫・区切りが失われ、代替が無い。</div>
+    <div class="sticky sk-r"><span class="sb">グラデーションが落ちる理由</span>普段の AI の HTML では 10/10 が使うが、対応範囲を渡した AI は使わずに 10/10 を作れた。</div>
+    <div class="sticky sk-g"><span class="sb">旧関門との関係</span>「日本語の文章を正しく組むことに寄与するか」が果たしていたのは範囲の統制で、日本語はその代理だった。新しい関門は統制を<span class="b">測定と保守コスト</span>で直接かける。</div>
+  </div>
+</div>
+
+<!-- ===== 5 ===== -->
+<div class="sec">
+  <h2 class="h2"><div class="n">5</div><div class="ttl">設計原則 6 つ</div><div class="tag">DESIGN.md §3</div></h2>
+  <div class="steps">
+    <div class="step"><div class="sn">1</div><div class="stx"><span class="b">一方向パイプライン</span>：DOM → スタイル付きツリー → ボックスツリー → ディスプレイリスト → Bitmap → PNG。後段が前段を書き換えない</div></div>
+    <div class="sdiv"></div>
+    <div class="step"><div class="sn">2</div><div class="stx"><span class="b">重いデータは ID で引き回す</span>：フォント実体は FontStore だけが所有</div></div>
+    <div class="sdiv"></div>
+    <div class="step"><div class="sn">3</div><div class="stx"><span class="b">各段はダンプ可能</span>（<span class="code">--dump-stage</span>）</div></div>
+    <div class="sdiv"></div>
+    <div class="step"><div class="sn">4</div><div class="stx"><span class="b">行分割器は独立モジュール</span>：TextMeasurer は注入する</div></div>
+    <div class="sdiv"></div>
+    <div class="step"><div class="sn">5</div><div class="stx"><span class="b">純粋関数</span>：同じ入力からバイト単位で同じ PNG。グローバル状態・時刻・乱数・ネットワーク・ロケール禁止</div></div>
+    <div class="sdiv"></div>
+    <div class="step"><div class="sn">6</div><div class="stx"><span class="b">fail loudly、直せる形で</span>（→ 第 3 節）</div></div>
+  </div>
+</div>
+
+<!-- ===== 6 ===== -->
+<div class="sec">
+  <h2 class="h2"><div class="n">6</div><div class="ttl">削る ― 変えない一覧</div></h2>
+  <p class="sub">ここに挙げたものは追わない。</p>
+  <div class="chips">
+    <div class="chip">JS 実行</div>
+    <div class="chip">外部リソースの取得</div>
+    <div class="chip">grid・float・table</div>
+  </div>
+  <div class="chips">
+    <div class="chip">ブラウザとのピクセル一致</div>
+    <div class="chip">未対応を黙って無視するモード</div>
+    <div class="chip">CJK 以外の複雑スクリプトの品質保証</div>
+  </div>
+</div>
+
+<!-- ===== 7 ===== -->
+<div class="sec">
+  <h2 class="h2"><div class="n">7</div><div class="ttl">順序 ― まず日本の開発者へ</div></h2>
+  <p class="p">まず日本の開発者に向けて出し、価値を確かめる。絞るのは<span class="mk">届ける相手・紹介する用途・検証する品質</span>であって、エンジンではない（英語の文章でも普通に使える設計を保つ）。</p>
+  <h3 class="h3">英語圏へ広げる判断材料は 3 つ</h3>
+  <div class="steps">
+    <div class="step"><div class="sn">1</div><div class="stx">試用ではなく<span class="b">生成処理に組み込まれる</span></div></div>
+    <div class="sdiv"></div>
+    <div class="step"><div class="sn">2</div><div class="stx">「導入が楽」「診断で AI が直せる」が<span class="b">選ばれる理由</span>になる</div></div>
+    <div class="sdiv"></div>
+    <div class="step"><div class="sn">3</div><div class="stx">日本語固有の機能を使わない用途でも<span class="b">継続利用される</span></div></div>
+  </div>
+  <div class="note">
+    <div class="nbar"></div>
+    <div class="ntx"><span class="nb">CJK も同じ</span>：拡大を自動の次の一手にせず、言語ごとに需要と組版規則を別に検証する。</div>
+  </div>
+</div>
+
+<!-- ===== 8 ===== -->
+<div class="sec">
+  <h2 class="h2"><div class="n">8</div><div class="ttl">根拠になった実測</div><div class="tag">2026-09-23</div></h2>
+  <p class="sub">依頼 10 件 × 4 経路。</p>
+  <div class="tbl">
+    <div class="tr"><div class="thc">経路</div><div class="thc">結果</div></div>
+    <div class="tr">
+      <div class="td">対応範囲の文書（README 抜粋 111 行）を渡した AI → shashoku</div>
+      <div class="td"><span class="good">10/10</span> が 1 回で通過。エラー 0・警告 0</div>
+    </div>
+    <div class="tr">
+      <div class="td">普段の AI の HTML → shashoku</div>
+      <div class="td"><span class="bad">10/10</span> が <span class="code">&lt;html&gt;</span> で停止。直して通すまで<span class="num">中央値 16.5 回</span>（1 回 1 エラーのため）。止めた原因 180 件中 <span class="num">170 件</span>はエラー文から直せた</div>
+    </div>
+    <div class="tr">
+      <div class="td">Satori 0.33.5</div>
+      <div class="td">exit 0 は <span class="num">10/10</span> だが、1 回目に正しい絵は <span class="bad">1/10</span>（高さ必須 6、ルビ・縦書き・img の黙殺 3）</div>
+    </div>
+    <div class="tr">
+      <div class="td">shashoku 自身</div>
+      <div class="td">高さを固定して中身がはみ出すと<span class="bad">警告なし・exit 0 で切れる</span> → A46 で直す対象</div>
+    </div>
+  </div>
+
+  <div class="tbl">
+    <div class="tr"><div class="th3">cold</div><div class="thc">shashoku</div><div class="thc">Satori</div></div>
+    <div class="tr"><div class="th3">時間</div><div class="td"><span class="num">20 ms</span></div><div class="td">240 ms</div></div>
+    <div class="tr"><div class="th3">メモリ</div><div class="td"><span class="num">45 MB</span></div><div class="td">194 MB</div></div>
+    <div class="tr"><div class="th3">配布</div><div class="td">単一バイナリ <span class="num">12.5 MB</span></div><div class="td">Node 20 + 116 MB</div></div>
+  </div>
+
+  <div class="note">
+    <div class="nbar"></div>
+    <div class="ntx"><span class="nb">訂正</span>：<span class="nb">禁則は Satori にもある。</span>以前の文書の「禁則処理がない」は誤りと判明したので訂正した。</div>
+  </div>
+</div>
+
+<!-- ===== 9 ===== -->
+<div class="sec">
+  <h2 class="h2"><div class="n">9</div><div class="ttl">次の一手</div></h2>
+  <div class="steps">
+    <div class="step"><div class="sn">1</div><div class="stx"><span class="b">A46 の実装</span>：一括報告・<span class="code">warnings_as_errors</span>（CLI <span class="code">--strict</span>）・ContentOverflow 警告・JSON 診断。契約を更新してから起票</div></div>
+    <div class="sdiv"></div>
+    <div class="step"><div class="sn">2</div><div class="stx"><span class="b">AI 向け対応範囲文書（skill）の整備</span> → 同じ 10 件で再検証</div></div>
+    <div class="sdiv"></div>
+    <div class="step"><div class="sn">3</div><div class="stx"><span class="b">box-sizing と辺ごとの border の起票</span>（関門を通す実例あり）</div></div>
+    <div class="sdiv"></div>
+    <div class="step"><div class="sn">4</div><div class="stx"><span class="b">サーバー安全性の検証</span>（巨大入力・時間・同時実行）は別枠</div></div>
+    <div class="sdiv"></div>
+    <div class="step"><div class="sn">5</div><div class="stx"><span class="b">日本の開発者向けに v0.1.0</span>。Node バインディングは先送り（CLI 子プロセスで cold 20 ms）</div></div>
+  </div>
+</div>
+
+<div class="doodle">↓</div>
+
+<div class="foot"><span class="fb">判断記録</span>　A46 = fail loudly の拡張、A47 = ミッション・関門・4 層。どちらも 2026-09-23 のユーザーの決定。作業ツリーに反映済み、未コミット。</div>
+
+</div>

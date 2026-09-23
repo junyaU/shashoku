@@ -1,0 +1,380 @@
+[
+  {
+    "case": "case01",
+    "title": "比較表（技術選定資料）",
+    "html": "case01.html",
+    "png": "case01.png",
+    "cli_args": "case01.html 900 560 case01.png",
+    "first_try": {
+      "status": "pass",
+      "error": null
+    },
+    "iterations": [
+      {
+        "n": 1,
+        "status": "pass",
+        "error": null,
+        "category": "silent",
+        "fix": "高さ 720px で描くと下に約 175px の空白が残った（Satori は高さ必須で内容に合わせて伸びない）→ 目視で 560px に詰めた"
+      },
+      {
+        "n": 2,
+        "status": "pass",
+        "error": null,
+        "category": null,
+        "fix": null
+      }
+    ],
+    "final": "pass",
+    "gave_up_reason": null,
+    "fidelity": 4,
+    "dropped": [],
+    "warnings": [],
+    "notes": "依頼に高さの指定がないが Satori は高さが必須。<table> は使えないので flex の行で組んだ（Satori に table/tr/td を渡すと、エラーなしで全セルが 1 行に並ぶ壊れた絵になる。tmp/plain.png）。日本語の折り返しは全セルで妥当で、行頭に 、。 は 1 か所もない。ただし和文と欧文の間の四分アキは入らないので、'ACID を' のような空白はすべて自分で入れている。",
+    "first_try_exit": 0,
+    "first_try_visual": "broken",
+    "first_try_visual_problem": "高さが合わず下に約 175px の空白"
+  },
+  {
+    "case": "case02",
+    "title": "処理フロー図（設計レビュー資料）",
+    "html": "case02.html",
+    "png": "case02.png",
+    "cli_args": "case02.html 1000 345 case02.png",
+    "first_try": {
+      "status": "pass",
+      "error": null
+    },
+    "iterations": [
+      {
+        "n": 1,
+        "status": "pass",
+        "error": null,
+        "category": "silent",
+        "fix": "高さ 400px で下に約 55px の空白 → 345px に詰めた"
+      },
+      {
+        "n": 2,
+        "status": "pass",
+        "error": null,
+        "category": "other",
+        "fix": "注記の矢印と枠がワーカー段の真下から約 60px 左にずれていた（余白の足し算を間違えた。Satori のせいではない）→ spacer を 576/520px から 639/472px に"
+      },
+      {
+        "n": 3,
+        "status": "pass",
+        "error": null,
+        "category": null,
+        "fix": null
+      }
+    ],
+    "final": "pass",
+    "gave_up_reason": null,
+    "fidelity": 4,
+    "dropped": [],
+    "warnings": [],
+    "notes": "矢印は '→' '↓' の文字で置いた。Satori には線を引く手段がないので、罫線・接続線は border か文字でしか描けない。5 段の箱の幅は自分で計算して固定した（min-content/fit-content が使えないため）。",
+    "first_try_exit": 0,
+    "first_try_visual": "broken",
+    "first_try_visual_problem": "高さが合わず下に約 55px の空白。注記がワーカー段の真下からずれ"
+  },
+  {
+    "case": "case03",
+    "title": "用語カード（社内 wiki）",
+    "html": "case03.html",
+    "png": "case03.png",
+    "cli_args": "case03.html 720 430 case03.png",
+    "first_try": {
+      "status": "pass",
+      "error": null
+    },
+    "iterations": [
+      {
+        "n": 1,
+        "status": "pass",
+        "error": null,
+        "category": "silent",
+        "fix": "高さ 400px ではカードの下端と下余白が切れていた → 430px に"
+      },
+      {
+        "n": 2,
+        "status": "pass",
+        "error": null,
+        "category": null,
+        "fix": null
+      }
+    ],
+    "final": "pass",
+    "gave_up_reason": null,
+    "fidelity": 5,
+    "dropped": [],
+    "warnings": [],
+    "notes": "読み（べきとうせい）は依頼が『表示します』なのでルビにせず見出しの右に小さく置いた。定義 2 文の折り返しは '…性質のこと。結果が / 呼び出し回数に…' で、行頭に句点は来ていない。",
+    "first_try_exit": 0,
+    "first_try_visual": "broken",
+    "first_try_visual_problem": "高さが足りずカード下端が切れた"
+  },
+  {
+    "case": "case04",
+    "title": "手順カード（オンボーディング）",
+    "html": "case04.html",
+    "png": "case04.png",
+    "cli_args": "case04.html 800 500 case04.png",
+    "first_try": {
+      "status": "pass",
+      "error": null
+    },
+    "iterations": [
+      {
+        "n": 1,
+        "status": "pass",
+        "error": null,
+        "category": "silent",
+        "fix": "高さ 620px で下に約 160px の空白 → 500px に詰めた"
+      },
+      {
+        "n": 2,
+        "status": "pass",
+        "error": null,
+        "category": null,
+        "fix": null
+      }
+    ],
+    "final": "pass",
+    "gave_up_reason": null,
+    "fidelity": 5,
+    "dropped": [],
+    "warnings": [],
+    "notes": "border-radius:999px の丸バッジ、flex の縦並び、いずれもそのまま通った。5 ステップの補足はすべて 1 行に収まり折り返しが起きていない。",
+    "first_try_exit": 0,
+    "first_try_visual": "broken",
+    "first_try_visual_problem": "高さが合わず下に約 160px の空白"
+  },
+  {
+    "case": "case05",
+    "title": "読書メモの引用カード（SNS）",
+    "html": "case05.html",
+    "png": "case05.png",
+    "cli_args": "case05.html 1080 1080 case05.png",
+    "first_try": {
+      "status": "pass",
+      "error": null
+    },
+    "iterations": [
+      {
+        "n": 1,
+        "status": "pass",
+        "error": null,
+        "category": null,
+        "fix": null
+      }
+    ],
+    "final": "pass",
+    "gave_up_reason": null,
+    "fidelity": 4,
+    "dropped": [],
+    "warnings": [],
+    "notes": "一発で通った唯一のケース。日本語の見え方: 4 行とも行頭に 、。 は来ていない（UAX #14 の禁則は効いている）。一方で (a) 行末が揃わない（1〜3 行目の右端が 0〜1 字ぶんずつバラバラ。行の調整処理も約物のぶら下がりもない）、(b) 句読点の前後が詰まらない（'…ことだ。句読点は、その…' の 。 と 、 が全角のまま居座り、視覚的に大きく空く）。この 2 点が『本の一節らしい落ち着いた雰囲気』からいちばん遠い。",
+    "first_try_exit": 0,
+    "first_try_visual": "ok",
+    "first_try_visual_problem": null
+  },
+  {
+    "case": "case06",
+    "title": "OG 画像（ブログ記事）",
+    "html": "case06.html",
+    "png": "case06.png",
+    "cli_args": "case06.html 1200 630 case06.png",
+    "first_try": {
+      "status": "pass",
+      "error": null
+    },
+    "iterations": [
+      {
+        "n": 1,
+        "status": "pass",
+        "error": null,
+        "category": "image",
+        "fix": "exit 0 だが著者アイコンが 1 ドットも描かれなかった。標準エラーに 'Invalid value \"56\" for \"width\"' が 2 行出ていた（satori-html が width/height 属性を文字列で渡すため Satori が無視する）→ style=\"width:56px;height:56px\" に変更"
+      },
+      {
+        "n": 2,
+        "status": "pass",
+        "error": null,
+        "category": null,
+        "fix": null
+      }
+    ],
+    "final": "pass",
+    "gave_up_reason": null,
+    "fidelity": 4,
+    "dropped": [],
+    "warnings": [
+      "Invalid value \"56\" for \"height\". Expected a number, \"auto\", or a percentage value (e.g., \"50%\").",
+      "Invalid value \"56\" for \"width\". Expected a number, \"auto\", or a percentage value (e.g., \"50%\")."
+    ],
+    "notes": "アイコンは data URL の PNG。border-radius:999px は clipPath として SVG に出るので丸く抜ける。日本語の見え方: タイトル 3 行目が『と』1 文字だけの孤立行になる。1 行目の行末の読点 '、' は行内に収まり、ぶら下がりも行の詰めもないので 1 行目だけ右端が 1 字ぶん余る。",
+    "first_try_exit": 0,
+    "first_try_visual": "broken",
+    "first_try_visual_problem": "著者アイコンが描かれなかった（標準エラーに警告は出ていた）"
+  },
+  {
+    "case": "case07",
+    "title": "イベント告知（勉強会）",
+    "html": "case07.html",
+    "png": "case07.png",
+    "cli_args": "case07.html 1080 1080 case07.png",
+    "first_try": {
+      "status": "pass",
+      "error": null
+    },
+    "iterations": [
+      {
+        "n": 1,
+        "status": "pass",
+        "error": null,
+        "category": "silent",
+        "fix": "exit 0 だが <ruby><rt> が解釈されず、読みが親文字のすぐ後ろに同じ大きさで連結された（『高橋 遥たかはし はるか』『Chen Weiチェン ウェイ』）。名前として読めない → ルビをやめ、名前の上に小さい別行で読みを置く形に書き直した"
+      },
+      {
+        "n": 2,
+        "status": "pass",
+        "error": null,
+        "category": null,
+        "fix": null
+      }
+    ],
+    "final": "pass",
+    "gave_up_reason": null,
+    "fidelity": 3,
+    "dropped": [
+      "ふりがな: <ruby> が使えないため『親文字の上に、文字幅を合わせて小さく振る』ルビにはできなかった。名前の上の別行に小さい文字で読みを置く代替にした。親文字と読みの文字単位の対応（肩付き・中付き）は取れていない"
+    ],
+    "warnings": [],
+    "notes": "ほかの項目（イベント名・日時・場所・登壇者 3 名と演題・参加無料バッジ・申込 URL）はすべて入っている。『2026年10月8日（木）19:30〜21:00』の全角括弧の前後は詰まらず、括弧 1 文字ぶんが丸ごと空く。演題の「」も同じで、開き括弧の左に全角の空きが残る。",
+    "first_try_exit": 0,
+    "first_try_visual": "broken",
+    "first_try_visual_problem": "<ruby> が無視され、読みが名前に連結された"
+  },
+  {
+    "case": "case08",
+    "title": "通知画像（週次レポート）",
+    "html": "case08.html",
+    "png": "case08.png",
+    "cli_args": "case08.html 800 385 case08.png",
+    "first_try": {
+      "status": "pass",
+      "error": null
+    },
+    "iterations": [
+      {
+        "n": 1,
+        "status": "pass",
+        "error": null,
+        "category": "silent",
+        "fix": "高さ 460px で下に約 75px の空白 → 385px に詰めた"
+      },
+      {
+        "n": 2,
+        "status": "pass",
+        "error": null,
+        "category": null,
+        "fix": null
+      }
+    ],
+    "final": "pass",
+    "gave_up_reason": null,
+    "fidelity": 5,
+    "dropped": [
+      "『高さは内容に合わせて』: Satori は高さが必須で内容に合わせて伸ばせないため、385px を目視で決めた"
+    ],
+    "warnings": [],
+    "notes": "指標 3 つ、前週比の緑/赤、一言の枠はすべて出た。− (U+2212) と ± は Noto Sans JP に字があり豆腐にならない。『今週のチーム活動（9/14〜9/20）』の全角括弧は詰まらないので、見出しが見た目で 1 字ぶん間延びする。",
+    "first_try_exit": 0,
+    "first_try_visual": "broken",
+    "first_try_visual_problem": "高さが合わず下に約 75px の空白"
+  },
+  {
+    "case": "case09",
+    "title": "要約カード（ニュース）",
+    "html": "case09.html",
+    "png": "case09.png",
+    "cli_args": "case09.html 800 415 case09.png",
+    "first_try": {
+      "status": "pass",
+      "error": null
+    },
+    "iterations": [
+      {
+        "n": 1,
+        "status": "pass",
+        "error": null,
+        "category": "silent",
+        "fix": "高さ 470px で下に約 55px の空白 → 415px に詰めた"
+      },
+      {
+        "n": 2,
+        "status": "pass",
+        "error": null,
+        "category": null,
+        "fix": null
+      }
+    ],
+    "final": "pass",
+    "gave_up_reason": null,
+    "fidelity": 5,
+    "dropped": [
+      "『高さは内容に合わせて』の指定はないが幅しか与えられていないため、高さ 415px を目視で決めた"
+    ],
+    "warnings": [],
+    "notes": "箇条書きは <ul><li> が使えないので、7px の丸 div + テキストの flex 行で組んだ。見出しの '――'（U+2015 ×2）はつながって 1 本の長い線として出る。見出しの折り返しが '…を検討――2027 年 / 度の法改正を視野に' となり、『年度』が行をまたいで割れる。",
+    "first_try_exit": 0,
+    "first_try_visual": "broken",
+    "first_try_visual_problem": "高さが合わず下に約 55px の空白"
+  },
+  {
+    "case": "case10",
+    "title": "短歌（縦書き、SNS）",
+    "html": "case10.html",
+    "png": "case10.png",
+    "cli_args": "case10.html 800 1200 case10.png",
+    "first_try": {
+      "status": "pass",
+      "error": null
+    },
+    "iterations": [
+      {
+        "n": 1,
+        "status": "pass",
+        "error": null,
+        "category": "silent",
+        "fix": "exit 0 だが writing-mode:vertical-rl と text-orientation:upright が無警告で捨てられ、横書きのまま出た → 1 文字 1 div を flex column で縦に積む擬似縦書きに書き直し、長音符『ー』だけ transform:rotate(90deg) で回した"
+      },
+      {
+        "n": 2,
+        "status": "pass",
+        "error": null,
+        "category": "silent",
+        "fix": "歌が版面の右 1/4 に寄り、左の 3/5 が空白のまま残った → 歌を中央寄せにし、作者名を position:absolute で左端の下に置いた"
+      },
+      {
+        "n": 3,
+        "status": "pass",
+        "error": null,
+        "category": null,
+        "fix": null
+      }
+    ],
+    "final": "pass",
+    "gave_up_reason": null,
+    "fidelity": 2,
+    "dropped": [
+      "縦書き: writing-mode が効かないため、1 文字ずつの箱を縦に積む擬似縦書きで代替した。行の折り返し・縦組みの禁則・縦中横は存在せず、句の切れ目と 2 列への割りは自分で決め打ちした。長音符は手で 90 度回した。、。「」や小書きかなを含む歌なら、1 字ずつ位置と回転を手当てする必要がある"
+    ],
+    "warnings": [],
+    "notes": "『ゆふぐれの…』は 、。 も小書きかなも含まないので、回すべき字は『ー』1 つだけで済んだ。上の句が右、下の句が左の 2 列で、縦組みの列順（右から左）にはなっている。PNG としては和紙色の背景に墨色の字で雰囲気は出ているが、これは『縦書きができた』のではなく『縦に並べた』。",
+    "first_try_exit": 0,
+    "first_try_visual": "broken",
+    "first_try_visual_problem": "writing-mode が無視され、縦書きにならず横書きで出た"
+  }
+]

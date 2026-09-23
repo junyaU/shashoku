@@ -1,0 +1,49 @@
+<style>
+.wrap { width: 736px; padding: 32px; background-color: #ffffff; }
+.title { font-size: 24px; font-weight: bold; color: #17223b; line-height: 1.6em; margin: 0 0 4px 0; }
+.lead { font-size: 13px; color: #5d6b85; line-height: 1.7em; margin: 0 0 22px 0; }
+.step { display: flex; align-items: center; gap: 16px; padding: 16px; margin: 0 0 12px 0; border: 1px solid #dde3ec; border-radius: 10px; background-color: #fafbfd; }
+.badge { flex-grow: 0; flex-shrink: 0; width: 38px; height: 38px; border-radius: 19px; background-color: #2f5fa8; color: #ffffff; font-size: 18px; font-weight: bold; text-align: center; line-height: 38px; }
+.body { flex-grow: 1; flex-shrink: 1; flex-basis: 0; }
+.h { font-size: 17px; font-weight: bold; color: #17223b; line-height: 1.6em; margin: 0 0 4px 0; }
+.d { font-size: 13px; color: #4a5769; line-height: 1.8em; }
+</style>
+<div class="wrap">
+  <div class="title">開発環境セットアップ手順</div>
+  <div class="lead">新しく参加した人が最初に行う 5 つの手順です。上から順に実行してください。</div>
+  <div class="step">
+    <div class="badge">1</div>
+    <div class="body">
+      <div class="h">リポジトリを clone する</div>
+      <div class="d">社内 GitHub から main を取得します。SSH 鍵の登録が済んでいない場合は先に登録してください。</div>
+    </div>
+  </div>
+  <div class="step">
+    <div class="badge">2</div>
+    <div class="body">
+      <div class="h">ツールチェーンを導入する</div>
+      <div class="d">CMake 3.22 以上と Ninja、clang-18 を入れます。バージョンは docs の表に合わせてください。</div>
+    </div>
+  </div>
+  <div class="step">
+    <div class="badge">3</div>
+    <div class="body">
+      <div class="h">依存ライブラリを取得する</div>
+      <div class="d">configure を一度走らせると、固定した版の依存が自動で取得されます。初回は数分かかります。</div>
+    </div>
+  </div>
+  <div class="step">
+    <div class="badge">4</div>
+    <div class="body">
+      <div class="h">ビルドする</div>
+      <div class="d">dev プリセットでビルドします。警告はエラー扱いなので、途中で止まったらその行を直します。</div>
+    </div>
+  </div>
+  <div class="step">
+    <div class="badge">5</div>
+    <div class="body">
+      <div class="h">テストを実行する</div>
+      <div class="d">全テストが緑になれば準備完了です。落ちたテストがあれば、まず環境の項目を確認してください。</div>
+    </div>
+  </div>
+</div>

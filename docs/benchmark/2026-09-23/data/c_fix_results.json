@@ -1,0 +1,2841 @@
+[
+ {
+  "case": "case01",
+  "title": "比較表（技術選定資料）",
+  "expected_size": "幅 900（余白込み 940）/ 高さ内容依存",
+  "html": "case01_final.html",
+  "png": "case01.png",
+  "cli_args": "--width 940",
+  "first_try": {
+   "status": "fail",
+   "error": "error[unsupported-tag] at 2:1: `<html>` is not supported (supported tags: br, div, h1, h2, h3, h4, h5, h6, img, p, rp, rt, ruby, span, style)"
+  },
+  "iterations": [
+   {
+    "n": 1,
+    "status": "fail",
+    "error": "error[unsupported-tag] at 2:1: `<html>` is not supported (supported tags: br, div, h1, h2, h3, h4, h5, h6, img, p, rp, rt, ruby, span, style)",
+    "category": "wrapper",
+    "fix": "文書の外枠（DOCTYPE/html/head/meta/title/link/body）を外し、<style> と本体だけ残した"
+   },
+   {
+    "n": 2,
+    "status": "fail",
+    "error": "error[unsupported-tag] at 97:5: `<table>` is not supported (supported tags: br, div, h1, h2, h3, h4, h5, h6, img, p, rp, rt, ruby, span, style)",
+    "category": "tag",
+    "fix": "<table> 1 個を <div> に置換（CSS の型セレクタは .table に）"
+   },
+   {
+    "n": 3,
+    "status": "fail",
+    "error": "error[unsupported-tag] at 108:7: `<thead>` is not supported (supported tags: br, div, h1, h2, h3, h4, h5, h6, img, p, rp, rt, ruby, span, style)",
+    "category": "tag",
+    "fix": "<thead> 1 個を <div> に置換（CSS の型セレクタは .thead に）"
+   },
+   {
+    "n": 4,
+    "status": "fail",
+    "error": "error[unsupported-tag] at 109:9: `<tr>` is not supported (supported tags: br, div, h1, h2, h3, h4, h5, h6, img, p, rp, rt, ruby, span, style)",
+    "category": "tag",
+    "fix": "<tr> 6 個を <div> に置換（CSS の型セレクタは .tr に）、.tr に display:flex を足して行を横並びに"
+   },
+   {
+    "n": 5,
+    "status": "fail",
+    "error": "error[unsupported-tag] at 113:11: `<th>` is not supported (supported tags: br, div, h1, h2, h3, h4, h5, h6, img, p, rp, rt, ruby, span, style)",
+    "category": "tag",
+    "fix": "<th> 9 個を <div> に置換（CSS の型セレクタは .th に）、セル 3 個に flex:1 1 0 / 6 個に flex:0 0 auto"
+   },
+   {
+    "n": 6,
+    "status": "fail",
+    "error": "error[unsupported-tag] at 125:7: `<tbody>` is not supported (supported tags: br, div, h1, h2, h3, h4, h5, h6, img, p, rp, rt, ruby, span, style)",
+    "category": "tag",
+    "fix": "<tbody> 1 個を <div> に置換（CSS の型セレクタは .tbody に）"
+   },
+   {
+    "n": 7,
+    "status": "fail",
+    "error": "error[unsupported-tag] at 128:11: `<td>` is not supported (supported tags: br, div, h1, h2, h3, h4, h5, h6, img, p, rp, rt, ruby, span, style)",
+    "category": "tag",
+    "fix": "<td> 15 個を <div> に置換（CSS の型セレクタは .td に）、セル 15 個に flex:1 1 0 / 0 個に flex:0 0 auto"
+   },
+   {
+    "n": 8,
+    "status": "fail",
+    "error": "error[unsupported-property] at 15:5: `box-sizing` is not a supported property (content-box only: subtract padding and border from `width` / `height`)",
+    "category": "property",
+    "fix": "box-sizing 宣言を削除し、hint に従って width/height から padding・border を引いた（1 箇所）"
+   },
+   {
+    "n": 9,
+    "status": "fail",
+    "error": "error[unsupported-property] at 22:5: `-webkit-font-smoothing` is not a supported property",
+    "category": "property",
+    "fix": "-webkit-font-smoothing の宣言 1 個を削除"
+   },
+   {
+    "n": 10,
+    "status": "fail",
+    "error": "error[unsupported-property] at 28:5: `box-shadow` is not a supported property",
+    "category": "property",
+    "fix": "box-shadow の宣言 1 個を削除"
+   },
+   {
+    "n": 11,
+    "status": "fail",
+    "error": "error[unsupported-property] at 28:5: `overflow` is not a supported property",
+    "category": "property",
+    "fix": "overflow の宣言 1 個を削除"
+   },
+   {
+    "n": 12,
+    "status": "fail",
+    "error": "error[unsupported-property] at 31:5: `border-bottom` is not a supported property",
+    "category": "property",
+    "fix": "border-bottom の宣言 1 個を削除"
+   },
+   {
+    "n": 13,
+    "status": "fail",
+    "error": "error[css-parse] at 32:9: descendant combinators (a space between selectors) are not supported; only `tag`, `.class`, `#id`, their combinations and `,` are",
+    "category": "selector",
+    "fix": "子孫結合子 を含むセレクタ 12 本をクラスに書き換え（要素 57 個に class 追加、擬似要素 0 個を実要素化）"
+   },
+   {
+    "n": 14,
+    "status": "fail",
+    "error": "error[unsupported-property] at 45:5: `border-collapse` is not a supported property",
+    "category": "property",
+    "fix": "border-collapse の宣言 1 個を削除"
+   },
+   {
+    "n": 15,
+    "status": "fail",
+    "error": "error[unsupported-property] at 56:5: `border-right` is not a supported property",
+    "category": "property",
+    "fix": "border-right の宣言 5 個を削除"
+   },
+   {
+    "n": 16,
+    "status": "fail",
+    "error": "error[unsupported-property] at 70:5: `vertical-align` is not a supported property",
+    "category": "property",
+    "fix": "vertical-align の宣言 2 個を削除"
+   },
+   {
+    "n": 17,
+    "status": "fail",
+    "error": "error[unsupported-property] at 84:5: `border-top` is not a supported property",
+    "category": "property",
+    "fix": "border-top の宣言 2 個を削除"
+   },
+   {
+    "n": 18,
+    "status": "fail",
+    "error": "error[unsupported-property] at 88:5: `opacity` is not a supported property",
+    "category": "property",
+    "fix": "opacity の宣言 1 個を削除"
+   },
+   {
+    "n": 19,
+    "status": "pass"
+   }
+  ],
+  "iteration_count": 19,
+  "final": "pass",
+  "final_if_capped_at_15": "gave_up",
+  "gave_up_reason": "15 回では通らなかった（実際は 19 回目で通った）",
+  "blockers": [
+   {
+    "n": 1,
+    "category": "wrapper",
+    "what": "<html>",
+    "fix": "文書の外枠（DOCTYPE/html/head/meta/title/link/body）を外し、<style> と本体だけ残した"
+   },
+   {
+    "n": 2,
+    "category": "tag",
+    "what": "<table>",
+    "fix": "<table> 1 個を <div> に置換（CSS の型セレクタは .table に）"
+   },
+   {
+    "n": 3,
+    "category": "tag",
+    "what": "<thead>",
+    "fix": "<thead> 1 個を <div> に置換（CSS の型セレクタは .thead に）"
+   },
+   {
+    "n": 4,
+    "category": "tag",
+    "what": "<tr>",
+    "fix": "<tr> 6 個を <div> に置換（CSS の型セレクタは .tr に）、.tr に display:flex を足して行を横並びに"
+   },
+   {
+    "n": 5,
+    "category": "tag",
+    "what": "<th>",
+    "fix": "<th> 9 個を <div> に置換（CSS の型セレクタは .th に）、セル 3 個に flex:1 1 0 / 6 個に flex:0 0 auto"
+   },
+   {
+    "n": 6,
+    "category": "tag",
+    "what": "<tbody>",
+    "fix": "<tbody> 1 個を <div> に置換（CSS の型セレクタは .tbody に）"
+   },
+   {
+    "n": 7,
+    "category": "tag",
+    "what": "<td>",
+    "fix": "<td> 15 個を <div> に置換（CSS の型セレクタは .td に）、セル 15 個に flex:1 1 0 / 0 個に flex:0 0 auto"
+   },
+   {
+    "n": 8,
+    "category": "property",
+    "what": "box-sizing",
+    "fix": "box-sizing 宣言を削除し、hint に従って width/height から padding・border を引いた（1 箇所）"
+   },
+   {
+    "n": 9,
+    "category": "property",
+    "what": "-webkit-font-smoothing",
+    "fix": "-webkit-font-smoothing の宣言 1 個を削除"
+   },
+   {
+    "n": 10,
+    "category": "property",
+    "what": "box-shadow",
+    "fix": "box-shadow の宣言 1 個を削除"
+   },
+   {
+    "n": 11,
+    "category": "property",
+    "what": "overflow",
+    "fix": "overflow の宣言 1 個を削除"
+   },
+   {
+    "n": 12,
+    "category": "property",
+    "what": "border-bottom",
+    "fix": "border-bottom の宣言 1 個を削除"
+   },
+   {
+    "n": 13,
+    "category": "selector",
+    "what": "子孫結合子",
+    "fix": "子孫結合子 を含むセレクタ 12 本をクラスに書き換え（要素 57 個に class 追加、擬似要素 0 個を実要素化）"
+   },
+   {
+    "n": 14,
+    "category": "property",
+    "what": "border-collapse",
+    "fix": "border-collapse の宣言 1 個を削除"
+   },
+   {
+    "n": 15,
+    "category": "property",
+    "what": "border-right",
+    "fix": "border-right の宣言 5 個を削除"
+   },
+   {
+    "n": 16,
+    "category": "property",
+    "what": "vertical-align",
+    "fix": "vertical-align の宣言 2 個を削除"
+   },
+   {
+    "n": 17,
+    "category": "property",
+    "what": "border-top",
+    "fix": "border-top の宣言 2 個を削除"
+   },
+   {
+    "n": 18,
+    "category": "property",
+    "what": "opacity",
+    "fix": "opacity の宣言 1 個を削除"
+   }
+  ],
+  "edit_lines": 164,
+  "edit_lines_excluding_reformat": 158,
+  "fidelity": 4,
+  "dropped": [
+   "表の罫線（縦・横とも）"
+  ],
+  "lost_visuals": [
+   "カードの影 (box-shadow)",
+   "角丸のクリップ (overflow:hidden)",
+   "表の縦罫 (border-right)",
+   "行間の横罫 (border-top)",
+   "見出し下・脚注上の罫 (border-bottom/top)",
+   "小書きのエンジン名の薄さ (opacity)",
+   "ページ背景色 #f4f6f8（body 規則ごと外枠と一緒に消えた）"
+  ],
+  "warnings": [],
+  "strip_result": {
+   "status": "pass",
+   "fidelity": 2,
+   "notes": "表が縦一列のテキストの羅列に崩れた。罫も縞も見出し色も無く、どれが項目名か分からない。比較表として使えない。",
+   "error": null,
+   "html": "case01_strip.html",
+   "png": "strip_01.png"
+  },
+  "notes": "表は tr→div+display:flex、セル→flex:1 1 0 で横並びを復元でき、5 行 4 列の構造・縞模様・見出しの色は保てた。行の高さは Chrome より詰まる（940×751 対 940×800）。日本語組版: 各セルで shashoku のほうが 1〜2 文字多く詰め、Chrome が作る「ュ。」のような1〜2 文字だけの最終行が出ない。2 列目 2 行目だけは逆に「い。」が最終行に残った。行頭に句読点・閉じ括弧が来た箇所は無かった。"
+ },
+ {
+  "case": "case02",
+  "title": "処理フロー図（設計レビュー資料）",
+  "expected_size": "幅 1000（余白込み 1040）/ 高さ内容依存",
+  "html": "case02_final.html",
+  "png": "case02.png",
+  "cli_args": "--width 1040",
+  "first_try": {
+   "status": "fail",
+   "error": "error[unsupported-tag] at 2:1: `<html>` is not supported (supported tags: br, div, h1, h2, h3, h4, h5, h6, img, p, rp, rt, ruby, span, style)"
+  },
+  "iterations": [
+   {
+    "n": 1,
+    "status": "fail",
+    "error": "error[unsupported-tag] at 2:1: `<html>` is not supported (supported tags: br, div, h1, h2, h3, h4, h5, h6, img, p, rp, rt, ruby, span, style)",
+    "category": "wrapper",
+    "fix": "文書の外枠（DOCTYPE/html/head/meta/title/link/body）を外し、<style> と本体だけ残した"
+   },
+   {
+    "n": 2,
+    "status": "fail",
+    "error": "error[unsupported-tag] at 160:11: `<strong>` is not supported (supported tags: br, div, h1, h2, h3, h4, h5, h6, img, p, rp, rt, ruby, span, style)",
+    "category": "tag",
+    "fix": "<strong> 1 個を <span> に置換（CSS の型セレクタは .strong に）"
+   },
+   {
+    "n": 3,
+    "status": "fail",
+    "error": "error[unsupported-property] at 3:5: `box-sizing` is not a supported property (content-box only: subtract padding and border from `width` / `height`)",
+    "category": "property",
+    "fix": "box-sizing 宣言を削除し、hint に従って width/height から padding・border を引いた（1 箇所）"
+   },
+   {
+    "n": 4,
+    "status": "fail",
+    "error": "error[unsupported-property] at 39:5: `border-top` is not a supported property",
+    "category": "property",
+    "fix": "border-top の宣言 3 個を削除"
+   },
+   {
+    "n": 5,
+    "status": "fail",
+    "error": "error[unsupported-property] at 42:5: `min-height` is not a supported property (no min/max resolution: use a fixed `height`)",
+    "category": "property",
+    "fix": "hint に従い min-height を固定の height に変えた（1 箇所）"
+   },
+   {
+    "n": 6,
+    "status": "fail",
+    "error": "error[css-parse] at 47:9: descendant combinators (a space between selectors) are not supported; only `tag`, `.class`, `#id`, their combinations and `,` are",
+    "category": "selector",
+    "fix": "子孫結合子 を含むセレクタ 5 本をクラスに書き換え（要素 17 個に class 追加、擬似要素 0 個を実要素化）"
+   },
+   {
+    "n": 7,
+    "status": "fail",
+    "error": "error[unsupported-property] at 67:5: `position` is not a supported property (no positioning: use `display: flex` with `justify-content` / `align-items`)",
+    "category": "property",
+    "fix": "position の宣言 2 個を削除"
+   },
+   {
+    "n": 8,
+    "status": "fail",
+    "error": "error[unsupported-property] at 67:5: `align-self` is not a supported property",
+    "category": "property",
+    "fix": "align-self の宣言 1 個を削除"
+   },
+   {
+    "n": 9,
+    "status": "fail",
+    "error": "error[css-parse] at 71:9: pseudo-classes and pseudo-elements (`:hover`, `::before`) are not supported in selectors",
+    "category": "selector",
+    "fix": "擬似クラス・擬似要素 を含むセレクタ 1 本をクラスに書き換え（要素 0 個に class 追加、擬似要素 4 個を実要素化）"
+   },
+   {
+    "n": 10,
+    "status": "fail",
+    "error": "error[unsupported-property] at 72:5: `right` is not a supported property",
+    "category": "property",
+    "fix": "right の宣言 1 個を削除"
+   },
+   {
+    "n": 11,
+    "status": "fail",
+    "error": "error[unsupported-property] at 72:5: `top` is not a supported property",
+    "category": "property",
+    "fix": "top の宣言 1 個を削除"
+   },
+   {
+    "n": 12,
+    "status": "fail",
+    "error": "error[unsupported-property] at 72:5: `transform` is not a supported property",
+    "category": "property",
+    "fix": "transform の宣言 1 個を削除"
+   },
+   {
+    "n": 13,
+    "status": "fail",
+    "error": "error[unsupported-property] at 72:5: `border-left` is not a supported property",
+    "category": "property",
+    "fix": "border-left の宣言 1 個を削除"
+   },
+   {
+    "n": 14,
+    "status": "fail",
+    "error": "error[unsupported-property] at 72:5: `border-bottom` is not a supported property",
+    "category": "property",
+    "fix": "border-bottom の宣言 1 個を削除"
+   },
+   {
+    "n": 15,
+    "status": "fail",
+    "error": "error[unsupported-value] at 89:13: `border: 1px dashed #d9a441` is not supported (`border` takes at most one width (px / em / 0), one style (solid or none) and one color, in any order; per-side `border-top` etc. are not supported)",
+    "category": "value",
+    "fix": "1 個を近い対応値に置換"
+   },
+   {
+    "n": 16,
+    "status": "pass"
+   }
+  ],
+  "iteration_count": 16,
+  "final": "pass",
+  "final_if_capped_at_15": "gave_up",
+  "gave_up_reason": "15 回では通らなかった（実際は 16 回目で通った）",
+  "blockers": [
+   {
+    "n": 1,
+    "category": "wrapper",
+    "what": "<html>",
+    "fix": "文書の外枠（DOCTYPE/html/head/meta/title/link/body）を外し、<style> と本体だけ残した"
+   },
+   {
+    "n": 2,
+    "category": "tag",
+    "what": "<strong>",
+    "fix": "<strong> 1 個を <span> に置換（CSS の型セレクタは .strong に）"
+   },
+   {
+    "n": 3,
+    "category": "property",
+    "what": "box-sizing",
+    "fix": "box-sizing 宣言を削除し、hint に従って width/height から padding・border を引いた（1 箇所）"
+   },
+   {
+    "n": 4,
+    "category": "property",
+    "what": "border-top",
+    "fix": "border-top の宣言 3 個を削除"
+   },
+   {
+    "n": 5,
+    "category": "property",
+    "what": "min-height",
+    "fix": "hint に従い min-height を固定の height に変えた（1 箇所）"
+   },
+   {
+    "n": 6,
+    "category": "selector",
+    "what": "子孫結合子",
+    "fix": "子孫結合子 を含むセレクタ 5 本をクラスに書き換え（要素 17 個に class 追加、擬似要素 0 個を実要素化）"
+   },
+   {
+    "n": 7,
+    "category": "property",
+    "what": "position",
+    "fix": "position の宣言 2 個を削除"
+   },
+   {
+    "n": 8,
+    "category": "property",
+    "what": "align-self",
+    "fix": "align-self の宣言 1 個を削除"
+   },
+   {
+    "n": 9,
+    "category": "selector",
+    "what": "擬似クラス・擬似要素",
+    "fix": "擬似クラス・擬似要素 を含むセレクタ 1 本をクラスに書き換え（要素 0 個に class 追加、擬似要素 4 個を実要素化）"
+   },
+   {
+    "n": 10,
+    "category": "property",
+    "what": "right",
+    "fix": "right の宣言 1 個を削除"
+   },
+   {
+    "n": 11,
+    "category": "property",
+    "what": "top",
+    "fix": "top の宣言 1 個を削除"
+   },
+   {
+    "n": 12,
+    "category": "property",
+    "what": "transform",
+    "fix": "transform の宣言 1 個を削除"
+   },
+   {
+    "n": 13,
+    "category": "property",
+    "what": "border-left",
+    "fix": "border-left の宣言 1 個を削除"
+   },
+   {
+    "n": 14,
+    "category": "property",
+    "what": "border-bottom",
+    "fix": "border-bottom の宣言 1 個を削除"
+   },
+   {
+    "n": 15,
+    "category": "value",
+    "what": "border: 1px dashed #d9a441",
+    "fix": "1 個を近い対応値に置換"
+   }
+  ],
+  "edit_lines": 92,
+  "edit_lines_excluding_reformat": 88,
+  "fidelity": 3,
+  "dropped": [
+   "矢印の三角（線だけ残る）",
+   "絵文字アイコン"
+  ],
+  "lost_visuals": [
+   "矢印の頭（border トリックの三角）",
+   "絵文字アイコン 5 個（□ に）",
+   "カード上端の色帯 (border-top)",
+   "注記の破線枠（solid に）",
+   "矢印の縦位置（align-self:center を落としたので行の上端に付く）",
+   "ページ背景色"
+  ],
+  "warnings": [
+   "warning[missing-glyph]: no font has a glyph for U+1F464 at 118:30",
+   "warning[missing-glyph]: no font has a glyph for U+1F5A5 at 126:30",
+   "warning[missing-glyph]: no font has a glyph for U+1F4E5 at 134:30",
+   "warning[missing-glyph]: no font has a glyph for U+2699 at 143:32",
+   "warning[missing-glyph]: no font has a glyph for U+1F5C4 at 157:30"
+  ],
+  "strip_result": {
+   "status": "pass",
+   "fidelity": 2,
+   "notes": "注記の箱がワーカーの説明に重なり、カード下端から文字があふれた。段の幅も揃わず図として破綻している。",
+   "error": null,
+   "html": "case02_strip.html",
+   "png": "strip_02.png"
+  },
+  "notes": "5 段・注記・説明文はすべて残った。矢印は細い横線だけになり「→」に見えない。ワーカーの説明がカード下端ぎりぎりまで来て 1 行あふれかけている。日本語組版: 「ジョブを順番に保持/する。」のように読点前で折れる箇所が Chrome と同じ。"
+ },
+ {
+  "case": "case03",
+  "title": "用語カード（社内 wiki）",
+  "expected_size": "幅 720（余白込み 760）/ 高さ内容依存",
+  "html": "case03_final.html",
+  "png": "case03.png",
+  "cli_args": "--width 760",
+  "first_try": {
+   "status": "fail",
+   "error": "error[unsupported-tag] at 2:1: `<html>` is not supported (supported tags: br, div, h1, h2, h3, h4, h5, h6, img, p, rp, rt, ruby, span, style)"
+  },
+  "iterations": [
+   {
+    "n": 1,
+    "status": "fail",
+    "error": "error[unsupported-tag] at 2:1: `<html>` is not supported (supported tags: br, div, h1, h2, h3, h4, h5, h6, img, p, rp, rt, ruby, span, style)",
+    "category": "wrapper",
+    "fix": "文書の外枠（DOCTYPE/html/head/meta/title/link/body）を外し、<style> と本体だけ残した"
+   },
+   {
+    "n": 2,
+    "status": "fail",
+    "error": "error[unsupported-property] at 2:7: `box-sizing` is not a supported property (content-box only: subtract padding and border from `width` / `height`)",
+    "category": "property",
+    "fix": "box-sizing 宣言を削除し、hint に従って width/height から padding・border を引いた（1 箇所）"
+   },
+   {
+    "n": 3,
+    "status": "fail",
+    "error": "error[unsupported-property] at 17:5: `box-shadow` is not a supported property",
+    "category": "property",
+    "fix": "box-shadow の宣言 1 個を削除"
+   },
+   {
+    "n": 4,
+    "status": "fail",
+    "error": "error[unsupported-property] at 17:5: `overflow` is not a supported property",
+    "category": "property",
+    "fix": "overflow の宣言 1 個を削除"
+   },
+   {
+    "n": 5,
+    "status": "fail",
+    "error": "error[css-parse] at 18:8: pseudo-classes and pseudo-elements (`:hover`, `::before`) are not supported in selectors",
+    "category": "selector",
+    "fix": "擬似クラス・擬似要素 を含むセレクタ 1 本をクラスに書き換え（要素 0 個に class 追加、擬似要素 1 個を実要素化）"
+   },
+   {
+    "n": 6,
+    "status": "fail",
+    "error": "error[unsupported-value] at 21:17: `background: linear-gradient(90deg, #4c6b5a 0%, #7a9484 100%)` is not supported (supported colors: #rgb, #rgba, #rrggbb, #rrggbbaa, rgb(), rgba(), the 148 CSS color names and transparent)",
+    "category": "value",
+    "fix": "1 個を近い対応値に置換"
+   },
+   {
+    "n": 7,
+    "status": "fail",
+    "error": "error[unsupported-value] at 27:14: `display: inline-block` is not supported (supported: block, flex, inline, none)",
+    "category": "value",
+    "fix": "2 個を近い対応値に置換"
+   },
+   {
+    "n": 8,
+    "status": "fail",
+    "error": "error[unsupported-value] at 38:18: `align-items: baseline` is not supported (supported: stretch, flex-start, flex-end, center (baseline alignment is not supported))",
+    "category": "value",
+    "fix": "1 個を近い対応値に置換"
+   },
+   {
+    "n": 9,
+    "status": "fail",
+    "error": "error[css-parse] at 42:9: descendant combinators (a space between selectors) are not supported; only `tag`, `.class`, `#id`, their combinations and `,` are",
+    "category": "selector",
+    "fix": "子孫結合子 を含むセレクタ 4 本をクラスに書き換え（要素 4 個に class 追加、擬似要素 0 個を実要素化）"
+   },
+   {
+    "n": 10,
+    "status": "fail",
+    "error": "error[unsupported-property] at 69:5: `border-left` is not a supported property",
+    "category": "property",
+    "fix": "border-left の宣言 1 個を削除"
+   },
+   {
+    "n": 11,
+    "status": "fail",
+    "error": "error[unsupported-value] at 69:20: `border-radius: 0 6px 6px 0` is not supported (expected a single length (supported lengths: <number>px, <number>em, or 0))",
+    "category": "value",
+    "fix": "1 個を近い対応値に置換"
+   },
+   {
+    "n": 12,
+    "status": "fail",
+    "error": "error[unsupported-property] at 90:5: `border-top` is not a supported property",
+    "category": "property",
+    "fix": "border-top の宣言 1 個を削除"
+   },
+   {
+    "n": 13,
+    "status": "fail",
+    "error": "error[unsupported-layout] at 94:19: `margin-right` is not supported on an inline element (`display: inline`); only `<img>` takes box properties while inline",
+    "category": "property",
+    "fix": "hint（inline は箱のプロパティを取れない）に従い、inline 要素の margin-right 系の宣言 1 個を削除"
+   },
+   {
+    "n": 14,
+    "status": "pass"
+   }
+  ],
+  "iteration_count": 14,
+  "final": "pass",
+  "final_if_capped_at_15": "pass",
+  "gave_up_reason": null,
+  "blockers": [
+   {
+    "n": 1,
+    "category": "wrapper",
+    "what": "<html>",
+    "fix": "文書の外枠（DOCTYPE/html/head/meta/title/link/body）を外し、<style> と本体だけ残した"
+   },
+   {
+    "n": 2,
+    "category": "property",
+    "what": "box-sizing",
+    "fix": "box-sizing 宣言を削除し、hint に従って width/height から padding・border を引いた（1 箇所）"
+   },
+   {
+    "n": 3,
+    "category": "property",
+    "what": "box-shadow",
+    "fix": "box-shadow の宣言 1 個を削除"
+   },
+   {
+    "n": 4,
+    "category": "property",
+    "what": "overflow",
+    "fix": "overflow の宣言 1 個を削除"
+   },
+   {
+    "n": 5,
+    "category": "selector",
+    "what": "擬似クラス・擬似要素",
+    "fix": "擬似クラス・擬似要素 を含むセレクタ 1 本をクラスに書き換え（要素 0 個に class 追加、擬似要素 1 個を実要素化）"
+   },
+   {
+    "n": 6,
+    "category": "value",
+    "what": "background: linear-gradient(90deg, #4c6b5a 0%, #7a9484 100%)",
+    "fix": "1 個を近い対応値に置換"
+   },
+   {
+    "n": 7,
+    "category": "value",
+    "what": "display: inline-block",
+    "fix": "2 個を近い対応値に置換"
+   },
+   {
+    "n": 8,
+    "category": "value",
+    "what": "align-items: baseline",
+    "fix": "1 個を近い対応値に置換"
+   },
+   {
+    "n": 9,
+    "category": "selector",
+    "what": "子孫結合子",
+    "fix": "子孫結合子 を含むセレクタ 4 本をクラスに書き換え（要素 4 個に class 追加、擬似要素 0 個を実要素化）"
+   },
+   {
+    "n": 10,
+    "category": "property",
+    "what": "border-left",
+    "fix": "border-left の宣言 1 個を削除"
+   },
+   {
+    "n": 11,
+    "category": "value",
+    "what": "border-radius: 0 6px 6px 0",
+    "fix": "1 個を近い対応値に置換"
+   },
+   {
+    "n": 12,
+    "category": "property",
+    "what": "border-top",
+    "fix": "border-top の宣言 1 個を削除"
+   },
+   {
+    "n": 13,
+    "category": "property",
+    "what": "margin-right（inline 要素）",
+    "fix": "hint（inline は箱のプロパティを取れない）に従い、inline 要素の margin-right 系の宣言 1 個を削除"
+   }
+  ],
+  "edit_lines": 57,
+  "edit_lines_excluding_reformat": 52,
+  "fidelity": 4,
+  "dropped": [
+   "明朝体（Noto Serif JP）との混植"
+  ],
+  "lost_visuals": [
+   "上端のグラデーション帯（単色に）",
+   "カードの影",
+   "角丸のクリップ",
+   "具体例の左罫 (border-left)",
+   "関連語の上罫 (border-top)",
+   "上部バッジが全幅の箱に（inline-block→block）",
+   "明朝体との混植（埋め込みフォントは Noto Sans JP だけ）"
+  ],
+  "warnings": [],
+  "strip_result": {
+   "status": "fail",
+   "fidelity": 3,
+   "error": "error[unsupported-layout] at 23:13: `border-width` is not supported on an inline element (`display: inline`)",
+   "notes": "黙って無視するだけでは通らない（inline 要素の箱プロパティは名前の問題ではないので残る）。さらに 3 宣言を落として通した版 (case03_strip2.html) では、見出し「冪等性」の大きさが子孫セレクタごと消えて本文と同じ大きさになり、読み（べきとうせい）が見出しの上にずれた。内容は全部ある。",
+   "html": "case03_strip.html",
+   "png": null,
+   "repaired_html": "case03_strip2.html",
+   "repaired_png": "strip2_case03.png"
+  },
+  "notes": "定義 2 文・具体例・関連語タグ 2 つはすべて残り、見出しと読みの並びも保てた。760×470（Chrome は 760×600）。日本語組版: 本文 3 行の折り返し位置は Chrome と同一。"
+ },
+ {
+  "case": "case04",
+  "title": "手順カード（オンボーディング）",
+  "expected_size": "幅 800（余白込み 840）/ 高さ内容依存",
+  "html": "case04_final.html",
+  "png": "case04.png",
+  "cli_args": "--width 840",
+  "first_try": {
+   "status": "fail",
+   "error": "error[unsupported-tag] at 2:1: `<html>` is not supported (supported tags: br, div, h1, h2, h3, h4, h5, h6, img, p, rp, rt, ruby, span, style)"
+  },
+  "iterations": [
+   {
+    "n": 1,
+    "status": "fail",
+    "error": "error[unsupported-tag] at 2:1: `<html>` is not supported (supported tags: br, div, h1, h2, h3, h4, h5, h6, img, p, rp, rt, ruby, span, style)",
+    "category": "wrapper",
+    "fix": "文書の外枠（DOCTYPE/html/head/meta/title/link/body）を外し、<style> と本体だけ残した"
+   },
+   {
+    "n": 2,
+    "status": "fail",
+    "error": "error[unsupported-tag] at 124:5: `<ol>` is not supported (supported tags: br, div, h1, h2, h3, h4, h5, h6, img, p, rp, rt, ruby, span, style)",
+    "category": "tag",
+    "fix": "<ol> 1 個を <div> に置換（CSS の型セレクタは .ol に）"
+   },
+   {
+    "n": 3,
+    "status": "fail",
+    "error": "error[unsupported-tag] at 135:7: `<li>` is not supported (supported tags: br, div, h1, h2, h3, h4, h5, h6, img, p, rp, rt, ruby, span, style)",
+    "category": "tag",
+    "fix": "<li> 5 個を <div> に置換（CSS の型セレクタは .li に）"
+   },
+   {
+    "n": 4,
+    "status": "fail",
+    "error": "error[unsupported-tag] at 139:40: `<code>` is not supported (supported tags: br, div, h1, h2, h3, h4, h5, h6, img, p, rp, rt, ruby, span, style)",
+    "category": "tag",
+    "fix": "<code> 3 個を <span> に置換（CSS の型セレクタは .code に）"
+   },
+   {
+    "n": 5,
+    "status": "fail",
+    "error": "error[unsupported-tag] at 177:5: `<footer>` is not supported (supported tags: br, div, h1, h2, h3, h4, h5, h6, img, p, rp, rt, ruby, span, style)",
+    "category": "tag",
+    "fix": "<footer> 1 個を <div> に置換（CSS の型セレクタは .footer に）"
+   },
+   {
+    "n": 6,
+    "status": "fail",
+    "error": "error[unsupported-property] at 3:5: `box-sizing` is not a supported property (content-box only: subtract padding and border from `width` / `height`)",
+    "category": "property",
+    "fix": "box-sizing 宣言を削除し、hint に従って width/height から padding・border を引いた（1 箇所）"
+   },
+   {
+    "n": 7,
+    "status": "fail",
+    "error": "error[unsupported-property] at 16:5: `box-shadow` is not a supported property",
+    "category": "property",
+    "fix": "box-shadow の宣言 2 個を削除"
+   },
+   {
+    "n": 8,
+    "status": "fail",
+    "error": "error[unsupported-property] at 20:5: `border-bottom` is not a supported property",
+    "category": "property",
+    "fix": "border-bottom の宣言 1 個を削除"
+   },
+   {
+    "n": 9,
+    "status": "fail",
+    "error": "error[css-parse] at 22:10: descendant combinators (a space between selectors) are not supported; only `tag`, `.class`, `#id`, their combinations and `,` are",
+    "category": "selector",
+    "fix": "子孫結合子 を含むセレクタ 6 本をクラスに書き換え（要素 20 個に class 追加、擬似要素 0 個を実要素化）"
+   },
+   {
+    "n": 10,
+    "status": "fail",
+    "error": "error[unsupported-property] at 41:5: `list-style` is not a supported property",
+    "category": "property",
+    "fix": "list-style の宣言 1 個を削除"
+   },
+   {
+    "n": 11,
+    "status": "fail",
+    "error": "error[unsupported-property] at 43:5: `counter-reset` is not a supported property",
+    "category": "property",
+    "fix": "counter-reset の宣言 1 個を削除"
+   },
+   {
+    "n": 12,
+    "status": "fail",
+    "error": "error[unsupported-property] at 45:5: `position` is not a supported property (no positioning: use `display: flex` with `justify-content` / `align-items`)",
+    "category": "property",
+    "fix": "position の宣言 3 個を削除"
+   },
+   {
+    "n": 13,
+    "status": "fail",
+    "error": "error[css-parse] at 49:7: selector combinators (`>`, `+`, `~`) are not supported; only `tag`, `.class`, `#id`, their combinations and `,` are",
+    "category": "selector",
+    "fix": "結合子 > + ~ を含むセレクタ 1 本をクラスに書き換え（要素 4 個に class 追加、擬似要素 0 個を実要素化）"
+   },
+   {
+    "n": 14,
+    "status": "fail",
+    "error": "error[unsupported-property] at 50:5: `border-top` is not a supported property",
+    "category": "property",
+    "fix": "border-top の宣言 1 個を削除"
+   },
+   {
+    "n": 15,
+    "status": "fail",
+    "error": "error[css-parse] at 51:6: pseudo-classes and pseudo-elements (`:hover`, `::before`) are not supported in selectors",
+    "category": "selector",
+    "fix": "擬似クラス・擬似要素 を含むセレクタ 3 本をクラスに書き換え（要素 0 個に class 追加、擬似要素 7 個を実要素化）"
+   },
+   {
+    "n": 16,
+    "status": "fail",
+    "error": "error[unsupported-property] at 52:5: `left` is not a supported property",
+    "category": "property",
+    "fix": "left の宣言 1 個を削除"
+   },
+   {
+    "n": 17,
+    "status": "fail",
+    "error": "error[unsupported-property] at 52:5: `top` is not a supported property",
+    "category": "property",
+    "fix": "top の宣言 2 個を削除"
+   },
+   {
+    "n": 18,
+    "status": "fail",
+    "error": "error[unsupported-property] at 52:5: `bottom` is not a supported property",
+    "category": "property",
+    "fix": "bottom の宣言 2 個を削除"
+   },
+   {
+    "n": 19,
+    "status": "fail",
+    "error": "error[unsupported-property] at 54:5: `z-index` is not a supported property",
+    "category": "property",
+    "fix": "z-index の宣言 2 個を削除"
+   },
+   {
+    "n": 20,
+    "status": "fail",
+    "error": "error[unsupported-value] at 63:20: `border-radius: 50%` is not supported (`%` is only supported for `width` and `flex-basis`)",
+    "category": "value",
+    "fix": "1 個を近い対応値に置換"
+   },
+   {
+    "n": 21,
+    "status": "fail",
+    "error": "error[unsupported-value] at 64:17: `background: linear-gradient(135deg, #4c9aff 0%, #2f6fd0 100%)` is not supported (supported colors: #rgb, #rgba, #rrggbb, #rrggbbaa, rgb(), rgba(), the 148 CSS color names and transparent)",
+    "category": "value",
+    "fix": "1 個を近い対応値に置換"
+   },
+   {
+    "n": 22,
+    "status": "fail",
+    "error": "error[unsupported-layout] at 94:13: `border-width` is not supported on an inline element (`display: inline`); only `<img>` takes box properties while inline",
+    "category": "property",
+    "fix": "hint（inline は箱のプロパティを取れない）に従い、inline 要素の border-width 系の宣言 1 個を削除"
+   },
+   {
+    "n": 23,
+    "status": "fail",
+    "error": "error[unsupported-layout] at 94:20: `border-radius` is not supported on an inline element (`display: inline`); only `<img>` takes box properties while inline",
+    "category": "property",
+    "fix": "hint（inline は箱のプロパティを取れない）に従い、inline 要素の border-radius 系の宣言 1 個を削除"
+   },
+   {
+    "n": 24,
+    "status": "fail",
+    "error": "error[unsupported-layout] at 94:14: `padding-top` is not supported on an inline element (`display: inline`); only `<img>` takes box properties while inline",
+    "category": "property",
+    "fix": "hint（inline は箱のプロパティを取れない）に従い、inline 要素の padding-top 系の宣言 1 個を削除"
+   },
+   {
+    "n": 25,
+    "status": "pass"
+   }
+  ],
+  "iteration_count": 25,
+  "final": "pass",
+  "final_if_capped_at_15": "gave_up",
+  "gave_up_reason": "15 回では通らなかった（実際は 25 回目で通った）",
+  "blockers": [
+   {
+    "n": 1,
+    "category": "wrapper",
+    "what": "<html>",
+    "fix": "文書の外枠（DOCTYPE/html/head/meta/title/link/body）を外し、<style> と本体だけ残した"
+   },
+   {
+    "n": 2,
+    "category": "tag",
+    "what": "<ol>",
+    "fix": "<ol> 1 個を <div> に置換（CSS の型セレクタは .ol に）"
+   },
+   {
+    "n": 3,
+    "category": "tag",
+    "what": "<li>",
+    "fix": "<li> 5 個を <div> に置換（CSS の型セレクタは .li に）"
+   },
+   {
+    "n": 4,
+    "category": "tag",
+    "what": "<code>",
+    "fix": "<code> 3 個を <span> に置換（CSS の型セレクタは .code に）"
+   },
+   {
+    "n": 5,
+    "category": "tag",
+    "what": "<footer>",
+    "fix": "<footer> 1 個を <div> に置換（CSS の型セレクタは .footer に）"
+   },
+   {
+    "n": 6,
+    "category": "property",
+    "what": "box-sizing",
+    "fix": "box-sizing 宣言を削除し、hint に従って width/height から padding・border を引いた（1 箇所）"
+   },
+   {
+    "n": 7,
+    "category": "property",
+    "what": "box-shadow",
+    "fix": "box-shadow の宣言 2 個を削除"
+   },
+   {
+    "n": 8,
+    "category": "property",
+    "what": "border-bottom",
+    "fix": "border-bottom の宣言 1 個を削除"
+   },
+   {
+    "n": 9,
+    "category": "selector",
+    "what": "子孫結合子",
+    "fix": "子孫結合子 を含むセレクタ 6 本をクラスに書き換え（要素 20 個に class 追加、擬似要素 0 個を実要素化）"
+   },
+   {
+    "n": 10,
+    "category": "property",
+    "what": "list-style",
+    "fix": "list-style の宣言 1 個を削除"
+   },
+   {
+    "n": 11,
+    "category": "property",
+    "what": "counter-reset",
+    "fix": "counter-reset の宣言 1 個を削除"
+   },
+   {
+    "n": 12,
+    "category": "property",
+    "what": "position",
+    "fix": "position の宣言 3 個を削除"
+   },
+   {
+    "n": 13,
+    "category": "selector",
+    "what": "結合子 > + ~",
+    "fix": "結合子 > + ~ を含むセレクタ 1 本をクラスに書き換え（要素 4 個に class 追加、擬似要素 0 個を実要素化）"
+   },
+   {
+    "n": 14,
+    "category": "property",
+    "what": "border-top",
+    "fix": "border-top の宣言 1 個を削除"
+   },
+   {
+    "n": 15,
+    "category": "selector",
+    "what": "擬似クラス・擬似要素",
+    "fix": "擬似クラス・擬似要素 を含むセレクタ 3 本をクラスに書き換え（要素 0 個に class 追加、擬似要素 7 個を実要素化）"
+   },
+   {
+    "n": 16,
+    "category": "property",
+    "what": "left",
+    "fix": "left の宣言 1 個を削除"
+   },
+   {
+    "n": 17,
+    "category": "property",
+    "what": "top",
+    "fix": "top の宣言 2 個を削除"
+   },
+   {
+    "n": 18,
+    "category": "property",
+    "what": "bottom",
+    "fix": "bottom の宣言 2 個を削除"
+   },
+   {
+    "n": 19,
+    "category": "property",
+    "what": "z-index",
+    "fix": "z-index の宣言 2 個を削除"
+   },
+   {
+    "n": 20,
+    "category": "value",
+    "what": "border-radius: 50%",
+    "fix": "1 個を近い対応値に置換"
+   },
+   {
+    "n": 21,
+    "category": "value",
+    "what": "background: linear-gradient(135deg, #4c9aff 0%, #2f6fd0 100%)",
+    "fix": "1 個を近い対応値に置換"
+   },
+   {
+    "n": 22,
+    "category": "property",
+    "what": "border-width（inline 要素）",
+    "fix": "hint（inline は箱のプロパティを取れない）に従い、inline 要素の border-width 系の宣言 1 個を削除"
+   },
+   {
+    "n": 23,
+    "category": "property",
+    "what": "border-radius（inline 要素）",
+    "fix": "hint（inline は箱のプロパティを取れない）に従い、inline 要素の border-radius 系の宣言 1 個を削除"
+   },
+   {
+    "n": 24,
+    "category": "property",
+    "what": "padding-top（inline 要素）",
+    "fix": "hint（inline は箱のプロパティを取れない）に従い、inline 要素の padding-top 系の宣言 1 個を削除"
+   }
+  ],
+  "edit_lines": 140,
+  "edit_lines_excluding_reformat": 132,
+  "fidelity": 3,
+  "dropped": [
+   "絵文字"
+  ],
+  "lost_visuals": [
+   "カードの白背景・影・角丸",
+   "ステップ間の区切り罫 (border-top)",
+   "番号バッジのグラデーション（単色に）",
+   "<code> の枠線・角丸・左右 padding（inline なので落とすほかない）",
+   "絵文字 🎉（□ に）",
+   "バッジをつなぐ縦線の位置（絶対配置が無いので流れの中に落ちる）"
+  ],
+  "warnings": [
+   "warning[missing-glyph]: no font has a glyph for U+1F389 at 150:25"
+  ],
+  "strip_result": {
+   "status": "fail",
+   "fidelity": 2,
+   "error": "error[unsupported-layout] at 40:13: `border-width` is not supported on an inline element (`display: inline`)",
+   "notes": "さらに 3 宣言を落として通した版 (case04_strip2.html) では、番号バッジ 1〜5 が「白文字＋背景無し」になって完全に消えた。手順の番号が無い手順書になる。",
+   "html": "case04_strip.html",
+   "png": null,
+   "repaired_html": "case04_strip2.html",
+   "repaired_png": "strip2_case04.png"
+  },
+  "notes": "5 ステップ・番号・見出し・補足はすべて残った。番号バッジは border-radius:50% を width/2 の px に置き換えて円を保てた。縦線は左に残るが段ごとに途切れる。初めは inline の <code> に display:block を足してしまい文が 3 行に割れた。hint どおり「inline は箱のプロパティを取れない」に従って宣言を削るほうが文の流れは保たれる。"
+ },
+ {
+  "case": "case05",
+  "title": "読書メモの引用カード（SNS）",
+  "expected_size": "1080×1080 固定",
+  "html": "case05_final.html",
+  "png": "case05.png",
+  "cli_args": "--width 1080 --height 1080",
+  "first_try": {
+   "status": "fail",
+   "error": "error[unsupported-tag] at 2:1: `<html>` is not supported (supported tags: br, div, h1, h2, h3, h4, h5, h6, img, p, rp, rt, ruby, span, style)"
+  },
+  "iterations": [
+   {
+    "n": 1,
+    "status": "fail",
+    "error": "error[unsupported-tag] at 2:1: `<html>` is not supported (supported tags: br, div, h1, h2, h3, h4, h5, h6, img, p, rp, rt, ruby, span, style)",
+    "category": "wrapper",
+    "fix": "文書の外枠（DOCTYPE/html/head/meta/title/link/body）を外し、<style> と本体だけ残した"
+   },
+   {
+    "n": 2,
+    "status": "fail",
+    "error": "error[unsupported-property] at 2:7: `box-sizing` is not a supported property (content-box only: subtract padding and border from `width` / `height`)",
+    "category": "property",
+    "fix": "box-sizing 宣言を削除し、hint に従って width/height から padding・border を引いた（2 箇所）"
+   },
+   {
+    "n": 3,
+    "status": "fail",
+    "error": "error[unsupported-property] at 13:5: `min-height` is not a supported property (no min/max resolution: use a fixed `height`)",
+    "category": "property",
+    "fix": "hint に従い min-height を固定の height に変えた（1 箇所）"
+   },
+   {
+    "n": 4,
+    "status": "fail",
+    "error": "error[unsupported-value] at 13:13: `height: 100vh` is not supported (`vh` is not a supported unit (supported lengths: <number>px, <number>em, or 0))",
+    "category": "unit",
+    "fix": "1 個を近い対応値に置換"
+   },
+   {
+    "n": 5,
+    "status": "fail",
+    "error": "error[unsupported-property] at 19:5: `background-image` is not a supported property",
+    "category": "property",
+    "fix": "background-image の宣言 1 個を削除"
+   },
+   {
+    "n": 6,
+    "status": "fail",
+    "error": "error[unsupported-property] at 19:5: `position` is not a supported property (no positioning: use `display: flex` with `justify-content` / `align-items`)",
+    "category": "property",
+    "fix": "position の宣言 4 個を削除"
+   },
+   {
+    "n": 7,
+    "status": "fail",
+    "error": "error[unsupported-property] at 23:5: `overflow` is not a supported property",
+    "category": "property",
+    "fix": "overflow の宣言 1 個を削除"
+   },
+   {
+    "n": 8,
+    "status": "fail",
+    "error": "error[css-parse] at 26:8: pseudo-classes and pseudo-elements (`:hover`, `::before`) are not supported in selectors",
+    "category": "selector",
+    "fix": "擬似クラス・擬似要素 を含むセレクタ 3 本をクラスに書き換え（要素 0 個に class 追加、擬似要素 3 個を実要素化）"
+   },
+   {
+    "n": 9,
+    "status": "fail",
+    "error": "error[unsupported-property] at 27:5: `inset` is not a supported property",
+    "category": "property",
+    "fix": "inset の宣言 1 個を削除"
+   },
+   {
+    "n": 10,
+    "status": "fail",
+    "error": "error[unsupported-property] at 28:5: `pointer-events` is not a supported property",
+    "category": "property",
+    "fix": "pointer-events の宣言 1 個を削除"
+   },
+   {
+    "n": 11,
+    "status": "fail",
+    "error": "error[unsupported-property] at 41:5: `text-indent` is not a supported property",
+    "category": "property",
+    "fix": "text-indent の宣言 1 個を削除"
+   },
+   {
+    "n": 12,
+    "status": "fail",
+    "error": "error[unsupported-property] at 44:5: `left` is not a supported property",
+    "category": "property",
+    "fix": "left の宣言 1 個を削除"
+   },
+   {
+    "n": 13,
+    "status": "fail",
+    "error": "error[unsupported-property] at 44:5: `top` is not a supported property",
+    "category": "property",
+    "fix": "top の宣言 1 個を削除"
+   },
+   {
+    "n": 14,
+    "status": "fail",
+    "error": "error[css-parse] at 63:11: descendant combinators (a space between selectors) are not supported; only `tag`, `.class`, `#id`, their combinations and `,` are",
+    "category": "selector",
+    "fix": "子孫結合子 を含むセレクタ 2 本をクラスに書き換え（要素 2 個に class 追加、擬似要素 0 個を実要素化）"
+   },
+   {
+    "n": 15,
+    "status": "fail",
+    "error": "error[unsupported-layout] at 50:18: `margin-left` is not supported on an inline element (`display: inline`); only `<img>` takes box properties while inline",
+    "category": "property",
+    "fix": "hint（inline は箱のプロパティを取れない）に従い、inline 要素の margin-left 系の宣言 1 個を削除"
+   },
+   {
+    "n": 16,
+    "status": "pass"
+   }
+  ],
+  "iteration_count": 16,
+  "final": "pass",
+  "final_if_capped_at_15": "gave_up",
+  "gave_up_reason": "15 回では通らなかった（実際は 16 回目で通った）",
+  "blockers": [
+   {
+    "n": 1,
+    "category": "wrapper",
+    "what": "<html>",
+    "fix": "文書の外枠（DOCTYPE/html/head/meta/title/link/body）を外し、<style> と本体だけ残した"
+   },
+   {
+    "n": 2,
+    "category": "property",
+    "what": "box-sizing",
+    "fix": "box-sizing 宣言を削除し、hint に従って width/height から padding・border を引いた（2 箇所）"
+   },
+   {
+    "n": 3,
+    "category": "property",
+    "what": "min-height",
+    "fix": "hint に従い min-height を固定の height に変えた（1 箇所）"
+   },
+   {
+    "n": 4,
+    "category": "unit",
+    "what": "height: 100vh",
+    "fix": "1 個を近い対応値に置換"
+   },
+   {
+    "n": 5,
+    "category": "property",
+    "what": "background-image",
+    "fix": "background-image の宣言 1 個を削除"
+   },
+   {
+    "n": 6,
+    "category": "property",
+    "what": "position",
+    "fix": "position の宣言 4 個を削除"
+   },
+   {
+    "n": 7,
+    "category": "property",
+    "what": "overflow",
+    "fix": "overflow の宣言 1 個を削除"
+   },
+   {
+    "n": 8,
+    "category": "selector",
+    "what": "擬似クラス・擬似要素",
+    "fix": "擬似クラス・擬似要素 を含むセレクタ 3 本をクラスに書き換え（要素 0 個に class 追加、擬似要素 3 個を実要素化）"
+   },
+   {
+    "n": 9,
+    "category": "property",
+    "what": "inset",
+    "fix": "inset の宣言 1 個を削除"
+   },
+   {
+    "n": 10,
+    "category": "property",
+    "what": "pointer-events",
+    "fix": "pointer-events の宣言 1 個を削除"
+   },
+   {
+    "n": 11,
+    "category": "property",
+    "what": "text-indent",
+    "fix": "text-indent の宣言 1 個を削除"
+   },
+   {
+    "n": 12,
+    "category": "property",
+    "what": "left",
+    "fix": "left の宣言 1 個を削除"
+   },
+   {
+    "n": 13,
+    "category": "property",
+    "what": "top",
+    "fix": "top の宣言 1 個を削除"
+   },
+   {
+    "n": 14,
+    "category": "selector",
+    "what": "子孫結合子",
+    "fix": "子孫結合子 を含むセレクタ 2 本をクラスに書き換え（要素 2 個に class 追加、擬似要素 0 個を実要素化）"
+   },
+   {
+    "n": 15,
+    "category": "property",
+    "what": "margin-left（inline 要素）",
+    "fix": "hint（inline は箱のプロパティを取れない）に従い、inline 要素の margin-left 系の宣言 1 個を削除"
+   }
+  ],
+  "edit_lines": 62,
+  "edit_lines_excluding_reformat": 54,
+  "fidelity": 4,
+  "dropped": [
+   "明朝体",
+   "背景のグラデーション"
+  ],
+  "lost_visuals": [
+   "内側の細罫（inset の枠）",
+   "背景の radial+linear グラデーション（単色に）",
+   "明朝体"
+  ],
+  "warnings": [],
+  "strip_result": {
+   "status": "pass",
+   "fidelity": 2,
+   "notes": "box-sizing を黙って捨てた結果、本文が右端からはみ出して「場所が、」「ことだ。」が切れた。鉤括弧「」も消えた。読めるが引用カードとしては破綻。",
+   "error": null,
+   "html": "case05_strip.html",
+   "png": "strip_05.png"
+  },
+  "notes": "本文・書名・著者・「読書メモ」の見出し・下の細い罫まで残り、Chrome とほぼ同じ絵になった。鉤括弧「」は ::before/::after を実要素（span）にして残せた。日本語組版: 4 行の折り返しで shashoku は 1〜2 行目を Chrome より 1 文字早く折る（「息を」が入らない）。行頭に句読点は来ていない。"
+ },
+ {
+  "case": "case06",
+  "title": "OG 画像（ブログ記事）",
+  "expected_size": "1200×630 固定",
+  "html": "case06_final.html",
+  "png": "case06.png",
+  "cli_args": "--width 1200 --height 630 --image avatar=<EXP>/bin/assets/avatar.png",
+  "first_try": {
+   "status": "fail",
+   "error": "error[unsupported-tag] at 2:1: `<html>` is not supported (supported tags: br, div, h1, h2, h3, h4, h5, h6, img, p, rp, rt, ruby, span, style)"
+  },
+  "iterations": [
+   {
+    "n": 1,
+    "status": "fail",
+    "error": "error[unsupported-tag] at 2:1: `<html>` is not supported (supported tags: br, div, h1, h2, h3, h4, h5, h6, img, p, rp, rt, ruby, span, style)",
+    "category": "wrapper",
+    "fix": "文書の外枠（DOCTYPE/html/head/meta/title/link/body）を外し、<style> と本体だけ残した"
+   },
+   {
+    "n": 2,
+    "status": "fail",
+    "error": "error[unsupported-property] at 2:7: `box-sizing` is not a supported property (content-box only: subtract padding and border from `width` / `height`)",
+    "category": "property",
+    "fix": "box-sizing 宣言を削除し、hint に従って width/height から padding・border を引いた（4 箇所）"
+   },
+   {
+    "n": 3,
+    "status": "fail",
+    "error": "error[unsupported-property] at 13:5: `min-height` is not a supported property (no min/max resolution: use a fixed `height`)",
+    "category": "property",
+    "fix": "hint に従い min-height を固定の height に変えた（1 箇所）"
+   },
+   {
+    "n": 4,
+    "status": "fail",
+    "error": "error[unsupported-value] at 13:13: `height: 100vh` is not supported (`vh` is not a supported unit (supported lengths: <number>px, <number>em, or 0))",
+    "category": "unit",
+    "fix": "1 個を近い対応値に置換"
+   },
+   {
+    "n": 5,
+    "status": "fail",
+    "error": "error[unsupported-property] at 18:5: `position` is not a supported property (no positioning: use `display: flex` with `justify-content` / `align-items`)",
+    "category": "property",
+    "fix": "position の宣言 3 個を削除"
+   },
+   {
+    "n": 6,
+    "status": "fail",
+    "error": "error[unsupported-property] at 18:5: `overflow` is not a supported property",
+    "category": "property",
+    "fix": "overflow の宣言 1 個を削除"
+   },
+   {
+    "n": 7,
+    "status": "fail",
+    "error": "error[unsupported-value] at 18:17: `background: radial-gradient(900px 500px at 88% -10%, rgba(255, 106, 61, 0.30) 0%, rgba(255, 106, 61, 0) 60%),",
+    "category": "value",
+    "fix": "1 個を近い対応値に置換"
+   },
+   {
+    "n": 8,
+    "status": "fail",
+    "error": "error[css-parse] at 26:6: pseudo-classes and pseudo-elements (`:hover`, `::before`) are not supported in selectors",
+    "category": "selector",
+    "fix": "擬似クラス・擬似要素 を含むセレクタ 1 本をクラスに書き換え（要素 0 個に class 追加、擬似要素 1 個を実要素化）"
+   },
+   {
+    "n": 9,
+    "status": "fail",
+    "error": "error[unsupported-property] at 27:5: `inset` is not a supported property",
+    "category": "property",
+    "fix": "inset の宣言 1 個を削除"
+   },
+   {
+    "n": 10,
+    "status": "fail",
+    "error": "error[unsupported-property] at 27:5: `background-image` is not a supported property",
+    "category": "property",
+    "fix": "background-image の宣言 1 個を削除"
+   },
+   {
+    "n": 11,
+    "status": "fail",
+    "error": "error[unsupported-property] at 27:5: `background-size` is not a supported property",
+    "category": "property",
+    "fix": "background-size の宣言 1 個を削除"
+   },
+   {
+    "n": 12,
+    "status": "fail",
+    "error": "error[unsupported-property] at 27:5: `pointer-events` is not a supported property",
+    "category": "property",
+    "fix": "pointer-events の宣言 1 個を削除"
+   },
+   {
+    "n": 13,
+    "status": "fail",
+    "error": "error[css-parse] at 28:7: selector combinators (`>`, `+`, `~`) are not supported; only `tag`, `.class`, `#id`, their combinations and `,` are",
+    "category": "selector",
+    "fix": "結合子 > + ~ を含むセレクタ 1 本をクラスに書き換え（要素 4 個に class 追加、擬似要素 0 個を実要素化）"
+   },
+   {
+    "n": 14,
+    "status": "fail",
+    "error": "error[unsupported-property] at 29:5: `z-index` is not a supported property",
+    "category": "property",
+    "fix": "z-index の宣言 1 個を削除"
+   },
+   {
+    "n": 15,
+    "status": "fail",
+    "error": "error[css-parse] at 44:9: descendant combinators (a space between selectors) are not supported; only `tag`, `.class`, `#id`, their combinations and `,` are",
+    "category": "selector",
+    "fix": "子孫結合子 を含むセレクタ 5 本をクラスに書き換え（要素 5 個に class 追加、擬似要素 0 個を実要素化）"
+   },
+   {
+    "n": 16,
+    "status": "fail",
+    "error": "error[unsupported-value] at 47:20: `border-radius: 50%` is not supported (`%` is only supported for `width` and `flex-basis`)",
+    "category": "value",
+    "fix": "2 個を近い対応値に置換"
+   },
+   {
+    "n": 17,
+    "status": "fail",
+    "error": "error[unsupported-value] at 48:17: `background: linear-gradient(135deg, #ff8a5c, #ff5f3d)` is not supported (supported colors: #rgb, #rgba, #rrggbb, #rrggbbaa, rgb(), rgba(), the 148 CSS color names and transparent)",
+    "category": "value",
+    "fix": "1 個を近い対応値に置換"
+   },
+   {
+    "n": 18,
+    "status": "fail",
+    "error": "error[unsupported-property] at 49:5: `box-shadow` is not a supported property",
+    "category": "property",
+    "fix": "box-shadow の宣言 1 個を削除"
+   },
+   {
+    "n": 19,
+    "status": "fail",
+    "error": "error[unsupported-property] at 70:5: `max-width` is not a supported property (no min/max resolution: use a fixed `width`)",
+    "category": "property",
+    "fix": "hint に従い max-width を固定の width に変えた（1 箇所）"
+   },
+   {
+    "n": 20,
+    "status": "fail",
+    "error": "error[unsupported-property] at 71:5: `text-shadow` is not a supported property",
+    "category": "property",
+    "fix": "text-shadow の宣言 1 個を削除"
+   },
+   {
+    "n": 21,
+    "status": "fail",
+    "error": "error[unsupported-value] at 73:17: `background: linear-gradient(90deg, #ffb27a 0%, #ff6a3d 100%)` is not supported (supported colors: #rgb, #rgba, #rrggbb, #rrggbbaa, rgb(), rgba(), the 148 CSS color names and transparent)",
+    "category": "value",
+    "fix": "1 個を近い対応値に置換"
+   },
+   {
+    "n": 22,
+    "status": "fail",
+    "error": "error[unsupported-property] at 74:5: `-webkit-background-clip` is not a supported property",
+    "category": "property",
+    "fix": "-webkit-background-clip の宣言 1 個を削除（color: transparent のままだと文字が消えるので、背景の色 #ffb27a を文字色にした）"
+   },
+   {
+    "n": 23,
+    "status": "fail",
+    "error": "error[unsupported-property] at 73:5: `background-clip` is not a supported property",
+    "category": "property",
+    "fix": "background-clip の宣言 1 個を削除"
+   },
+   {
+    "n": 24,
+    "status": "fail",
+    "error": "error[unsupported-property] at 80:5: `border-top` is not a supported property",
+    "category": "property",
+    "fix": "border-top の宣言 1 個を削除"
+   },
+   {
+    "n": 25,
+    "status": "fail",
+    "error": "error[unsupported-property] at 90:5: `object-fit` is not a supported property",
+    "category": "property",
+    "fix": "object-fit の宣言 1 個を削除"
+   },
+   {
+    "n": 26,
+    "status": "fail",
+    "error": "error[unsupported-layout] at 45:12: `width` is not supported on an inline element (`display: inline`); only `<img>` takes box properties while inline",
+    "category": "property",
+    "fix": "hint（inline は箱のプロパティを取れない）に従い、inline 要素の width 系の宣言 1 個を削除"
+   },
+   {
+    "n": 27,
+    "status": "fail",
+    "error": "error[unsupported-layout] at 45:13: `height` is not supported on an inline element (`display: inline`); only `<img>` takes box properties while inline",
+    "category": "property",
+    "fix": "hint（inline は箱のプロパティを取れない）に従い、inline 要素の height 系の宣言 1 個を削除"
+   },
+   {
+    "n": 28,
+    "status": "fail",
+    "error": "error[unsupported-layout] at 45:20: `border-radius` is not supported on an inline element (`display: inline`); only `<img>` takes box properties while inline",
+    "category": "property",
+    "fix": "hint（inline は箱のプロパティを取れない）に従い、inline 要素の border-radius 系の宣言 3 個を削除"
+   },
+   {
+    "n": 29,
+    "status": "fail",
+    "error": "error[unsupported-layout] at 57:14: `padding-top` is not supported on an inline element (`display: inline`); only `<img>` takes box properties while inline",
+    "category": "property",
+    "fix": "hint（inline は箱のプロパティを取れない）に従い、inline 要素の padding-top 系の宣言 1 個を削除"
+   },
+   {
+    "n": 30,
+    "status": "fail",
+    "error": "error[image-not-found] at 117:9: no image named `avatar.png` was given",
+    "category": "image",
+    "fix": "--image で渡す名前に合わせて src を `avatar` にした（1 個）"
+   },
+   {
+    "n": 31,
+    "status": "pass"
+   }
+  ],
+  "iteration_count": 31,
+  "final": "pass",
+  "final_if_capped_at_15": "gave_up",
+  "gave_up_reason": "15 回では通らなかった（実際は 31 回目で通った）",
+  "blockers": [
+   {
+    "n": 1,
+    "category": "wrapper",
+    "what": "<html>",
+    "fix": "文書の外枠（DOCTYPE/html/head/meta/title/link/body）を外し、<style> と本体だけ残した"
+   },
+   {
+    "n": 2,
+    "category": "property",
+    "what": "box-sizing",
+    "fix": "box-sizing 宣言を削除し、hint に従って width/height から padding・border を引いた（4 箇所）"
+   },
+   {
+    "n": 3,
+    "category": "property",
+    "what": "min-height",
+    "fix": "hint に従い min-height を固定の height に変えた（1 箇所）"
+   },
+   {
+    "n": 4,
+    "category": "unit",
+    "what": "height: 100vh",
+    "fix": "1 個を近い対応値に置換"
+   },
+   {
+    "n": 5,
+    "category": "property",
+    "what": "position",
+    "fix": "position の宣言 3 個を削除"
+   },
+   {
+    "n": 6,
+    "category": "property",
+    "what": "overflow",
+    "fix": "overflow の宣言 1 個を削除"
+   },
+   {
+    "n": 7,
+    "category": "value",
+    "what": "background: radial-gradient(900px 500px at 88% -10%, rgba(255, 106, 61, 0.30) 0%, rgba(255, 106, 61, 0) 60%),\n      radial-gradient(700px 500px at 5% 105%, rgba(70, 120, 255, 0.28) 0%, rgba(70, 120, 255, 0) 62%),\n      linear-gradient(145deg, #131a30 0%, #0a0e1c 100%)",
+    "fix": "1 個を近い対応値に置換"
+   },
+   {
+    "n": 8,
+    "category": "selector",
+    "what": "擬似クラス・擬似要素",
+    "fix": "擬似クラス・擬似要素 を含むセレクタ 1 本をクラスに書き換え（要素 0 個に class 追加、擬似要素 1 個を実要素化）"
+   },
+   {
+    "n": 9,
+    "category": "property",
+    "what": "inset",
+    "fix": "inset の宣言 1 個を削除"
+   },
+   {
+    "n": 10,
+    "category": "property",
+    "what": "background-image",
+    "fix": "background-image の宣言 1 個を削除"
+   },
+   {
+    "n": 11,
+    "category": "property",
+    "what": "background-size",
+    "fix": "background-size の宣言 1 個を削除"
+   },
+   {
+    "n": 12,
+    "category": "property",
+    "what": "pointer-events",
+    "fix": "pointer-events の宣言 1 個を削除"
+   },
+   {
+    "n": 13,
+    "category": "selector",
+    "what": "結合子 > + ~",
+    "fix": "結合子 > + ~ を含むセレクタ 1 本をクラスに書き換え（要素 4 個に class 追加、擬似要素 0 個を実要素化）"
+   },
+   {
+    "n": 14,
+    "category": "property",
+    "what": "z-index",
+    "fix": "z-index の宣言 1 個を削除"
+   },
+   {
+    "n": 15,
+    "category": "selector",
+    "what": "子孫結合子",
+    "fix": "子孫結合子 を含むセレクタ 5 本をクラスに書き換え（要素 5 個に class 追加、擬似要素 0 個を実要素化）"
+   },
+   {
+    "n": 16,
+    "category": "value",
+    "what": "border-radius: 50%",
+    "fix": "2 個を近い対応値に置換"
+   },
+   {
+    "n": 17,
+    "category": "value",
+    "what": "background: linear-gradient(135deg, #ff8a5c, #ff5f3d)",
+    "fix": "1 個を近い対応値に置換"
+   },
+   {
+    "n": 18,
+    "category": "property",
+    "what": "box-shadow",
+    "fix": "box-shadow の宣言 1 個を削除"
+   },
+   {
+    "n": 19,
+    "category": "property",
+    "what": "max-width",
+    "fix": "hint に従い max-width を固定の width に変えた（1 箇所）"
+   },
+   {
+    "n": 20,
+    "category": "property",
+    "what": "text-shadow",
+    "fix": "text-shadow の宣言 1 個を削除"
+   },
+   {
+    "n": 21,
+    "category": "value",
+    "what": "background: linear-gradient(90deg, #ffb27a 0%, #ff6a3d 100%)",
+    "fix": "1 個を近い対応値に置換"
+   },
+   {
+    "n": 22,
+    "category": "property",
+    "what": "-webkit-background-clip",
+    "fix": "-webkit-background-clip の宣言 1 個を削除（color: transparent のままだと文字が消えるので、背景の色 #ffb27a を文字色にした）"
+   },
+   {
+    "n": 23,
+    "category": "property",
+    "what": "background-clip",
+    "fix": "background-clip の宣言 1 個を削除"
+   },
+   {
+    "n": 24,
+    "category": "property",
+    "what": "border-top",
+    "fix": "border-top の宣言 1 個を削除"
+   },
+   {
+    "n": 25,
+    "category": "property",
+    "what": "object-fit",
+    "fix": "object-fit の宣言 1 個を削除"
+   },
+   {
+    "n": 26,
+    "category": "property",
+    "what": "width（inline 要素）",
+    "fix": "hint（inline は箱のプロパティを取れない）に従い、inline 要素の width 系の宣言 1 個を削除"
+   },
+   {
+    "n": 27,
+    "category": "property",
+    "what": "height（inline 要素）",
+    "fix": "hint（inline は箱のプロパティを取れない）に従い、inline 要素の height 系の宣言 1 個を削除"
+   },
+   {
+    "n": 28,
+    "category": "property",
+    "what": "border-radius（inline 要素）",
+    "fix": "hint（inline は箱のプロパティを取れない）に従い、inline 要素の border-radius 系の宣言 3 個を削除"
+   },
+   {
+    "n": 29,
+    "category": "property",
+    "what": "padding-top（inline 要素）",
+    "fix": "hint（inline は箱のプロパティを取れない）に従い、inline 要素の padding-top 系の宣言 1 個を削除"
+   },
+   {
+    "n": 30,
+    "category": "image",
+    "what": "img src=\"avatar.png\"",
+    "fix": "--image で渡す名前に合わせて src を `avatar` にした（1 個）"
+   }
+  ],
+  "edit_lines": 107,
+  "edit_lines_excluding_reformat": 92,
+  "fidelity": 4,
+  "dropped": [
+   "グラデーション文字",
+   "背景のグリッド"
+  ],
+  "lost_visuals": [
+   "薄いグリッドの重ね (background-image)",
+   "タイトル後半のグラデーション文字（単色オレンジに）",
+   "タグ pill の角丸・枠・padding（inline）",
+   "サイト名の前の小さな丸",
+   "text-shadow",
+   "フッタ上の区切り罫"
+  ],
+  "warnings": [],
+  "strip_result": {
+   "status": "fail",
+   "fidelity": 1,
+   "error": "error[unsupported-layout] at 46:20: `border-radius` is not supported on an inline element (`display: inline`)",
+   "notes": "さらに 3 宣言を落として通した版 (case06_strip2.html) は、ほぼ白紙。濃色のグラデーション背景が消えて白地になり、白文字のタイトル・著者・日付がすべて見えない。OG 画像として最悪の失敗（エラーも警告も出ずに真っ白が出る）。",
+   "html": "case06_strip.html",
+   "png": null,
+   "repaired_html": "case06_strip2.html",
+   "repaired_png": "strip2_case06.png"
+  },
+  "notes": "濃色背景・白文字・アバター画像・日付・タグまで揃い、OG 画像として使える。ただし background-clip:text を素直に捨てると color:transparent が残ってタイトル後半が完全に消えた（1 回目はそうなった）。背景側の色を文字色に移す 1 手を足して直した。<img src=\"avatar.png\"> は --image avatar=… と名前が合わず image-not-found になるのでsrc を拡張子なしに書き換えた。日本語組版: 3 行の折り返しは Chrome と同じ位置。"
+ },
+ {
+  "case": "case07",
+  "title": "イベント告知（勉強会）",
+  "expected_size": "1080×1080 固定",
+  "html": "case07_final.html",
+  "png": "case07.png",
+  "cli_args": "--width 1080 --height 1080",
+  "first_try": {
+   "status": "fail",
+   "error": "error[unsupported-tag] at 2:1: `<html>` is not supported (supported tags: br, div, h1, h2, h3, h4, h5, h6, img, p, rp, rt, ruby, span, style)"
+  },
+  "iterations": [
+   {
+    "n": 1,
+    "status": "fail",
+    "error": "error[unsupported-tag] at 2:1: `<html>` is not supported (supported tags: br, div, h1, h2, h3, h4, h5, h6, img, p, rp, rt, ruby, span, style)",
+    "category": "wrapper",
+    "fix": "文書の外枠（DOCTYPE/html/head/meta/title/link/body）を外し、<style> と本体だけ残した"
+   },
+   {
+    "n": 2,
+    "status": "fail",
+    "error": "error[unsupported-property] at 2:7: `box-sizing` is not a supported property (content-box only: subtract padding and border from `width` / `height`)",
+    "category": "property",
+    "fix": "box-sizing 宣言を削除し、hint に従って width/height から padding・border を引いた（2 箇所）"
+   },
+   {
+    "n": 3,
+    "status": "fail",
+    "error": "error[unsupported-property] at 13:5: `min-height` is not a supported property (no min/max resolution: use a fixed `height`)",
+    "category": "property",
+    "fix": "hint に従い min-height を固定の height に変えた（1 箇所）"
+   },
+   {
+    "n": 4,
+    "status": "fail",
+    "error": "error[unsupported-value] at 13:13: `height: 100vh` is not supported (`vh` is not a supported unit (supported lengths: <number>px, <number>em, or 0))",
+    "category": "unit",
+    "fix": "1 個を近い対応値に置換"
+   },
+   {
+    "n": 5,
+    "status": "fail",
+    "error": "error[unsupported-property] at 18:5: `position` is not a supported property (no positioning: use `display: flex` with `justify-content` / `align-items`)",
+    "category": "property",
+    "fix": "position の宣言 3 個を削除"
+   },
+   {
+    "n": 6,
+    "status": "fail",
+    "error": "error[unsupported-property] at 18:5: `overflow` is not a supported property",
+    "category": "property",
+    "fix": "overflow の宣言 1 個を削除"
+   },
+   {
+    "n": 7,
+    "status": "fail",
+    "error": "error[unsupported-value] at 18:17: `background: linear-gradient(170deg, #223046 0%, #16202e 55%, #101822 100%)` is not supported (supported colors: #rgb, #rgba, #rrggbb, #rrggbbaa, rgb(), rgba(), the 148 CSS color names and transparent)",
+    "category": "value",
+    "fix": "1 個を近い対応値に置換"
+   },
+   {
+    "n": 8,
+    "status": "fail",
+    "error": "error[css-parse] at 25:10: pseudo-classes and pseudo-elements (`:hover`, `::before`) are not supported in selectors",
+    "category": "selector",
+    "fix": "擬似クラス・擬似要素 を含むセレクタ 3 本をクラスに書き換え（要素 0 個に class 追加、擬似要素 7 個を実要素化）"
+   },
+   {
+    "n": 9,
+    "status": "fail",
+    "error": "error[unsupported-property] at 26:5: `right` is not a supported property",
+    "category": "property",
+    "fix": "right の宣言 1 個を削除"
+   },
+   {
+    "n": 10,
+    "status": "fail",
+    "error": "error[unsupported-property] at 26:5: `top` is not a supported property",
+    "category": "property",
+    "fix": "top の宣言 1 個を削除"
+   },
+   {
+    "n": 11,
+    "status": "fail",
+    "error": "error[unsupported-value] at 28:20: `border-radius: 50%` is not supported (`%` is only supported for `width` and `flex-basis`)",
+    "category": "value",
+    "fix": "1 個を近い対応値に置換"
+   },
+   {
+    "n": 12,
+    "status": "fail",
+    "error": "error[unsupported-value] at 29:17: `background: radial-gradient(circle, rgba(226, 171, 92, 0.30) 0%, rgba(226, 171, 92, 0) 68%)` is not supported (supported colors: #rgb, #rgba, #rrggbb, #rrggbbaa, rgb(), rgba(), the 148 CSS color names and transparent)",
+    "category": "value",
+    "fix": "1 個を近い対応値に置換"
+   },
+   {
+    "n": 13,
+    "status": "fail",
+    "error": "error[css-parse] at 31:11: selector combinators (`>`, `+`, `~`) are not supported; only `tag`, `.class`, `#id`, their combinations and `,` are",
+    "category": "selector",
+    "fix": "結合子 > + ~ を含むセレクタ 1 本をクラスに書き換え（要素 8 個に class 追加、擬似要素 0 個を実要素化）"
+   },
+   {
+    "n": 14,
+    "status": "fail",
+    "error": "error[unsupported-property] at 32:5: `z-index` is not a supported property",
+    "category": "property",
+    "fix": "z-index の宣言 1 個を削除"
+   },
+   {
+    "n": 15,
+    "status": "fail",
+    "error": "error[unsupported-value] at 45:14: `display: inline-flex` is not supported (supported: block, flex, inline, none)",
+    "category": "value",
+    "fix": "1 個を近い対応値に置換"
+   },
+   {
+    "n": 16,
+    "status": "fail",
+    "error": "error[unsupported-value] at 48:17: `background: linear-gradient(135deg, #e8b567, #d4913c)` is not supported (supported colors: #rgb, #rgba, #rrggbb, #rrggbbaa, rgb(), rgba(), the 148 CSS color names and transparent)",
+    "category": "value",
+    "fix": "1 個を近い対応値に置換"
+   },
+   {
+    "n": 17,
+    "status": "fail",
+    "error": "error[unsupported-property] at 55:5: `box-shadow` is not a supported property",
+    "category": "property",
+    "fix": "box-shadow の宣言 1 個を削除"
+   },
+   {
+    "n": 18,
+    "status": "fail",
+    "error": "error[css-parse] at 64:6: descendant combinators (a space between selectors) are not supported; only `tag`, `.class`, `#id`, their combinations and `,` are",
+    "category": "selector",
+    "fix": "子孫結合子 を含むセレクタ 9 本をクラスに書き換え（要素 19 個に class 追加、擬似要素 0 個を実要素化）"
+   },
+   {
+    "n": 19,
+    "status": "fail",
+    "error": "error[unsupported-value] at 76:17: `background: linear-gradient(90deg, #e2ab5c 0%, rgba(226, 171, 92, 0.05) 70%)` is not supported (supported colors: #rgb, #rgba, #rrggbb, #rrggbbaa, rgb(), rgba(), the 148 CSS color names and transparent)",
+    "category": "value",
+    "fix": "1 個を近い対応値に置換"
+   },
+   {
+    "n": 20,
+    "status": "fail",
+    "error": "error[unsupported-property] at 113:5: `border-left` is not a supported property",
+    "category": "property",
+    "fix": "border-left の宣言 1 個を削除"
+   },
+   {
+    "n": 21,
+    "status": "fail",
+    "error": "error[unsupported-property] at 145:5: `border-top` is not a supported property",
+    "category": "property",
+    "fix": "border-top の宣言 1 個を削除"
+   },
+   {
+    "n": 22,
+    "status": "pass"
+   }
+  ],
+  "iteration_count": 22,
+  "final": "pass",
+  "final_if_capped_at_15": "gave_up",
+  "gave_up_reason": "15 回では通らなかった（実際は 22 回目で通った）",
+  "blockers": [
+   {
+    "n": 1,
+    "category": "wrapper",
+    "what": "<html>",
+    "fix": "文書の外枠（DOCTYPE/html/head/meta/title/link/body）を外し、<style> と本体だけ残した"
+   },
+   {
+    "n": 2,
+    "category": "property",
+    "what": "box-sizing",
+    "fix": "box-sizing 宣言を削除し、hint に従って width/height から padding・border を引いた（2 箇所）"
+   },
+   {
+    "n": 3,
+    "category": "property",
+    "what": "min-height",
+    "fix": "hint に従い min-height を固定の height に変えた（1 箇所）"
+   },
+   {
+    "n": 4,
+    "category": "unit",
+    "what": "height: 100vh",
+    "fix": "1 個を近い対応値に置換"
+   },
+   {
+    "n": 5,
+    "category": "property",
+    "what": "position",
+    "fix": "position の宣言 3 個を削除"
+   },
+   {
+    "n": 6,
+    "category": "property",
+    "what": "overflow",
+    "fix": "overflow の宣言 1 個を削除"
+   },
+   {
+    "n": 7,
+    "category": "value",
+    "what": "background: linear-gradient(170deg, #223046 0%, #16202e 55%, #101822 100%)",
+    "fix": "1 個を近い対応値に置換"
+   },
+   {
+    "n": 8,
+    "category": "selector",
+    "what": "擬似クラス・擬似要素",
+    "fix": "擬似クラス・擬似要素 を含むセレクタ 3 本をクラスに書き換え（要素 0 個に class 追加、擬似要素 7 個を実要素化）"
+   },
+   {
+    "n": 9,
+    "category": "property",
+    "what": "right",
+    "fix": "right の宣言 1 個を削除"
+   },
+   {
+    "n": 10,
+    "category": "property",
+    "what": "top",
+    "fix": "top の宣言 1 個を削除"
+   },
+   {
+    "n": 11,
+    "category": "value",
+    "what": "border-radius: 50%",
+    "fix": "1 個を近い対応値に置換"
+   },
+   {
+    "n": 12,
+    "category": "value",
+    "what": "background: radial-gradient(circle, rgba(226, 171, 92, 0.30) 0%, rgba(226, 171, 92, 0) 68%)",
+    "fix": "1 個を近い対応値に置換"
+   },
+   {
+    "n": 13,
+    "category": "selector",
+    "what": "結合子 > + ~",
+    "fix": "結合子 > + ~ を含むセレクタ 1 本をクラスに書き換え（要素 8 個に class 追加、擬似要素 0 個を実要素化）"
+   },
+   {
+    "n": 14,
+    "category": "property",
+    "what": "z-index",
+    "fix": "z-index の宣言 1 個を削除"
+   },
+   {
+    "n": 15,
+    "category": "value",
+    "what": "display: inline-flex",
+    "fix": "1 個を近い対応値に置換"
+   },
+   {
+    "n": 16,
+    "category": "value",
+    "what": "background: linear-gradient(135deg, #e8b567, #d4913c)",
+    "fix": "1 個を近い対応値に置換"
+   },
+   {
+    "n": 17,
+    "category": "property",
+    "what": "box-shadow",
+    "fix": "box-shadow の宣言 1 個を削除"
+   },
+   {
+    "n": 18,
+    "category": "selector",
+    "what": "子孫結合子",
+    "fix": "子孫結合子 を含むセレクタ 9 本をクラスに書き換え（要素 19 個に class 追加、擬似要素 0 個を実要素化）"
+   },
+   {
+    "n": 19,
+    "category": "value",
+    "what": "background: linear-gradient(90deg, #e2ab5c 0%, rgba(226, 171, 92, 0.05) 70%)",
+    "fix": "1 個を近い対応値に置換"
+   },
+   {
+    "n": 20,
+    "category": "property",
+    "what": "border-left",
+    "fix": "border-left の宣言 1 個を削除"
+   },
+   {
+    "n": 21,
+    "category": "property",
+    "what": "border-top",
+    "fix": "border-top の宣言 1 個を削除"
+   }
+  ],
+  "edit_lines": 130,
+  "edit_lines_excluding_reformat": 113,
+  "fidelity": 3,
+  "dropped": [
+   "絵文字",
+   "明朝体"
+  ],
+  "lost_visuals": [
+   "右上の光 (radial-gradient の円) が上端の茶色い角丸の箱になった（明確な見た目の劣化）",
+   "登壇者カードの左の色帯 (border-left)",
+   "タイトル下の金色の区切り罫",
+   "「参加無料」の絵文字（□ に）",
+   "pill のグラデーション（単色に）",
+   "明朝体の見出し"
+  ],
+  "warnings": [
+   "warning[missing-glyph]: no font has a glyph for U+1F39F at 168:25"
+  ],
+  "strip_result": {
+   "status": "pass",
+   "fidelity": 1,
+   "notes": "exit 0 で PNG は出るが、濃色背景が消えて白地になり白文字が読めない。「参加無料」は右端からはみ出す。合格扱いなのに使えない、という最悪の形。",
+   "error": null,
+   "html": "case07_strip.html",
+   "png": "strip_07.png"
+  },
+  "notes": "イベント名・日時・場所・登壇者 3 名とふりがな（ruby/rt）・参加無料・申込先まですべて残った。ルビは 3 名とも親文字の上に正しく載り、1:2:…:2:1 の配り方も自然。最大の問題は ::before の光を実要素にしたことで、絶対配置が無いため流れの先頭に大きな茶色の角丸矩形として出てしまうこと（再現: case07_final.html の .g1）。"
+ },
+ {
+  "case": "case08",
+  "title": "通知画像（週次レポート）",
+  "expected_size": "幅 800（余白込み 840）/ 高さ内容依存",
+  "html": "case08_final.html",
+  "png": "case08.png",
+  "cli_args": "--width 840",
+  "first_try": {
+   "status": "fail",
+   "error": "error[unsupported-tag] at 2:1: `<html>` is not supported (supported tags: br, div, h1, h2, h3, h4, h5, h6, img, p, rp, rt, ruby, span, style)"
+  },
+  "iterations": [
+   {
+    "n": 1,
+    "status": "fail",
+    "error": "error[unsupported-tag] at 2:1: `<html>` is not supported (supported tags: br, div, h1, h2, h3, h4, h5, h6, img, p, rp, rt, ruby, span, style)",
+    "category": "wrapper",
+    "fix": "文書の外枠（DOCTYPE/html/head/meta/title/link/body）を外し、<style> と本体だけ残した"
+   },
+   {
+    "n": 2,
+    "status": "fail",
+    "error": "error[unsupported-property] at 2:7: `box-sizing` is not a supported property (content-box only: subtract padding and border from `width` / `height`)",
+    "category": "property",
+    "fix": "box-sizing 宣言を削除し、hint に従って width/height から padding・border を引いた（0 箇所）"
+   },
+   {
+    "n": 3,
+    "status": "fail",
+    "error": "error[unsupported-property] at 19:5: `box-shadow` is not a supported property",
+    "category": "property",
+    "fix": "box-shadow の宣言 1 個を削除"
+   },
+   {
+    "n": 4,
+    "status": "fail",
+    "error": "error[unsupported-property] at 19:5: `overflow` is not a supported property",
+    "category": "property",
+    "fix": "overflow の宣言 1 個を削除"
+   },
+   {
+    "n": 5,
+    "status": "fail",
+    "error": "error[unsupported-value] at 21:17: `background: linear-gradient(120deg, #35508a 0%, #2a3f70 100%)` is not supported (supported colors: #rgb, #rgba, #rrggbb, #rrggbbaa, rgb(), rgba(), the 148 CSS color names and transparent)",
+    "category": "value",
+    "fix": "1 個を近い対応値に置換"
+   },
+   {
+    "n": 6,
+    "status": "fail",
+    "error": "error[css-parse] at 25:9: descendant combinators (a space between selectors) are not supported; only `tag`, `.class`, `#id`, their combinations and `,` are",
+    "category": "selector",
+    "fix": "子孫結合子 を含むセレクタ 9 本をクラスに書き換え（要素 19 個に class 追加、擬似要素 0 個を実要素化）"
+   },
+   {
+    "n": 7,
+    "status": "fail",
+    "error": "error[unsupported-value] at 38:14: `display: grid` is not supported (supported: block, flex, inline, none)",
+    "category": "value",
+    "fix": "1 個を近い対応値に置換"
+   },
+   {
+    "n": 8,
+    "status": "fail",
+    "error": "error[unsupported-property] at 39:5: `grid-template-columns` is not a supported property",
+    "category": "property",
+    "fix": "grid-template-columns の宣言 1 個を削除"
+   },
+   {
+    "n": 9,
+    "status": "fail",
+    "error": "error[unsupported-value] at 68:14: `display: inline-block` is not supported (supported: block, flex, inline, none)",
+    "category": "value",
+    "fix": "1 個を近い対応値に置換"
+   },
+   {
+    "n": 10,
+    "status": "fail",
+    "error": "error[unsupported-property] at 91:5: `opacity` is not a supported property",
+    "category": "property",
+    "fix": "opacity の宣言 1 個を削除"
+   },
+   {
+    "n": 11,
+    "status": "fail",
+    "error": "error[unsupported-property] at 100:5: `border-top` is not a supported property",
+    "category": "property",
+    "fix": "border-top の宣言 2 個を削除"
+   },
+   {
+    "n": 12,
+    "status": "fail",
+    "error": "error[unsupported-layout] at 64:18: `margin-left` is not supported on an inline element (`display: inline`); only `<img>` takes box properties while inline",
+    "category": "property",
+    "fix": "hint（inline は箱のプロパティを取れない）に従い、inline 要素の margin-left 系の宣言 1 個を削除"
+   },
+   {
+    "n": 13,
+    "status": "fail",
+    "error": "error[unsupported-layout] at 90:19: `margin-right` is not supported on an inline element (`display: inline`); only `<img>` takes box properties while inline",
+    "category": "property",
+    "fix": "hint（inline は箱のプロパティを取れない）に従い、inline 要素の margin-right 系の宣言 1 個を削除"
+   },
+   {
+    "n": 14,
+    "status": "pass"
+   }
+  ],
+  "iteration_count": 14,
+  "final": "pass",
+  "final_if_capped_at_15": "pass",
+  "gave_up_reason": null,
+  "blockers": [
+   {
+    "n": 1,
+    "category": "wrapper",
+    "what": "<html>",
+    "fix": "文書の外枠（DOCTYPE/html/head/meta/title/link/body）を外し、<style> と本体だけ残した"
+   },
+   {
+    "n": 2,
+    "category": "property",
+    "what": "box-sizing",
+    "fix": "box-sizing 宣言を削除し、hint に従って width/height から padding・border を引いた（0 箇所）"
+   },
+   {
+    "n": 3,
+    "category": "property",
+    "what": "box-shadow",
+    "fix": "box-shadow の宣言 1 個を削除"
+   },
+   {
+    "n": 4,
+    "category": "property",
+    "what": "overflow",
+    "fix": "overflow の宣言 1 個を削除"
+   },
+   {
+    "n": 5,
+    "category": "value",
+    "what": "background: linear-gradient(120deg, #35508a 0%, #2a3f70 100%)",
+    "fix": "1 個を近い対応値に置換"
+   },
+   {
+    "n": 6,
+    "category": "selector",
+    "what": "子孫結合子",
+    "fix": "子孫結合子 を含むセレクタ 9 本をクラスに書き換え（要素 19 個に class 追加、擬似要素 0 個を実要素化）"
+   },
+   {
+    "n": 7,
+    "category": "value",
+    "what": "display: grid",
+    "fix": "1 個を近い対応値に置換"
+   },
+   {
+    "n": 8,
+    "category": "property",
+    "what": "grid-template-columns",
+    "fix": "grid-template-columns の宣言 1 個を削除"
+   },
+   {
+    "n": 9,
+    "category": "value",
+    "what": "display: inline-block",
+    "fix": "1 個を近い対応値に置換"
+   },
+   {
+    "n": 10,
+    "category": "property",
+    "what": "opacity",
+    "fix": "opacity の宣言 1 個を削除"
+   },
+   {
+    "n": 11,
+    "category": "property",
+    "what": "border-top",
+    "fix": "border-top の宣言 2 個を削除"
+   },
+   {
+    "n": 12,
+    "category": "property",
+    "what": "margin-left（inline 要素）",
+    "fix": "hint（inline は箱のプロパティを取れない）に従い、inline 要素の margin-left 系の宣言 1 個を削除"
+   },
+   {
+    "n": 13,
+    "category": "property",
+    "what": "margin-right（inline 要素）",
+    "fix": "hint（inline は箱のプロパティを取れない）に従い、inline 要素の margin-right 系の宣言 1 個を削除"
+   }
+  ],
+  "edit_lines": 98,
+  "edit_lines_excluding_reformat": 74,
+  "fidelity": 3,
+  "dropped": [
+   "指標 3 つを等幅に並べること",
+   "絵文字"
+  ],
+  "lost_visuals": [
+   "grid の 3 等分（flex に置換したので幅が内容なり。右に灰色の空きが残る）",
+   "カードの影・角丸・ページ背景",
+   "絵文字 📣（□ に）",
+   "前週比 pill の前後の余白（inline の margin）"
+  ],
+  "warnings": [
+   "warning[missing-glyph]: no font has a glyph for U+1F4E3 at 143:28"
+  ],
+  "strip_result": {
+   "status": "pass",
+   "fidelity": 2,
+   "notes": "見出し「今週のチーム活動（9/14〜9/20）」が白背景＋白文字で完全に消えた。3 指標は縦積み。前週比の色だけは残る。",
+   "error": null,
+   "html": "case08_strip.html",
+   "png": "strip_08.png"
+  },
+  "notes": "見出し・3 指標・前週比（緑/赤/グレー）・一言・脚注はすべて残った。display:grid は flex に置き換えるのが一番近い（block にすると縦積みになって別物になる）。ただし 1fr が無いので列幅が揃わず、右 45% が空く。"
+ },
+ {
+  "case": "case09",
+  "title": "要約カード（ニュース）",
+  "expected_size": "幅 800（余白込み 840）/ 高さ内容依存",
+  "html": "case09_final.html",
+  "png": "case09.png",
+  "cli_args": "--width 840",
+  "first_try": {
+   "status": "fail",
+   "error": "error[unsupported-tag] at 2:1: `<html>` is not supported (supported tags: br, div, h1, h2, h3, h4, h5, h6, img, p, rp, rt, ruby, span, style)"
+  },
+  "iterations": [
+   {
+    "n": 1,
+    "status": "fail",
+    "error": "error[unsupported-tag] at 2:1: `<html>` is not supported (supported tags: br, div, h1, h2, h3, h4, h5, h6, img, p, rp, rt, ruby, span, style)",
+    "category": "wrapper",
+    "fix": "文書の外枠（DOCTYPE/html/head/meta/title/link/body）を外し、<style> と本体だけ残した"
+   },
+   {
+    "n": 2,
+    "status": "fail",
+    "error": "error[unsupported-tag] at 106:5: `<ul>` is not supported (supported tags: br, div, h1, h2, h3, h4, h5, h6, img, p, rp, rt, ruby, span, style)",
+    "category": "tag",
+    "fix": "<ul> 1 個を <div> に置換（CSS の型セレクタは .ul に）"
+   },
+   {
+    "n": 3,
+    "status": "fail",
+    "error": "error[unsupported-tag] at 117:7: `<li>` is not supported (supported tags: br, div, h1, h2, h3, h4, h5, h6, img, p, rp, rt, ruby, span, style)",
+    "category": "tag",
+    "fix": "<li> 3 個を <div> に置換（CSS の型セレクタは .li に）"
+   },
+   {
+    "n": 4,
+    "status": "fail",
+    "error": "error[unsupported-property] at 3:5: `box-sizing` is not a supported property (content-box only: subtract padding and border from `width` / `height`)",
+    "category": "property",
+    "fix": "box-sizing 宣言を削除し、hint に従って width/height から padding・border を引いた（1 箇所）"
+   },
+   {
+    "n": 5,
+    "status": "fail",
+    "error": "error[unsupported-property] at 58:5: `border-bottom` is not a supported property",
+    "category": "property",
+    "fix": "border-bottom の宣言 1 個を削除"
+   },
+   {
+    "n": 6,
+    "status": "fail",
+    "error": "error[unsupported-property] at 67:5: `list-style` is not a supported property",
+    "category": "property",
+    "fix": "list-style の宣言 1 個を削除"
+   },
+   {
+    "n": 7,
+    "status": "fail",
+    "error": "error[unsupported-property] at 71:5: `position` is not a supported property (no positioning: use `display: flex` with `justify-content` / `align-items`)",
+    "category": "property",
+    "fix": "position の宣言 2 個を削除"
+   },
+   {
+    "n": 8,
+    "status": "fail",
+    "error": "error[css-parse] at 76:7: selector combinators (`>`, `+`, `~`) are not supported; only `tag`, `.class`, `#id`, their combinations and `,` are",
+    "category": "selector",
+    "fix": "結合子 > + ~ を含むセレクタ 1 本をクラスに書き換え（要素 2 個に class 追加、擬似要素 0 個を実要素化）"
+   },
+   {
+    "n": 9,
+    "status": "fail",
+    "error": "error[css-parse] at 79:6: pseudo-classes and pseudo-elements (`:hover`, `::before`) are not supported in selectors",
+    "category": "selector",
+    "fix": "擬似クラス・擬似要素 を含むセレクタ 1 本をクラスに書き換え（要素 0 個に class 追加、擬似要素 3 個を実要素化）"
+   },
+   {
+    "n": 10,
+    "status": "fail",
+    "error": "error[unsupported-property] at 80:5: `left` is not a supported property",
+    "category": "property",
+    "fix": "left の宣言 1 個を削除"
+   },
+   {
+    "n": 11,
+    "status": "fail",
+    "error": "error[unsupported-property] at 80:5: `top` is not a supported property",
+    "category": "property",
+    "fix": "top の宣言 1 個を削除"
+   },
+   {
+    "n": 12,
+    "status": "fail",
+    "error": "error[unsupported-property] at 84:5: `transform` is not a supported property",
+    "category": "property",
+    "fix": "transform の宣言 1 個を削除"
+   },
+   {
+    "n": 13,
+    "status": "fail",
+    "error": "error[unsupported-property] at 90:5: `border-top` is not a supported property",
+    "category": "property",
+    "fix": "border-top の宣言 1 個を削除"
+   },
+   {
+    "n": 14,
+    "status": "fail",
+    "error": "error[unsupported-layout] at 34:14: `padding-top` is not supported on an inline element (`display: inline`); only `<img>` takes box properties while inline",
+    "category": "property",
+    "fix": "hint（inline は箱のプロパティを取れない）に従い、inline 要素の padding-top 系の宣言 2 個を削除"
+   },
+   {
+    "n": 15,
+    "status": "fail",
+    "error": "error[unsupported-layout] at 34:20: `border-radius` is not supported on an inline element (`display: inline`); only `<img>` takes box properties while inline",
+    "category": "property",
+    "fix": "hint（inline は箱のプロパティを取れない）に従い、inline 要素の border-radius 系の宣言 3 個を削除"
+   },
+   {
+    "n": 16,
+    "status": "pass"
+   }
+  ],
+  "iteration_count": 16,
+  "final": "pass",
+  "final_if_capped_at_15": "gave_up",
+  "gave_up_reason": "15 回では通らなかった（実際は 16 回目で通った）",
+  "blockers": [
+   {
+    "n": 1,
+    "category": "wrapper",
+    "what": "<html>",
+    "fix": "文書の外枠（DOCTYPE/html/head/meta/title/link/body）を外し、<style> と本体だけ残した"
+   },
+   {
+    "n": 2,
+    "category": "tag",
+    "what": "<ul>",
+    "fix": "<ul> 1 個を <div> に置換（CSS の型セレクタは .ul に）"
+   },
+   {
+    "n": 3,
+    "category": "tag",
+    "what": "<li>",
+    "fix": "<li> 3 個を <div> に置換（CSS の型セレクタは .li に）"
+   },
+   {
+    "n": 4,
+    "category": "property",
+    "what": "box-sizing",
+    "fix": "box-sizing 宣言を削除し、hint に従って width/height から padding・border を引いた（1 箇所）"
+   },
+   {
+    "n": 5,
+    "category": "property",
+    "what": "border-bottom",
+    "fix": "border-bottom の宣言 1 個を削除"
+   },
+   {
+    "n": 6,
+    "category": "property",
+    "what": "list-style",
+    "fix": "list-style の宣言 1 個を削除"
+   },
+   {
+    "n": 7,
+    "category": "property",
+    "what": "position",
+    "fix": "position の宣言 2 個を削除"
+   },
+   {
+    "n": 8,
+    "category": "selector",
+    "what": "結合子 > + ~",
+    "fix": "結合子 > + ~ を含むセレクタ 1 本をクラスに書き換え（要素 2 個に class 追加、擬似要素 0 個を実要素化）"
+   },
+   {
+    "n": 9,
+    "category": "selector",
+    "what": "擬似クラス・擬似要素",
+    "fix": "擬似クラス・擬似要素 を含むセレクタ 1 本をクラスに書き換え（要素 0 個に class 追加、擬似要素 3 個を実要素化）"
+   },
+   {
+    "n": 10,
+    "category": "property",
+    "what": "left",
+    "fix": "left の宣言 1 個を削除"
+   },
+   {
+    "n": 11,
+    "category": "property",
+    "what": "top",
+    "fix": "top の宣言 1 個を削除"
+   },
+   {
+    "n": 12,
+    "category": "property",
+    "what": "transform",
+    "fix": "transform の宣言 1 個を削除"
+   },
+   {
+    "n": 13,
+    "category": "property",
+    "what": "border-top",
+    "fix": "border-top の宣言 1 個を削除"
+   },
+   {
+    "n": 14,
+    "category": "property",
+    "what": "padding-top（inline 要素）",
+    "fix": "hint（inline は箱のプロパティを取れない）に従い、inline 要素の padding-top 系の宣言 2 個を削除"
+   },
+   {
+    "n": 15,
+    "category": "property",
+    "what": "border-radius（inline 要素）",
+    "fix": "hint（inline は箱のプロパティを取れない）に従い、inline 要素の border-radius 系の宣言 3 個を削除"
+   }
+  ],
+  "edit_lines": 64,
+  "edit_lines_excluding_reformat": 50,
+  "fidelity": 3,
+  "dropped": [
+   "箇条書きの点の形（菱形）"
+  ],
+  "lost_visuals": [
+   "箇条書きの点（45 度回転した四角）が各行の上に別行の青い四角として出る（明確な劣化）",
+   "見出し下の 2px アクセント罫",
+   "NEWS SUMMARY バッジの角丸・padding",
+   "カードの影・角丸"
+  ],
+  "warnings": [],
+  "strip_result": {
+   "status": "fail",
+   "fidelity": 3,
+   "error": "error[unsupported-layout] at 31:14: `padding-top` is not supported on an inline element (`display: inline`)",
+   "notes": "さらに 2 宣言を落として通した版 (case09_strip2.html) は意外と使える。見出し・要点 3 つ・出典・タグが揃い、失ったのは箇条書きの点とアクセント罫と角丸だけ。",
+   "html": "case09_strip.html",
+   "png": null,
+   "repaired_html": "case09_strip2.html",
+   "repaired_png": "strip2_case09.png"
+  },
+  "notes": "見出し・要点 3 つ・出典・タグはすべて残った。1px の外枠は保てた。日本語組版: 見出しが 2 行に折れる位置（「2027 年度の/法改正を視野に」）が Chrome と同じ。"
+ },
+ {
+  "case": "case10",
+  "title": "短歌（縦書き、SNS）",
+  "expected_size": "800×1200 固定",
+  "html": "case10_final.html",
+  "png": "case10.png",
+  "cli_args": "--width 800 --height 1200",
+  "first_try": {
+   "status": "fail",
+   "error": "error[unsupported-tag] at 2:1: `<html>` is not supported (supported tags: br, div, h1, h2, h3, h4, h5, h6, img, p, rp, rt, ruby, span, style)"
+  },
+  "iterations": [
+   {
+    "n": 1,
+    "status": "fail",
+    "error": "error[unsupported-tag] at 2:1: `<html>` is not supported (supported tags: br, div, h1, h2, h3, h4, h5, h6, img, p, rp, rt, ruby, span, style)",
+    "category": "wrapper",
+    "fix": "文書の外枠（DOCTYPE/html/head/meta/title/link/body）を外し、<style> と本体だけ残した"
+   },
+   {
+    "n": 2,
+    "status": "fail",
+    "error": "error[unsupported-property] at 2:7: `box-sizing` is not a supported property (content-box only: subtract padding and border from `width` / `height`)",
+    "category": "property",
+    "fix": "box-sizing 宣言を削除し、hint に従って width/height から padding・border を引いた（2 箇所）"
+   },
+   {
+    "n": 3,
+    "status": "fail",
+    "error": "error[unsupported-property] at 13:5: `min-height` is not a supported property (no min/max resolution: use a fixed `height`)",
+    "category": "property",
+    "fix": "hint に従い min-height を固定の height に変えた（1 箇所）"
+   },
+   {
+    "n": 4,
+    "status": "fail",
+    "error": "error[unsupported-value] at 13:13: `height: 100vh` is not supported (`vh` is not a supported unit (supported lengths: <number>px, <number>em, or 0))",
+    "category": "unit",
+    "fix": "1 個を近い対応値に置換"
+   },
+   {
+    "n": 5,
+    "status": "fail",
+    "error": "error[unsupported-property] at 18:5: `position` is not a supported property (no positioning: use `display: flex` with `justify-content` / `align-items`)",
+    "category": "property",
+    "fix": "position の宣言 4 個を削除"
+   },
+   {
+    "n": 6,
+    "status": "fail",
+    "error": "error[unsupported-property] at 18:5: `overflow` is not a supported property",
+    "category": "property",
+    "fix": "overflow の宣言 1 個を削除"
+   },
+   {
+    "n": 7,
+    "status": "fail",
+    "error": "error[unsupported-property] at 19:5: `background-image` is not a supported property",
+    "category": "property",
+    "fix": "background-image の宣言 1 個を削除"
+   },
+   {
+    "n": 8,
+    "status": "fail",
+    "error": "error[css-parse] at 25:9: pseudo-classes and pseudo-elements (`:hover`, `::before`) are not supported in selectors",
+    "category": "selector",
+    "fix": "擬似クラス・擬似要素 を含むセレクタ 2 本をクラスに書き換え（要素 0 個に class 追加、擬似要素 2 個を実要素化）"
+   },
+   {
+    "n": 9,
+    "status": "fail",
+    "error": "error[unsupported-property] at 26:5: `inset` is not a supported property",
+    "category": "property",
+    "fix": "inset の宣言 1 個を削除"
+   },
+   {
+    "n": 10,
+    "status": "fail",
+    "error": "error[unsupported-property] at 27:5: `pointer-events` is not a supported property",
+    "category": "property",
+    "fix": "pointer-events の宣言 1 個を削除"
+   },
+   {
+    "n": 11,
+    "status": "fail",
+    "error": "error[unsupported-property] at 30:5: `-webkit-writing-mode` is not a supported property",
+    "category": "property",
+    "fix": "-webkit-writing-mode の宣言 2 個を削除"
+   },
+   {
+    "n": 12,
+    "status": "fail",
+    "error": "error[unsupported-property] at 30:5: `text-orientation` is not a supported property",
+    "category": "property",
+    "fix": "text-orientation の宣言 1 個を削除"
+   },
+   {
+    "n": 13,
+    "status": "fail",
+    "error": "error[unsupported-property] at 39:5: `left` is not a supported property",
+    "category": "property",
+    "fix": "left の宣言 2 個を削除"
+   },
+   {
+    "n": 14,
+    "status": "fail",
+    "error": "error[unsupported-property] at 39:5: `bottom` is not a supported property",
+    "category": "property",
+    "fix": "bottom の宣言 2 個を削除"
+   },
+   {
+    "n": 15,
+    "status": "fail",
+    "error": "error[unsupported-property] at 49:5: `opacity` is not a supported property",
+    "category": "property",
+    "fix": "opacity の宣言 1 個を削除"
+   },
+   {
+    "n": 16,
+    "status": "fail",
+    "error": "error[unsupported-layout] at 29:19: `writing-mode: vertical-rl` differs from the inherited `horizontal-tb`; the whole document uses one writing mode and only top-level elements may set it (ARCHITECTURE.md A1)",
+    "category": "property",
+    "fix": "hint に従い writing-mode:vertical-rl を子要素 2 箇所から外し、トップレベル要素 1 個に移した"
+   },
+   {
+    "n": 17,
+    "status": "pass"
+   }
+  ],
+  "iteration_count": 17,
+  "final": "pass",
+  "final_if_capped_at_15": "gave_up",
+  "gave_up_reason": "15 回では通らなかった（実際は 17 回目で通った）",
+  "blockers": [
+   {
+    "n": 1,
+    "category": "wrapper",
+    "what": "<html>",
+    "fix": "文書の外枠（DOCTYPE/html/head/meta/title/link/body）を外し、<style> と本体だけ残した"
+   },
+   {
+    "n": 2,
+    "category": "property",
+    "what": "box-sizing",
+    "fix": "box-sizing 宣言を削除し、hint に従って width/height から padding・border を引いた（2 箇所）"
+   },
+   {
+    "n": 3,
+    "category": "property",
+    "what": "min-height",
+    "fix": "hint に従い min-height を固定の height に変えた（1 箇所）"
+   },
+   {
+    "n": 4,
+    "category": "unit",
+    "what": "height: 100vh",
+    "fix": "1 個を近い対応値に置換"
+   },
+   {
+    "n": 5,
+    "category": "property",
+    "what": "position",
+    "fix": "position の宣言 4 個を削除"
+   },
+   {
+    "n": 6,
+    "category": "property",
+    "what": "overflow",
+    "fix": "overflow の宣言 1 個を削除"
+   },
+   {
+    "n": 7,
+    "category": "property",
+    "what": "background-image",
+    "fix": "background-image の宣言 1 個を削除"
+   },
+   {
+    "n": 8,
+    "category": "selector",
+    "what": "擬似クラス・擬似要素",
+    "fix": "擬似クラス・擬似要素 を含むセレクタ 2 本をクラスに書き換え（要素 0 個に class 追加、擬似要素 2 個を実要素化）"
+   },
+   {
+    "n": 9,
+    "category": "property",
+    "what": "inset",
+    "fix": "inset の宣言 1 個を削除"
+   },
+   {
+    "n": 10,
+    "category": "property",
+    "what": "pointer-events",
+    "fix": "pointer-events の宣言 1 個を削除"
+   },
+   {
+    "n": 11,
+    "category": "property",
+    "what": "-webkit-writing-mode",
+    "fix": "-webkit-writing-mode の宣言 2 個を削除"
+   },
+   {
+    "n": 12,
+    "category": "property",
+    "what": "text-orientation",
+    "fix": "text-orientation の宣言 1 個を削除"
+   },
+   {
+    "n": 13,
+    "category": "property",
+    "what": "left",
+    "fix": "left の宣言 2 個を削除"
+   },
+   {
+    "n": 14,
+    "category": "property",
+    "what": "bottom",
+    "fix": "bottom の宣言 2 個を削除"
+   },
+   {
+    "n": 15,
+    "category": "property",
+    "what": "opacity",
+    "fix": "opacity の宣言 1 個を削除"
+   },
+   {
+    "n": 16,
+    "category": "property",
+    "what": "writing-mode（トップレベル以外）",
+    "fix": "hint に従い writing-mode:vertical-rl を子要素 2 箇所から外し、トップレベル要素 1 個に移した"
+   }
+  ],
+  "edit_lines": 74,
+  "edit_lines_excluding_reformat": 55,
+  "fidelity": 4,
+  "dropped": [
+   "作者名を左端に置くこと（position が無いため）"
+  ],
+  "lost_visuals": [
+   "和紙風の背景グラデーション（単色に）",
+   "内側の細い枠",
+   "作者名が左端から本文の隣に移動"
+  ],
+  "warnings": [],
+  "strip_result": {
+   "status": "fail",
+   "fidelity": 4,
+   "error": "error[unsupported-layout] at 23:19: `writing-mode: vertical-rl` differs from the inherited `horizontal-tb`",
+   "notes": "writing-mode をトップレベルに移す 1 手だけで通り (case10_strip2.html)、縦書き・2 列の折り返し・朱印の枠まで残った。消えたのは朱印の中の「歌」の字だけ。10 件で唯一、黙って無視してもほぼ同じ絵になるケース。",
+   "html": "case10_strip.html",
+   "png": null,
+   "repaired_html": "case10_strip2.html",
+   "repaired_png": "strip2_case10.png"
+  },
+  "notes": "縦書きは問題なく出た。2 列に折り返し、朱印の枠と「歌」の字も残った。writing-mode を子（.poem/.author）に書くと unsupported-layout になるので、トップレベル（.sheet）に移す必要がある。日本語組版: Chrome は 1 列目に「立ちつくし」まで入るが shashoku は 1 文字早く折れて「立ちつく/し」と語中で割れる。880px に対する字送りの差（letter-spacing 0.12em の扱い）。和歌の分かち書きの全角空白は行頭に来ておらず、約物の処理は妥当。"
+ }
+]

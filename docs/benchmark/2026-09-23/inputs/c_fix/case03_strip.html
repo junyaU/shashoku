@@ -1,0 +1,92 @@
+<style>
+  body {
+    margin: 0;
+    padding: 48px 20px;
+    background: #eceff1;
+    font-family: "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, sans-serif;
+    color: #2b333b;
+  }
+  .card {
+    width: 720px;
+    margin: 0 auto;
+    background: #fdfdfb;
+    border: 1px solid #dfe3e6;
+    border-radius: 14px;
+  }
+  .inner {
+    padding: 30px 36px 32px;
+  }
+  .label {
+    font-size: 10.5px;
+    letter-spacing: 0.18em;
+    color: #7a9484;
+    border: 1px solid #c9d6ce;
+    border-radius: 3px;
+    padding: 2px 8px;
+  }
+  .term {
+    display: flex;
+    gap: 14px;
+  }
+  .yomi {
+    font-size: 14px;
+    color: #8a958e;
+    letter-spacing: 0.08em;
+  }
+  .en {
+    font-size: 12px;
+    color: #a7b0aa;
+    letter-spacing: 0.1em;
+    margin: 0 0 24px;
+  }
+  .definition {
+    font-size: 15px;
+    line-height: 2;
+    margin: 0 0 24px;
+    color: #39443d;
+  }
+  .example {
+    background: #f2f5f2;
+    padding: 14px 18px;
+  }
+  .related {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .tag {
+    font-size: 11.5px;
+    color: #4c6b5a;
+    background: #e8efe9;
+    border: 1px solid #d3e0d6;
+    border-radius: 999px;
+    padding: 3px 12px;
+    letter-spacing: 0.04em;
+  }
+</style>
+<div class="card">
+    <div class="inner">
+      <span class="label">社内用語集 / ENGINEERING</span>
+      <div class="term">
+        <h1>冪等性</h1>
+        <span class="yomi">べきとうせい</span>
+      </div>
+      <p class="en">idempotency</p>
+
+      <p class="definition">
+        ある操作を 1 回行っても複数回行っても、システムの状態が同じ結果に落ち着く性質のこと。
+        通信の切断やタイムアウトで同じ要求が再送されうる環境では、この性質を備えているかどうかが、そのまま安全に再試行できるかどうかを決める。
+      </p>
+
+      <div class="example">
+        <div class="ttl">具体例</div>
+        <p>同じ注文 ID で決済 API を 2 回呼んでも、二重に課金されない</p>
+      </div>
+
+      <div class="related">
+        <span class="ttl">関連語</span>
+        <span class="tag">リトライ</span>
+        <span class="tag">at-least-once</span>
+      </div>
+    </div>
+  </div>

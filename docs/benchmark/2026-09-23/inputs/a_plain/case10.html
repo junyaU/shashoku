@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>短歌｜ゆふぐれの</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #cfc9ba; }
+  body { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+
+  .sheet {
+    width: 800px;
+    height: 1200px;
+    position: relative;
+    overflow: hidden;
+    background-color: #f2ece0;
+    /* 和紙らしい、わずかなむらと繊維の気配 */
+    background-image:
+      radial-gradient(ellipse at 28% 22%, rgba(255, 253, 247, 0.9) 0%, rgba(255, 253, 247, 0) 58%),
+      radial-gradient(ellipse at 76% 82%, rgba(226, 216, 198, 0.55) 0%, rgba(226, 216, 198, 0) 60%),
+      linear-gradient(115deg, #f5efe4 0%, #ece5d6 100%);
+    font-family: "Noto Serif JP", "Hiragino Mincho ProN", "Yu Mincho", "MS Mincho", serif;
+    color: #2b2723;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  /* 内側の淡い枠 */
+  .sheet::after {
+    content: "";
+    position: absolute;
+    inset: 46px;
+    border: 1px solid rgba(90, 80, 66, 0.16);
+    pointer-events: none;
+  }
+
+  .poem {
+    writing-mode: vertical-rl;
+    -webkit-writing-mode: vertical-rl;
+    text-orientation: upright;
+    height: 880px;
+    margin: 0;
+    font-size: 42px;
+    font-weight: 400;
+    line-height: 2.6;
+    letter-spacing: 0.12em;
+    color: #241f1b;
+  }
+
+  .author {
+    position: absolute;
+    left: 104px;
+    bottom: 150px;
+    writing-mode: vertical-rl;
+    -webkit-writing-mode: vertical-rl;
+    font-size: 19px;
+    letter-spacing: 0.34em;
+    color: #6b6155;
+  }
+  /* 落款のかわりの小さな朱印 */
+  .seal {
+    position: absolute;
+    left: 100px;
+    bottom: 96px;
+    width: 28px;
+    height: 28px;
+    border: 2px solid #b4462f;
+    border-radius: 3px;
+    opacity: 0.75;
+  }
+  .seal::before {
+    content: "歌";
+    display: block;
+    text-align: center;
+    line-height: 24px;
+    font-size: 15px;
+    color: #b4462f;
+  }
+</style>
+</head>
+<body>
+  <div class="sheet">
+    <p class="poem">ゆふぐれの　駅のホームに　立ちつくし　届かぬ返事を　もう一度読む</p>
+    <div class="author">架空 花</div>
+    <div class="seal"></div>
+  </div>
+</body>
+</html>

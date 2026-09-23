@@ -1,0 +1,56 @@
+<style>
+.wrap { width: 860px; padding: 20px; background-color: #ffffff; }
+.title { font-size: 22px; font-weight: bold; color: #1f2b3a; line-height: 1.5em; margin: 0 0 4px 0; }
+.lead { font-size: 13px; color: #61708a; line-height: 1.6em; margin: 0 0 16px 0; }
+.table { width: 860px; border: 1px solid #ccd5e0; }
+.row { display: flex; }
+.hrow { background-color: #2f4f6f; }
+.odd { background-color: #f4f7fb; }
+.even { background-color: #ffffff; }
+.label { flex-grow: 0; flex-shrink: 0; flex-basis: 150px; padding: 12px; font-size: 14px; font-weight: bold; line-height: 1.7em; color: #1f2b3a; }
+.cell { flex-grow: 1; flex-shrink: 1; flex-basis: 0; padding: 12px; font-size: 13px; line-height: 1.8em; color: #27364a; }
+.hcell { color: #ffffff; font-weight: bold; font-size: 14px; }
+.hlabel { color: #ffffff; }
+</style>
+<div class="wrap">
+  <div class="title">データストアの比較（技術選定資料）</div>
+  <div class="lead">3 つの選択肢を 5 項目で比較する。用途欄は当プロダクトでの想定。</div>
+  <div class="table">
+    <div class="row hrow">
+      <div class="label hlabel">項目</div>
+      <div class="cell hcell">PostgreSQL（RDB）</div>
+      <div class="cell hcell">Redis（KVS）</div>
+      <div class="cell hcell">MongoDB（ドキュメント DB）</div>
+    </div>
+    <div class="row odd">
+      <div class="label">得意なデータ</div>
+      <div class="cell">関係が明確で整合性の要る業務データ。正規化した表で持つ形に向く。</div>
+      <div class="cell">短命で小さい値。セッションやカウンタなど、取り出しが速ければよいもの。</div>
+      <div class="cell">形の揃わない文書データ。項目が増減する設定やログを丸ごと入れられる。</div>
+    </div>
+    <div class="row even">
+      <div class="label">トランザクション</div>
+      <div class="cell">複数の表にまたがる ACID を標準で持つ。金額を扱う処理はここへ寄せたい。</div>
+      <div class="cell">MULTI/EXEC で一括実行はできるが巻き戻しはない。整合性は呼ぶ側の責任。</div>
+      <div class="cell">単一の文書は原子的。複数文書にまたがる更新は使えるが代償が大きい。</div>
+    </div>
+    <div class="row odd">
+      <div class="label">スケール</div>
+      <div class="cell">読みはレプリカで伸ばせる。書き込みの分割は自前の設計が必要になる。</div>
+      <div class="cell">クラスタで水平に伸ばせる。ただし全データがメモリに載る前提になる。</div>
+      <div class="cell">シャーディング前提の設計。シャードキーの選び方で性能が大きく振れる。</div>
+    </div>
+    <div class="row even">
+      <div class="label">運用の手間</div>
+      <div class="cell">バックアップと版上げの手順が枯れている。監視すべき指標も情報が多い。</div>
+      <div class="cell">設定は単純だがメモリ枯渇が即障害になる。追い出し方針を先に決める。</div>
+      <div class="cell">索引設計とスキーマの揺れの管理が要る。版上げの影響範囲が読みにくい。</div>
+    </div>
+    <div class="row odd">
+      <div class="label">うちでの用途</div>
+      <div class="cell">注文と請求の正データ。集計バッチの参照先も当面はここに置く方針。</div>
+      <div class="cell">API のレート制限とセッション。ジョブの待ち行列も当面は兼ねさせる。</div>
+      <div class="cell">外部連携の生ログ置き場。項目が変わりやすい取り込み前データに使う。</div>
+    </div>
+  </div>
+</div>

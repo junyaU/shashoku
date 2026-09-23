@@ -1,0 +1,46 @@
+<style>
+.wrap { width: 960px; padding: 20px; background-color: #ffffff; }
+.title { font-size: 20px; font-weight: bold; color: #1f2b3a; line-height: 1.5em; margin: 0 0 18px 0; }
+.flow { display: flex; align-items: center; }
+.box { flex-grow: 0; flex-shrink: 0; width: 134px; height: 96px; padding: 12px; border: 1px solid #b9c4d2; border-radius: 8px; background-color: #f6f9fd; }
+.box5 { flex-grow: 0; flex-shrink: 0; width: 134px; height: 96px; padding: 12px; border: 1px solid #9fb3c8; border-radius: 8px; background-color: #e9f1fa; }
+.name { font-size: 15px; font-weight: bold; color: #1f3350; line-height: 1.5em; margin: 0 0 6px 0; }
+.desc { font-size: 12px; color: #43536a; line-height: 1.6em; }
+.arrow { flex-grow: 0; flex-shrink: 0; width: 36px; font-size: 20px; color: #8296ad; text-align: center; }
+.noterow { display: flex; }
+.spacer { flex-grow: 0; flex-shrink: 0; width: 588px; }
+.note { flex-grow: 0; flex-shrink: 0; width: 346px; padding: 12px; margin: 14px 0 0 0; border: 1px solid #e2c58a; border-radius: 8px; background-color: #fdf6e6; font-size: 12px; color: #6b5220; line-height: 1.7em; }
+</style>
+<div class="wrap">
+  <div class="title">非同期処理のフロー（設計レビュー）</div>
+  <div class="flow">
+    <div class="box">
+      <div class="name">ユーザー</div>
+      <div class="desc">フォームから登録を送信する。</div>
+    </div>
+    <div class="arrow">→</div>
+    <div class="box">
+      <div class="name">API サーバー</div>
+      <div class="desc">入力を検証し、受付 ID を返してジョブを積む。</div>
+    </div>
+    <div class="arrow">→</div>
+    <div class="box">
+      <div class="name">キュー</div>
+      <div class="desc">ジョブを順に保持する。取り出しは可視性タイムアウト付き。</div>
+    </div>
+    <div class="arrow">→</div>
+    <div class="box">
+      <div class="name">ワーカー</div>
+      <div class="desc">ジョブを取り出して本処理を実行する。</div>
+    </div>
+    <div class="arrow">→</div>
+    <div class="box5">
+      <div class="name">DB</div>
+      <div class="desc">確定した結果を書き込み、状態を完了にする。</div>
+    </div>
+  </div>
+  <div class="noterow">
+    <div class="spacer"></div>
+    <div class="note">※ ワーカー: 失敗時は 3 回まで再試行し、それでも失敗したら dead letter に送る。</div>
+  </div>
+</div>

@@ -1154,6 +1154,185 @@ CSS 2.1 §10.8 は「空のインライン要素も空のインラインボッ�
 - **合格するときの出力は変えていない**（配布バイナリと release の CLI の両方で、修正前の
   スクリプトと 1 バイトも違わないことを確かめた）。`SHASHOKU_MAX_GLIBC` の上限判定も変えていない
 
+**A46. fail loudly を「一度に全部・直し方つき・結果にも」に広げる。エラーと警告は AI が読んで
+直すためのフィードバックであり、製品の主機能として扱う。**（2026-09-23、ユーザーの決定。
+DESIGN.md §2「個性を支える態度」と §3-6 を書き換えた。実装は未着手で、別に起票する）
+
+根拠は 2026-09-23 の適合検証（依頼 10 件 × 4 経路。記録はセッションのスクラッチ `exp/RESULTS_2026-09-23.md`）:
+
+- **対応範囲の文書（README 抜粋 111 行）を渡した AI** が書いた HTML は 10/10 が 1 回で通り、エラー 0・警告 0
+- **普段どおりに AI が書いた HTML** は 10/10 が `<html>` で止まり、止めた原因 180 件（property 112 / selector 20 /
+  value 20 / tag 13 / wrapper 10 / unit 4 / image 1）を 1 件ずつ直して通した。**170 件はエラー文から直し方が
+  決まったが、1 回に 1 件しか出さないため CLI が 190 回走った**（反復の中央値 16.5）。hint のある
+  `box-sizing` / `min-height` / `position` は 1 回で直り、hint の無いものは宣言を削るしかなく見た目が落ちた。
+  `background-clip: text` を削ると `color: transparent` が残って**文字が消えた**（警告なし）
+- **Satori**（比較対象）は同じ依頼で exit 0 が 10/10 なのに 1 回目に正しい絵は 1/10。`<ruby>` の連結、
+  `writing-mode` の消失、`<title>` の文字の混入がすべて無警告。サーバーでは人が絵を見ないので、
+  終了コードが配信判断の材料になる。**ただし約束の範囲は限定して言う**: strict の成功が意味するのは
+  「対応範囲の中で、検出対象の検査（対応外・欠落・はみ出し）を満たした」ことであって、絵が正しいことの
+  保証ではない。未検出のレイアウトの誤り、意図しない重なり、文字色と背景色の同化は検出しない
+  （過去の縦書きルビの左右逆やルビの配置不良は、テストが通ったまま起きた）
+- **shashoku 自身にも穴がある**: `viewport_height` を固定して中身がはみ出しても、警告なし・exit 0 で
+  切れた PNG が出る（`examples/og_card.html --height 200` で確認。1200×200 の PNG、stderr 空）。
+  対応外の記法には厳しいのに、組み上がった絵の欠落には黙っている
+
+いまの契約（変える前の状態）: `render()` は `std::expected<RenderResult, RenderError>` で **最初の 1 件**で
+止まる。hint は `style/value_parser.cpp` の `kPropertyHints`（13 件。「同じ結果が出せると確かめた代替だけ」の
+規則は維持する）。警告は `WarningKind::MissingGlyph` の 1 種類（A31 / A43）。
+
+決めたこと（**契約に触れるので、実装の前にこの節と §3.x を更新してから起票する**）:
+
+1. **一度に全部**: ① html と ② style の段は、見つけた問題を**集めてから**失敗する（同じ規則の中の連続した
+   対応外プロパティ、`-webkit-*` の接頭辞、複数のセレクタ、など）。③ layout 以降は 1 件目で止めてよい
+   （後段は前段の成功が前提）。公開 API は `RenderError` 1 件のままにするか `errors` の配列を持つ失敗型に
+   するかを **v0.1.0 の前に決める**（`include/shashoku/` は互換性を背負う。DESIGN.md §8）。
+   CLI は全件を標準エラーに出し、終了コードは今までどおり非 0
+2. **直し方つき**: hint の規則（確かめた代替だけ）は変えない。加えて、**削ると危険な組**
+   （`background-clip: text` + `color: transparent` のように、削った結果が「文字が消える」になるもの）は
+   エラー文に危険を書く。`unsupported-layout` の hint は「`display: block` を足す」と「宣言を削る」の
+   どちらを勧めるかを明記する（前者は文の流れを壊す。検証 C の観察）
+3. **結果にも**: `WarningKind` に **`ContentOverflow`**（固定した紙面から中身がはみ出した量、CSS px）を足す。
+   固定した箱からテキストがはみ出す場合も同じ種類で返すかは、実装時に §3.8 で決める。画像の不在は
+   すでに `ImageNotFound`（エラー）
+4. **格上げ**: `RenderOptions::warnings_as_errors`（既定 `false`）を足し、`true` なら警告 1 件以上で
+   `RenderError`（新しい `ErrorKind`。文面は警告と同じ）にする。CLI は `--strict`。オプションは入力の一部
+   なので純粋関数の性質（§3-5）は変わらない。豆腐を警告のまま続行する A31 / A43 の決定は変えない
+5. **入れないもの**: 「未対応を黙って無視するモード」。検証 C の試算では 5/10 が通らず、通った 5 件中
+   4 件で文字が背景と同色になって消えた（exit 0）。Satori の欠点を輸入することになる
+6. **機械が読める契約**: 安定させるのは `ErrorKind` / `WarningKind` のケバブケース識別子（`to_string(kind)`）と
+   `SourceLocation`。`message` / `detail` の文面と hint は人向けで、**変えてよい**。CLI は全診断を JSON で出す
+   モード（名前は実装時に決める）を持ち、機械側はそれを読む。テストは識別子と位置で検査し、文面の検査は
+   hint の内容確認に限る（いまの `tests/style/error_test.cpp` は文面を見ているので、実装時に整理する）
+7. **効果は実装後に測る**: 「一括にすれば往復が減る」は期待値であって実測ではない。相互依存するエラーや、
+   直したあとで初めて現れる問題がある。実装後に同じ依頼 10 件（`exp/requests.md`）で往復回数を測り、
+   ここに追記する
+
+（この時点で未決だった関門の扱いと §1 の Satori の記述の訂正は、同日の A47 で決着した）
+
+**契約の確定（2026-09-23 夜。外部レビュアーの推奨を採用し、細部をオーケストレーターが決めた。実装前の仕様）**
+
+公開 API（`include/shashoku/`）の変更。v0.1.0 前なので互換性は壊してよいが、ここに書いた形で固定する:
+
+```cpp
+// source_location.hpp（新設）: SourceLocation を error.hpp から移す（warning.hpp が error.hpp に依存しないため）
+// warning.hpp
+enum class WarningKind : std::uint8_t { MissingGlyph, ContentOverflow };
+struct Warning {
+  WarningKind kind; std::string detail; char32_t codepoint = 0;   // 既存
+  std::optional<SourceLocation> location;                          // 既存
+  float overflow_px = 0.0F;   // ContentOverflow: 紙面の外に出た量の最大（CSS px）。他の種類では 0
+};
+// error.hpp
+enum class ErrorKind : std::uint8_t { /* 既存 16 種 + */ WarningAsError /* strict で警告を格上げしたもの */ };
+struct RenderError {
+  ErrorKind kind; std::string message; std::optional<SourceLocation> location;   // 既存
+  std::string hint;                     // 「代わりにどう書くか」。無ければ空。人向けで文面は変えてよい
+  std::optional<WarningKind> warning;   // kind == WarningAsError のとき、元の警告の種類
+};
+struct RenderFailure {
+  std::vector<RenderError> errors;   // 1 件以上。入力位置の昇順（位置なしは末尾）→ kind → message で安定
+  std::vector<Warning> warnings;     // 失敗までに集まった警告（strict で格上げしたものは errors 側に移し、ここには残さない）
+  bool truncated = false;            // limits.max_diagnostics に達して記録を打ち切った
+};
+std::string to_string(const RenderFailure&);   // 1 行 1 件。既存の to_string(RenderError) の形を並べ、hint は "  hint: …" の行
+// render.hpp
+struct RenderResult { /* 既存 */ bool diagnostics_truncated = false; };   // 警告が上限で打ち切られた
+std::expected<RenderResult, RenderFailure> render(...);                    // 3 つのオーバーロードとも
+// options.hpp
+struct RenderOptions { /* 既存 */ bool warnings_as_errors = false; };
+// limits.hpp
+struct RenderLimits { /* 既存 */ std::size_t max_diagnostics = 100; };    // errors + warnings の合計の上限
+```
+
+決めたこと（番号は上の 1〜7 の細部）:
+
+- **集める範囲（「一度に全部」）**: ① html は `UnsupportedTag` / `UnsupportedAttribute` を集めて**その要素を読み飛ばして続行**する。
+  `InvalidUtf8` / `HtmlParse`（閉じ忘れなど構造の破損）/ `LimitExceeded` は**その場で止める**（安全に解析を続けられない）。
+  ② style は `CssParse`（宣言・規則の単位で読み飛ばし）/ `UnsupportedProperty` / `UnsupportedValue` /
+  計算値の検査で分かる `UnsupportedLayout`（inline への padding、直交する writing-mode）/ `ImageNotFound` を集める。
+  `NoFonts` / `FontLoad` / `ImageDecode` / `InvalidOption` / `LimitExceeded` は止める。①② で 1 件以上あれば layout に進まず
+  `RenderFailure` を返す。③ layout 以降は今までどおり 1 件目で止める（後段は前段の成功が前提。`Internal` / `OutOfMemory`）
+- **上限**: `max_diagnostics`（既定 100）は errors と warnings の合計。達したら**記録をやめて解析は続け**、
+  `truncated = true` を立てる。解析の時間と入力は既存の `RenderLimits` が抑える。診断そのものがメモリの消費源に
+  ならないための上限（サーバー安全性との接点）。JSON にも `"truncated": true` を出す
+- **順序と決定性**: 診断は (offset, kind, message) で安定に整列する。同じ入力からは同じ並びで出る（§3-5）
+- **strict**: `warnings_as_errors = true` のとき、描画が終わって警告が 1 件以上あれば `RenderFailure` を返す。
+  errors は警告 1 件につき `RenderError{kind = WarningAsError, message = warning.detail, location = warning.location,
+  warning = warning.kind}`。**識別子・位置・詳細を失わない。** PNG は返さない。豆腐を警告のまま続行する既定（A31 / A43）は変えない
+- **CLI**: `--strict` でオプションを立てる。**失敗時は出力ファイルを作らない・上書きしない**（成功してから書く。
+  既存の `-o` の扱いを見直す）。`--diagnostics json` で**標準出力に JSON を 1 オブジェクト**:
+  `{"ok": bool, "width": W, "height": H, "errors": [{"kind": "unsupported-property", "message": "…", "hint": "…",
+  "line": 3, "column": 14, "offset": 120, "warning": null}], "warnings": [{"kind": "missing-glyph", "detail": "…",
+  "codepoint": 128512, "line": …, "column": …, "offset": …, "overflow_px": 0}], "truncated": false}`。
+  `line` / `column` / `offset` は位置が無ければ `null`。JSON のときは `-o` 必須で、`--dump-stage` と併用不可。
+  人向けの標準エラー出力（今の形式 + hint の行）は JSON を選ばないときそのまま。終了コードは今までどおり失敗で非 0
+- **hint**: `kPropertyHints` の規則「shashoku で同じ結果が出せると確かめた代替だけ」は変えない。足すのは
+  (a) ベンダー接頭辞（`-webkit-*` / `-moz-*` / `-ms-*`）: 「接頭辞を外す（対応表にあれば）」
+  (b) **削ると危険な組**: `background-clip` / `-webkit-background-clip`: 「`color: transparent` も外さないと文字が消える」
+  (c) `unsupported-layout`（inline への箱プロパティ）: 「宣言を削る（`display: block` にすると文の流れが切れる）」と、
+  どちらを勧めるかを明記。hint は `RenderError::hint` に入れ、`message` には混ぜない（機械側が分けて読める）
+- **はみ出し（`ContentOverflow`）**: 対象は「紙面で実際に切れる内容」だけ。**箱（行ボックス・置換要素・ブロックの
+  border box）が出力の矩形（viewport_width × 高さ。高さは固定のときだけ）の外に 0.5 px を超えて出ている**とき、
+  最も外側の該当要素ごとに 1 件、`location` はその要素の入力位置、`overflow_px` は最大の超過量。
+  グリフのインク（イタリックの張り出しなど）は見ない。**箱からのはみ出し（固定幅の箱から文字が出る）は別種で、
+  この段では入れない**（`BoxOverflow` として将来）。
+  **誤検出への配慮（受け入れ例を先にテストに書く）**: ぶら下げ（burasage）で行末の約物が行ボックスの外に出ても
+  紙面の中なら警告しない／ルビの注記は行ボックスの中なので警告しない／`--height` 省略（内容追従）では縦方向に
+  はみ出せないので横方向だけ判定／負のマージンで左・上に出た場合も対象。1 px 未満の丸め差は 0.5 px の許容で吸収
+- **テスト**: 識別子（`to_string(kind)`）と位置で検査する。文面は hint の有無と内容の検査に限る。
+  いまの `tests/style/error_test.cpp`（message を 34 か所で見ている）は、識別子・位置・hint の検査に書き換える
+- **効果の測定**: 実装後に、依頼集の日本語 10 件と英語 5 件（第 3 節）の両方にガイドを渡し、初回成功率・修正の往復回数・
+  所要時間・誤警告・内容の保持を測る。**見た目の評価は「元画像への忠実度」と「用途を満たすか」を分けて記録する**
+  （グラデーションが消えても使える場合があり、文字が全部出ても情報の強弱が失われれば使えない）。可能なら別モデルでも
+  （既知の依頼への最適化になっていないか）。境界ケース（第 4 節）は別に試し、需要の測定と混ぜない
+- **言い過ぎない**: strict の成功が意味するのは「対応範囲の中で、検出対象（対応外・豆腐・紙面のはみ出し・画像の不在）の
+  検査を満たした」こと。未検出のレイアウトの誤り・重なり・文字色と背景の同化は対象外
+
+**実装の分割**（各作業は worktree の opus エージェント。契約ヘッダと §3.x の更新はオーケストレーターが先に行う）:
+W0 契約（ヘッダ 5 本と §3.6 / §3.7 / §3.8 / §3.10、受け入れ例の HTML）→ W1 html（集める）/ W2 style（集める・整列・hint）/
+W3 layout（はみ出しの検出と一覧）を並行 → W4 api + CLI（`RenderFailure`、strict、JSON、上限、失敗時に書かない、統合テスト）→
+W5 対応範囲と書き方のガイド（`docs/guide/`。どの LLM にもテキストで渡せる本文と、それを包む skill。B と C とグラレコで分かった
+不足を反映。W1〜W4 と並行に下書き、最後に JSON の形を合わせ、エンジンと同じ版番号を持つ）→ W6 サーバー連携の**小さな**実例
+（CLI 呼び出し・診断 JSON・上限つき再試行を示すスクリプト 1 本。HTTP サービスや汎用のエージェント基盤には広げない）
+
+**A47. 製品の目的を「HTML から共有・資料利用のための PNG をブラウザなしで生成する」に置き、
+日本語組版は「強み・最初の得意分野」とする。機能追加の関門は「対象用途で成功率・修正の手間・
+運用上の信頼性を改善するか。保守コストに見合う実例が依頼集にあるか」に置き換える。**
+（2026-09-23、ユーザーの決定。外部レビュアーの整理を採用。DESIGN.md §0 §1 §2、CLAUDE.md、README 冒頭を書き換えた）
+
+- **経緯**: 適合検証（A46 の根拠と同じ。記録は `docs/benchmark/results_2026-09-23.md`）で、強みの大半
+  （1 回で使える絵、高さの追従、診断、単一バイナリ、決定性）が言語と無関係だと分かった。実行コストの差
+  （cold で起動 10 倍・メモリ 1/4）はネイティブ実行と SVG を経由しない経路によるもので、常駐では 1 枚あたりは同じ桁（16.8 ms 対 15.4 ms。優劣は言えない）で、残る差はメモリ（29 MB 対 283 MB）と
+  同時生成（フォントを全スレッドで共有できる shashoku は 16 スレッドで 558 枚/秒・295 MB。Node は 1 プロセスでは 59 枚/秒、
+  worker 16 本で 395 枚/秒・2.6 GB）。`docs/benchmark/results_2026-09-23.md` §5。一方で box-sizing・
+  画像・診断の改善を「日本語に寄与しないが例外で入れる」と扱い続けるなら、主関門のほうが目的とずれている
+- **以前の関門が果たしていた役割は範囲の統制**で、日本語はその代理だった。新しい関門は統制を測定（依頼集）と
+  保守コストで直接かける。依頼集に無い需要は実例に数えない
+- **依頼集**: `docs/benchmark/requests.md`。2026-09-23 の 10 件（資料向け 5 + サーバー生成 5。製品に合わせて
+  選んでいない）から始める。用途を足すときは依頼を足し、判定は「依頼集の中で何件が困ったか、代替が無かったか」。
+  **既存 10 件は回帰検証用に固定**し、実利用で見つかった依頼は別枠（同じファイルの第 2 節）に追加する。製品の成長を
+  10 件に閉じ込めない。判定は「通る／通らない」の二値ではなく「現時点の優先度」で言う（例: グラデーションは
+  単色で目的を満たせたため現時点では優先度が低い。辺ごとの border は削ると代替が無いため高い）
+  検証のやり方（4 経路、Chrome の参照画像、fidelity の目視）も同じ文書に残す
+- **変えないもの**: 「削る」の一覧（JS、外部取得、grid / float / table、ブラウザとのピクセル一致）、fail loudly（A46）、
+  決定性（A32）、一方向パイプライン。エンジンは日本語専用にしない（英語の文章でも普通に使える設計を保つ）が、
+  英語圏向けの文書と実例は日本での手応えを見てから。CJK への拡大も自動の次の一手にせず、言語ごとに需要と
+  組版規則を別に検証する
+- **順序**: まず日本の開発者に向けて出し、価値を確かめる。絞るのは届ける相手・紹介する用途・検証する品質で、
+  エンジンではない
+- **§1 の訂正**: 「Satori は禁則処理がない」は誤り（Satori 0.33.5 は UAX #14 で基本の禁則を行う。実測）。
+  差は両端揃え・約物の詰め・和欧文アキ・ルビ・縦書き・高さ追従・黙殺しないこと
+- **言い過ぎを避ける**: 「絶対に破綻させない」「信じられる PNG」のような検証しきれない約束は書かない（A46 の補正と同じ）
+- **追記（同日夜。対象を言語で絞らない）**: 「エンジンとガイドをセットで、生成・診断・修正まで動く」価値は言語を問わないため、
+  一文ミッションを「AI とアプリのための、ブラウザ不要の HTML→PNG エンジン。文章主体のカード・図解・資料画像を生成し、問題は
+  修正できる形で伝える。日本語組版にも強い」に改め、4 層の「最初の得意分野」を「対象と検証: 日本語・英語を対象に検証する
+  （全言語の組版保証ではない）」と「積み上げた強み: 日本語組版。既存機能として維持し、追加開発は需要で判断」に分けた。
+  「最初の試用は日本の開発者から」は連絡とフィードバックの得やすさで決めた順序で、対象の限定ではない。縦書きの需要の多寡を
+  製品全体の需要の根拠にしない。依頼集に英語の自然な依頼 5 件（第 3 節。日本語固有の機能を使わない）を固定で足し、
+  組版の限界を調べる境界ケース（長い URL、ハイフネーション、スモールキャップなど）は需要の測定と混ぜず第 4 節の別枠にした。
+  「AI 向けガイドは他に無い」は前提にしない（Vercel は AI 向け skill を提供している）。差別化はガイドとエンジンを一緒に設計して
+  一連の成功率を検証すること。**設計上の目標（A46）と現在の機能は文書で区別する**
+
 ---
 
 ## 2. モジュールと依存

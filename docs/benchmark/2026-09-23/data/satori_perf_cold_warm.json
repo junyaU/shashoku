@@ -1,0 +1,320 @@
+{
+  "conditions": {
+    "cpu": "Intel(R) Core(TM) i9-14900KF (32 threads)",
+    "os": "Linux 5.15.167.4-microsoft-standard-WSL2",
+    "node": "v20.18.1 (self-extracted linux-x64 binary)",
+    "satori": "0.33.5",
+    "satori_html": "0.3.2",
+    "resvg_js": "2.6.2",
+    "fonts": "NotoSansJP-Regular.otf(400) / NotoSansJP-Bold.otf(700) / NotoSans-Regular.ttf(400)",
+    "cold_method": "/usr/bin/time -v node render.mjs ... を 1 ケース 3 回。wall clock の中央値と Maximum resident set size の中央値",
+    "warm_method": "1 プロセス内でフォントを 1 回だけ読み、各ケース 3 回捨てて 20 回測定。satori() と PNG 化を別々に計時、中央値"
+  },
+  "cold": [
+    {
+      "case": "case01",
+      "width": 900,
+      "height": 560,
+      "wall_s_median": 0.24,
+      "wall_s_runs": [
+        0.25,
+        0.24,
+        0.24
+      ],
+      "max_rss_kb_median": 213416,
+      "max_rss_mb_median": 208.4,
+      "exit_codes": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "case": "case02",
+      "width": 1000,
+      "height": 345,
+      "wall_s_median": 0.24,
+      "wall_s_runs": [
+        0.24,
+        0.24,
+        0.23
+      ],
+      "max_rss_kb_median": 202016,
+      "max_rss_mb_median": 197.3,
+      "exit_codes": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "case": "case03",
+      "width": 720,
+      "height": 430,
+      "wall_s_median": 0.24,
+      "wall_s_runs": [
+        0.24,
+        0.24,
+        0.24
+      ],
+      "max_rss_kb_median": 197472,
+      "max_rss_mb_median": 192.8,
+      "exit_codes": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "case": "case04",
+      "width": 800,
+      "height": 500,
+      "wall_s_median": 0.24,
+      "wall_s_runs": [
+        0.23,
+        0.24,
+        0.24
+      ],
+      "max_rss_kb_median": 204676,
+      "max_rss_mb_median": 199.9,
+      "exit_codes": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "case": "case05",
+      "width": 1080,
+      "height": 1080,
+      "wall_s_median": 0.18,
+      "wall_s_runs": [
+        0.18,
+        0.18,
+        0.18
+      ],
+      "max_rss_kb_median": 184824,
+      "max_rss_mb_median": 180.5,
+      "exit_codes": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "case": "case06",
+      "width": 1200,
+      "height": 630,
+      "wall_s_median": 0.19,
+      "wall_s_runs": [
+        0.18,
+        0.19,
+        0.19
+      ],
+      "max_rss_kb_median": 181676,
+      "max_rss_mb_median": 177.4,
+      "exit_codes": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "case": "case07",
+      "width": 1080,
+      "height": 1080,
+      "wall_s_median": 0.24,
+      "wall_s_runs": [
+        0.23,
+        0.24,
+        2.2
+      ],
+      "max_rss_kb_median": 210552,
+      "max_rss_mb_median": 205.6,
+      "exit_codes": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "case": "case08",
+      "width": 800,
+      "height": 385,
+      "wall_s_median": 0.18,
+      "wall_s_runs": [
+        0.18,
+        0.18,
+        0.18
+      ],
+      "max_rss_kb_median": 187844,
+      "max_rss_mb_median": 183.4,
+      "exit_codes": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "case": "case09",
+      "width": 800,
+      "height": 415,
+      "wall_s_median": 0.24,
+      "wall_s_runs": [
+        0.23,
+        0.25,
+        0.24
+      ],
+      "max_rss_kb_median": 200444,
+      "max_rss_mb_median": 195.7,
+      "exit_codes": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "case": "case10",
+      "width": 800,
+      "height": 1200,
+      "wall_s_median": 0.18,
+      "wall_s_runs": [
+        0.18,
+        0.18,
+        0.19
+      ],
+      "max_rss_kb_median": 183436,
+      "max_rss_mb_median": 179.1,
+      "exit_codes": [
+        0,
+        0,
+        0
+      ]
+    }
+  ],
+  "warm": [
+    {
+      "case": "case01",
+      "width": 900,
+      "height": 560,
+      "satori_ms_median": 15.31,
+      "png_ms_median": 13.44,
+      "satori_ms_min": 14.52,
+      "png_ms_min": 13.08,
+      "total_ms_median": 28.75
+    },
+    {
+      "case": "case02",
+      "width": 1000,
+      "height": 345,
+      "satori_ms_median": 6.23,
+      "png_ms_median": 8.9,
+      "satori_ms_min": 5.91,
+      "png_ms_min": 8.43,
+      "total_ms_median": 15.12
+    },
+    {
+      "case": "case03",
+      "width": 720,
+      "height": 430,
+      "satori_ms_median": 3.57,
+      "png_ms_median": 8.56,
+      "satori_ms_min": 3.3,
+      "png_ms_min": 8.16,
+      "total_ms_median": 12.13
+    },
+    {
+      "case": "case04",
+      "width": 800,
+      "height": 500,
+      "satori_ms_median": 7.31,
+      "png_ms_median": 9.83,
+      "satori_ms_min": 6.96,
+      "png_ms_min": 9.67,
+      "total_ms_median": 17.14
+    },
+    {
+      "case": "case05",
+      "width": 1080,
+      "height": 1080,
+      "satori_ms_median": 1.99,
+      "png_ms_median": 14.01,
+      "satori_ms_min": 1.85,
+      "png_ms_min": 13.73,
+      "total_ms_median": 15.99
+    },
+    {
+      "case": "case06",
+      "width": 1200,
+      "height": 630,
+      "satori_ms_median": 2.56,
+      "png_ms_median": 10.55,
+      "satori_ms_min": 2.26,
+      "png_ms_min": 9.82,
+      "total_ms_median": 13.1
+    },
+    {
+      "case": "case07",
+      "width": 1080,
+      "height": 1080,
+      "satori_ms_median": 5.8,
+      "png_ms_median": 14.67,
+      "satori_ms_min": 4.8,
+      "png_ms_min": 14.14,
+      "total_ms_median": 20.47
+    },
+    {
+      "case": "case08",
+      "width": 800,
+      "height": 385,
+      "satori_ms_median": 4.25,
+      "png_ms_median": 8.35,
+      "satori_ms_min": 3.55,
+      "png_ms_min": 7.94,
+      "total_ms_median": 12.59
+    },
+    {
+      "case": "case09",
+      "width": 800,
+      "height": 415,
+      "satori_ms_median": 4.8,
+      "png_ms_median": 10.58,
+      "satori_ms_min": 4.14,
+      "png_ms_min": 10.28,
+      "total_ms_median": 15.38
+    },
+    {
+      "case": "case10",
+      "width": 800,
+      "height": 1200,
+      "satori_ms_median": 6.19,
+      "png_ms_median": 11.69,
+      "satori_ms_min": 5.59,
+      "png_ms_min": 11.57,
+      "total_ms_median": 17.87
+    }
+  ],
+  "warm_process": {
+    "max_rss_mb": 926.8,
+    "note": "全 10 ケース×23 回を 1 プロセスで回したときの process.memoryUsage().rss の最大。GC 余裕込みの値"
+  },
+  "rss_probe": {
+    "rss_after_fonts_mb": 74.8,
+    "rss_peak_mb": 451.9,
+    "rss_after_gc_mb": 447.7,
+    "note": "case07 を 50 回描いたときの値。resvg はネイティブ addon なので V8 の GC では戻らない"
+  },
+  "warm_summary": {
+    "satori_ms_median_over_cases": 5.3,
+    "png_ms_median_over_cases": 10.57,
+    "total_ms_median_over_cases": 15.69,
+    "total_ms_min": 12.13,
+    "total_ms_max": 28.75
+  },
+  "cold_summary": {
+    "wall_s_median_over_cases": 0.24,
+    "wall_s_min": 0.18,
+    "wall_s_max": 0.24,
+    "max_rss_mb_median_over_cases": 194.2
+  }
+}

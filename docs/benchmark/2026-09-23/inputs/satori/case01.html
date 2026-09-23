@@ -1,0 +1,46 @@
+<div style="display:flex;flex-direction:column;width:900px;height:100%;background-color:#ffffff;font-family:'Noto Sans JP';padding:32px 32px;box-sizing:border-box">
+  <div style="display:flex;font-size:22px;font-weight:700;color:#1b2430;margin-bottom:6px">データストア比較（技術選定）</div>
+  <div style="display:flex;font-size:13px;color:#6b7684;margin-bottom:18px">PostgreSQL / Redis / MongoDB を 5 項目で比較</div>
+
+  <div style="display:flex;flex-direction:row;background-color:#2f4f6f;color:#ffffff;font-size:15px;font-weight:700">
+    <div style="display:flex;width:150px;padding:12px 14px;box-sizing:border-box">項目</div>
+    <div style="display:flex;width:228px;padding:12px 14px;box-sizing:border-box">PostgreSQL<span style="font-size:12px;font-weight:400;margin-left:6px">RDB</span></div>
+    <div style="display:flex;width:228px;padding:12px 14px;box-sizing:border-box">Redis<span style="font-size:12px;font-weight:400;margin-left:6px">KVS</span></div>
+    <div style="display:flex;width:230px;padding:12px 14px;box-sizing:border-box">MongoDB<span style="font-size:12px;font-weight:400;margin-left:6px">文書 DB</span></div>
+  </div>
+
+  <div style="display:flex;flex-direction:row;background-color:#f5f7fa;font-size:13px;color:#22303f;line-height:1.7">
+    <div style="display:flex;width:150px;padding:12px 14px;box-sizing:border-box;font-weight:700">得意なデータ</div>
+    <div style="display:flex;width:228px;padding:12px 14px;box-sizing:border-box">正規化された関係データ。型と制約を効かせたい業務データに向く。</div>
+    <div style="display:flex;width:228px;padding:12px 14px;box-sizing:border-box">単純なキーと値。セッションやカウンタなど短命で高頻度のもの。</div>
+    <div style="display:flex;width:230px;padding:12px 14px;box-sizing:border-box">入れ子の多い半構造データ。スキーマが固まらない段階に向く。</div>
+  </div>
+
+  <div style="display:flex;flex-direction:row;background-color:#ffffff;font-size:13px;color:#22303f;line-height:1.7">
+    <div style="display:flex;width:150px;padding:12px 14px;box-sizing:border-box;font-weight:700">トランザクション</div>
+    <div style="display:flex;width:228px;padding:12px 14px;box-sizing:border-box">複数テーブルにまたがる ACID を標準で持ち、分離レベルも選べる。</div>
+    <div style="display:flex;width:228px;padding:12px 14px;box-sizing:border-box">MULTI/EXEC はあるがロールバックがなく、保証は限定的である。</div>
+    <div style="display:flex;width:230px;padding:12px 14px;box-sizing:border-box">4.0 以降は複数文書のトランザクションが使えるが代償は大きい。</div>
+  </div>
+
+  <div style="display:flex;flex-direction:row;background-color:#f5f7fa;font-size:13px;color:#22303f;line-height:1.7">
+    <div style="display:flex;width:150px;padding:12px 14px;box-sizing:border-box;font-weight:700">スケール</div>
+    <div style="display:flex;width:228px;padding:12px 14px;box-sizing:border-box">まず垂直に伸ばす。読み取りはレプリカ、書き込みは分割が要る。</div>
+    <div style="display:flex;width:228px;padding:12px 14px;box-sizing:border-box">Cluster で水平に伸びる。メモリ量がそのまま容量の上限になる。</div>
+    <div style="display:flex;width:230px;padding:12px 14px;box-sizing:border-box">シャーディングが前提の設計。シャードキーの選定で決まる。</div>
+  </div>
+
+  <div style="display:flex;flex-direction:row;background-color:#ffffff;font-size:13px;color:#22303f;line-height:1.7">
+    <div style="display:flex;width:150px;padding:12px 14px;box-sizing:border-box;font-weight:700">運用の手間</div>
+    <div style="display:flex;width:228px;padding:12px 14px;box-sizing:border-box">バキュームと統計情報の管理が要る。知見は社内に溜まっている。</div>
+    <div style="display:flex;width:228px;padding:12px 14px;box-sizing:border-box">運用は軽いが、永続化と切り替えの設計を誤るとデータを失う。</div>
+    <div style="display:flex;width:230px;padding:12px 14px;box-sizing:border-box">監視項目が多い。版による挙動の違いに注意が要る点が悩ましい。</div>
+  </div>
+
+  <div style="display:flex;flex-direction:row;background-color:#f5f7fa;font-size:13px;color:#22303f;line-height:1.7">
+    <div style="display:flex;width:150px;padding:12px 14px;box-sizing:border-box;font-weight:700">うちでの用途</div>
+    <div style="display:flex;width:228px;padding:12px 14px;box-sizing:border-box">注文と請求の中心データ。整合性を最優先する領域で使っている。</div>
+    <div style="display:flex;width:228px;padding:12px 14px;box-sizing:border-box">API のレート制限とセッション、重い集計結果の短期キャッシュ。</div>
+    <div style="display:flex;width:230px;padding:12px 14px;box-sizing:border-box">監査ログと外部連携の生データ置き場。検索は別系統に任せる。</div>
+  </div>
+</div>

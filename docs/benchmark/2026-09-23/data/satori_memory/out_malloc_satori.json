@@ -1,0 +1,850 @@
+{
+  "mode": "satori",
+  "case": "07",
+  "width": 1080,
+  "height": 1080,
+  "n": 400,
+  "sample": 20,
+  "elapsed_ms": 2495,
+  "ms_per_iter": 6.24,
+  "env": {
+    "MALLOC_ARENA_MAX": "1",
+    "MALLOC_TRIM_THRESHOLD_": "0",
+    "MALLOC_MMAP_THRESHOLD_": "131072",
+    "UV_THREADPOOL_SIZE": null
+  },
+  "node": "v20.18.1",
+  "sink": 33288000,
+  "series": [
+    {
+      "i": 0,
+      "rss": 89722880,
+      "heapTotal": 16019456,
+      "heapUsed": 6637112,
+      "external": 23202153,
+      "arrayBuffers": 19961099,
+      "v8_total_heap_size": 16019456,
+      "v8_used_heap_size": 6641192,
+      "v8_malloced_memory": 295024,
+      "v8_external_memory": 23202193,
+      "v8_heap_size_limit": 4345298944,
+      "VmRSS": 89722880,
+      "RssAnon": 43565056,
+      "RssFile": 46157824,
+      "VmHWM": 89722880,
+      "smaps": {
+        "Rss": 90464256,
+        "Pss": 86320128,
+        "Private_Clean": 40767488,
+        "Private_Dirty": 44044288,
+        "Anonymous": 44044288
+      },
+      "wasm_total": 0,
+      "wasm": [],
+      "phase": "before"
+    },
+    {
+      "i": 20,
+      "rss": 199135232,
+      "heapTotal": 71888896,
+      "heapUsed": 35852888,
+      "external": 62150322,
+      "arrayBuffers": 29255178,
+      "v8_total_heap_size": 71888896,
+      "v8_used_heap_size": 35856856,
+      "v8_malloced_memory": 1253288,
+      "v8_external_memory": 62150322,
+      "v8_heap_size_limit": 4345298944,
+      "VmRSS": 199135232,
+      "RssAnon": 148959232,
+      "RssFile": 50176000,
+      "VmHWM": 206495744,
+      "smaps": {
+        "Rss": 199938048,
+        "Pss": 195420160,
+        "Private_Clean": 43806720,
+        "Private_Dirty": 149762048,
+        "Anonymous": 149762048
+      },
+      "wasm_total": 28049408,
+      "wasm": [
+        {
+          "how": "instantiate:export:memory",
+          "label": "harfbuzz",
+          "bytes": 11272192
+        },
+        {
+          "how": "instantiate:export:E",
+          "label": "unknown",
+          "bytes": 16777216
+        }
+      ],
+      "phase": "loop"
+    },
+    {
+      "i": 40,
+      "rss": 193019904,
+      "heapTotal": 71888896,
+      "heapUsed": 36082304,
+      "external": 62150322,
+      "arrayBuffers": 29255178,
+      "v8_total_heap_size": 71888896,
+      "v8_used_heap_size": 36084008,
+      "v8_malloced_memory": 386056,
+      "v8_external_memory": 62150322,
+      "v8_heap_size_limit": 4345298944,
+      "VmRSS": 193019904,
+      "RssAnon": 142843904,
+      "RssFile": 50176000,
+      "VmHWM": 206495744,
+      "smaps": {
+        "Rss": 193699840,
+        "Pss": 189181952,
+        "Private_Clean": 43806720,
+        "Private_Dirty": 143523840,
+        "Anonymous": 143523840
+      },
+      "wasm_total": 28049408,
+      "wasm": [
+        {
+          "how": "instantiate:export:memory",
+          "label": "harfbuzz",
+          "bytes": 11272192
+        },
+        {
+          "how": "instantiate:export:E",
+          "label": "unknown",
+          "bytes": 16777216
+        }
+      ],
+      "phase": "loop"
+    },
+    {
+      "i": 60,
+      "rss": 193261568,
+      "heapTotal": 72413184,
+      "heapUsed": 36176584,
+      "external": 62150322,
+      "arrayBuffers": 29255178,
+      "v8_total_heap_size": 72413184,
+      "v8_used_heap_size": 36180624,
+      "v8_malloced_memory": 386056,
+      "v8_external_memory": 62150322,
+      "v8_heap_size_limit": 4345298944,
+      "VmRSS": 193261568,
+      "RssAnon": 143085568,
+      "RssFile": 50176000,
+      "VmHWM": 206495744,
+      "smaps": {
+        "Rss": 193900544,
+        "Pss": 189382656,
+        "Private_Clean": 43806720,
+        "Private_Dirty": 143724544,
+        "Anonymous": 143724544
+      },
+      "wasm_total": 28049408,
+      "wasm": [
+        {
+          "how": "instantiate:export:memory",
+          "label": "harfbuzz",
+          "bytes": 11272192
+        },
+        {
+          "how": "instantiate:export:E",
+          "label": "unknown",
+          "bytes": 16777216
+        }
+      ],
+      "phase": "loop"
+    },
+    {
+      "i": 80,
+      "rss": 193261568,
+      "heapTotal": 72413184,
+      "heapUsed": 36094600,
+      "external": 62150322,
+      "arrayBuffers": 29255178,
+      "v8_total_heap_size": 72413184,
+      "v8_used_heap_size": 36102096,
+      "v8_malloced_memory": 3691400,
+      "v8_external_memory": 62150322,
+      "v8_heap_size_limit": 4345298944,
+      "VmRSS": 193261568,
+      "RssAnon": 143085568,
+      "RssFile": 50176000,
+      "VmHWM": 206495744,
+      "smaps": {
+        "Rss": 193953792,
+        "Pss": 189435904,
+        "Private_Clean": 43806720,
+        "Private_Dirty": 143777792,
+        "Anonymous": 143777792
+      },
+      "wasm_total": 28049408,
+      "wasm": [
+        {
+          "how": "instantiate:export:memory",
+          "label": "harfbuzz",
+          "bytes": 11272192
+        },
+        {
+          "how": "instantiate:export:E",
+          "label": "unknown",
+          "bytes": 16777216
+        }
+      ],
+      "phase": "loop"
+    },
+    {
+      "i": 100,
+      "rss": 193589248,
+      "heapTotal": 72675328,
+      "heapUsed": 36185736,
+      "external": 62150322,
+      "arrayBuffers": 29255178,
+      "v8_total_heap_size": 72675328,
+      "v8_used_heap_size": 36190768,
+      "v8_malloced_memory": 386056,
+      "v8_external_memory": 62150322,
+      "v8_heap_size_limit": 4345298944,
+      "VmRSS": 193589248,
+      "RssAnon": 143413248,
+      "RssFile": 50176000,
+      "VmHWM": 206495744,
+      "smaps": {
+        "Rss": 194187264,
+        "Pss": 189669376,
+        "Private_Clean": 43806720,
+        "Private_Dirty": 144011264,
+        "Anonymous": 144011264
+      },
+      "wasm_total": 28049408,
+      "wasm": [
+        {
+          "how": "instantiate:export:memory",
+          "label": "harfbuzz",
+          "bytes": 11272192
+        },
+        {
+          "how": "instantiate:export:E",
+          "label": "unknown",
+          "bytes": 16777216
+        }
+      ],
+      "phase": "loop"
+    },
+    {
+      "i": 120,
+      "rss": 193589248,
+      "heapTotal": 72675328,
+      "heapUsed": 36257584,
+      "external": 62150322,
+      "arrayBuffers": 29255178,
+      "v8_total_heap_size": 72675328,
+      "v8_used_heap_size": 36263152,
+      "v8_malloced_memory": 386056,
+      "v8_external_memory": 62150322,
+      "v8_heap_size_limit": 4345298944,
+      "VmRSS": 193589248,
+      "RssAnon": 143413248,
+      "RssFile": 50176000,
+      "VmHWM": 206495744,
+      "smaps": {
+        "Rss": 194187264,
+        "Pss": 189669376,
+        "Private_Clean": 43806720,
+        "Private_Dirty": 144011264,
+        "Anonymous": 144011264
+      },
+      "wasm_total": 28049408,
+      "wasm": [
+        {
+          "how": "instantiate:export:memory",
+          "label": "harfbuzz",
+          "bytes": 11272192
+        },
+        {
+          "how": "instantiate:export:E",
+          "label": "unknown",
+          "bytes": 16777216
+        }
+      ],
+      "phase": "loop"
+    },
+    {
+      "i": 140,
+      "rss": 193589248,
+      "heapTotal": 72675328,
+      "heapUsed": 36150960,
+      "external": 62150322,
+      "arrayBuffers": 29255178,
+      "v8_total_heap_size": 72675328,
+      "v8_used_heap_size": 36156584,
+      "v8_malloced_memory": 386056,
+      "v8_external_memory": 62150322,
+      "v8_heap_size_limit": 4345298944,
+      "VmRSS": 193589248,
+      "RssAnon": 143413248,
+      "RssFile": 50176000,
+      "VmHWM": 206495744,
+      "smaps": {
+        "Rss": 194293760,
+        "Pss": 189775872,
+        "Private_Clean": 43806720,
+        "Private_Dirty": 144117760,
+        "Anonymous": 144117760
+      },
+      "wasm_total": 28049408,
+      "wasm": [
+        {
+          "how": "instantiate:export:memory",
+          "label": "harfbuzz",
+          "bytes": 11272192
+        },
+        {
+          "how": "instantiate:export:E",
+          "label": "unknown",
+          "bytes": 16777216
+        }
+      ],
+      "phase": "loop"
+    },
+    {
+      "i": 160,
+      "rss": 193589248,
+      "heapTotal": 72675328,
+      "heapUsed": 36319224,
+      "external": 62150322,
+      "arrayBuffers": 29255178,
+      "v8_total_heap_size": 72675328,
+      "v8_used_heap_size": 36320928,
+      "v8_malloced_memory": 386056,
+      "v8_external_memory": 62150322,
+      "v8_heap_size_limit": 4345298944,
+      "VmRSS": 193589248,
+      "RssAnon": 143413248,
+      "RssFile": 50176000,
+      "VmHWM": 206495744,
+      "smaps": {
+        "Rss": 194375680,
+        "Pss": 189857792,
+        "Private_Clean": 43806720,
+        "Private_Dirty": 144199680,
+        "Anonymous": 144199680
+      },
+      "wasm_total": 28049408,
+      "wasm": [
+        {
+          "how": "instantiate:export:memory",
+          "label": "harfbuzz",
+          "bytes": 11272192
+        },
+        {
+          "how": "instantiate:export:E",
+          "label": "unknown",
+          "bytes": 16777216
+        }
+      ],
+      "phase": "loop"
+    },
+    {
+      "i": 180,
+      "rss": 193855488,
+      "heapTotal": 72413184,
+      "heapUsed": 36244344,
+      "external": 62150322,
+      "arrayBuffers": 29255178,
+      "v8_total_heap_size": 72413184,
+      "v8_used_heap_size": 36244888,
+      "v8_malloced_memory": 3811504,
+      "v8_external_memory": 62150322,
+      "v8_heap_size_limit": 4345298944,
+      "VmRSS": 193855488,
+      "RssAnon": 143679488,
+      "RssFile": 50176000,
+      "VmHWM": 206495744,
+      "smaps": {
+        "Rss": 194506752,
+        "Pss": 189988864,
+        "Private_Clean": 43806720,
+        "Private_Dirty": 144330752,
+        "Anonymous": 144330752
+      },
+      "wasm_total": 28049408,
+      "wasm": [
+        {
+          "how": "instantiate:export:memory",
+          "label": "harfbuzz",
+          "bytes": 11272192
+        },
+        {
+          "how": "instantiate:export:E",
+          "label": "unknown",
+          "bytes": 16777216
+        }
+      ],
+      "phase": "loop"
+    },
+    {
+      "i": 200,
+      "rss": 193740800,
+      "heapTotal": 72413184,
+      "heapUsed": 36394432,
+      "external": 62150322,
+      "arrayBuffers": 29255178,
+      "v8_total_heap_size": 72413184,
+      "v8_used_heap_size": 36396152,
+      "v8_malloced_memory": 386056,
+      "v8_external_memory": 62150322,
+      "v8_heap_size_limit": 4345298944,
+      "VmRSS": 193740800,
+      "RssAnon": 143564800,
+      "RssFile": 50176000,
+      "VmHWM": 206495744,
+      "smaps": {
+        "Rss": 194498560,
+        "Pss": 189980672,
+        "Private_Clean": 43806720,
+        "Private_Dirty": 144322560,
+        "Anonymous": 144322560
+      },
+      "wasm_total": 28049408,
+      "wasm": [
+        {
+          "how": "instantiate:export:memory",
+          "label": "harfbuzz",
+          "bytes": 11272192
+        },
+        {
+          "how": "instantiate:export:E",
+          "label": "unknown",
+          "bytes": 16777216
+        }
+      ],
+      "phase": "loop"
+    },
+    {
+      "i": 220,
+      "rss": 193642496,
+      "heapTotal": 72675328,
+      "heapUsed": 36393160,
+      "external": 62150322,
+      "arrayBuffers": 29255178,
+      "v8_total_heap_size": 72675328,
+      "v8_used_heap_size": 36397656,
+      "v8_malloced_memory": 386056,
+      "v8_external_memory": 62150322,
+      "v8_heap_size_limit": 4345298944,
+      "VmRSS": 193642496,
+      "RssAnon": 143466496,
+      "RssFile": 50176000,
+      "VmHWM": 206495744,
+      "smaps": {
+        "Rss": 194392064,
+        "Pss": 189874176,
+        "Private_Clean": 43806720,
+        "Private_Dirty": 144216064,
+        "Anonymous": 144216064
+      },
+      "wasm_total": 28049408,
+      "wasm": [
+        {
+          "how": "instantiate:export:memory",
+          "label": "harfbuzz",
+          "bytes": 11272192
+        },
+        {
+          "how": "instantiate:export:E",
+          "label": "unknown",
+          "bytes": 16777216
+        }
+      ],
+      "phase": "loop"
+    },
+    {
+      "i": 240,
+      "rss": 193847296,
+      "heapTotal": 72675328,
+      "heapUsed": 36281048,
+      "external": 62150322,
+      "arrayBuffers": 29255178,
+      "v8_total_heap_size": 72675328,
+      "v8_used_heap_size": 36285720,
+      "v8_malloced_memory": 3024552,
+      "v8_external_memory": 62150322,
+      "v8_heap_size_limit": 4345298944,
+      "VmRSS": 193847296,
+      "RssAnon": 143671296,
+      "RssFile": 50176000,
+      "VmHWM": 206495744,
+      "smaps": {
+        "Rss": 194605056,
+        "Pss": 190087168,
+        "Private_Clean": 43806720,
+        "Private_Dirty": 144429056,
+        "Anonymous": 144429056
+      },
+      "wasm_total": 28049408,
+      "wasm": [
+        {
+          "how": "instantiate:export:memory",
+          "label": "harfbuzz",
+          "bytes": 11272192
+        },
+        {
+          "how": "instantiate:export:E",
+          "label": "unknown",
+          "bytes": 16777216
+        }
+      ],
+      "phase": "loop"
+    },
+    {
+      "i": 260,
+      "rss": 194236416,
+      "heapTotal": 72937472,
+      "heapUsed": 36389832,
+      "external": 62150322,
+      "arrayBuffers": 29255178,
+      "v8_total_heap_size": 72937472,
+      "v8_used_heap_size": 36394272,
+      "v8_malloced_memory": 386056,
+      "v8_external_memory": 62150322,
+      "v8_heap_size_limit": 4345298944,
+      "VmRSS": 194236416,
+      "RssAnon": 144060416,
+      "RssFile": 50176000,
+      "VmHWM": 206495744,
+      "smaps": {
+        "Rss": 194838528,
+        "Pss": 190320640,
+        "Private_Clean": 43806720,
+        "Private_Dirty": 144662528,
+        "Anonymous": 144662528
+      },
+      "wasm_total": 28049408,
+      "wasm": [
+        {
+          "how": "instantiate:export:memory",
+          "label": "harfbuzz",
+          "bytes": 11272192
+        },
+        {
+          "how": "instantiate:export:E",
+          "label": "unknown",
+          "bytes": 16777216
+        }
+      ],
+      "phase": "loop"
+    },
+    {
+      "i": 280,
+      "rss": 194191360,
+      "heapTotal": 73199616,
+      "heapUsed": 36433464,
+      "external": 62150322,
+      "arrayBuffers": 29255178,
+      "v8_total_heap_size": 73199616,
+      "v8_used_heap_size": 36437760,
+      "v8_malloced_memory": 386056,
+      "v8_external_memory": 62150322,
+      "v8_heap_size_limit": 4345298944,
+      "VmRSS": 194191360,
+      "RssAnon": 144015360,
+      "RssFile": 50176000,
+      "VmHWM": 206495744,
+      "smaps": {
+        "Rss": 194711552,
+        "Pss": 190193664,
+        "Private_Clean": 43806720,
+        "Private_Dirty": 144535552,
+        "Anonymous": 144535552
+      },
+      "wasm_total": 28049408,
+      "wasm": [
+        {
+          "how": "instantiate:export:memory",
+          "label": "harfbuzz",
+          "bytes": 11272192
+        },
+        {
+          "how": "instantiate:export:E",
+          "label": "unknown",
+          "bytes": 16777216
+        }
+      ],
+      "phase": "loop"
+    },
+    {
+      "i": 300,
+      "rss": 194461696,
+      "heapTotal": 72675328,
+      "heapUsed": 36288368,
+      "external": 62150322,
+      "arrayBuffers": 29255178,
+      "v8_total_heap_size": 72675328,
+      "v8_used_heap_size": 36292104,
+      "v8_malloced_memory": 3778728,
+      "v8_external_memory": 62150322,
+      "v8_heap_size_limit": 4345298944,
+      "VmRSS": 194461696,
+      "RssAnon": 144285696,
+      "RssFile": 50176000,
+      "VmHWM": 206495744,
+      "smaps": {
+        "Rss": 194768896,
+        "Pss": 190251008,
+        "Private_Clean": 43806720,
+        "Private_Dirty": 144592896,
+        "Anonymous": 144592896
+      },
+      "wasm_total": 28049408,
+      "wasm": [
+        {
+          "how": "instantiate:export:memory",
+          "label": "harfbuzz",
+          "bytes": 11272192
+        },
+        {
+          "how": "instantiate:export:E",
+          "label": "unknown",
+          "bytes": 16777216
+        }
+      ],
+      "phase": "loop"
+    },
+    {
+      "i": 320,
+      "rss": 194347008,
+      "heapTotal": 72675328,
+      "heapUsed": 36374224,
+      "external": 62150322,
+      "arrayBuffers": 29255178,
+      "v8_total_heap_size": 72675328,
+      "v8_used_heap_size": 36379256,
+      "v8_malloced_memory": 386056,
+      "v8_external_memory": 62150322,
+      "v8_heap_size_limit": 4345298944,
+      "VmRSS": 194347008,
+      "RssAnon": 144171008,
+      "RssFile": 50176000,
+      "VmHWM": 206495744,
+      "smaps": {
+        "Rss": 194719744,
+        "Pss": 190201856,
+        "Private_Clean": 43806720,
+        "Private_Dirty": 144543744,
+        "Anonymous": 144543744
+      },
+      "wasm_total": 28049408,
+      "wasm": [
+        {
+          "how": "instantiate:export:memory",
+          "label": "harfbuzz",
+          "bytes": 11272192
+        },
+        {
+          "how": "instantiate:export:E",
+          "label": "unknown",
+          "bytes": 16777216
+        }
+      ],
+      "phase": "loop"
+    },
+    {
+      "i": 340,
+      "rss": 194551808,
+      "heapTotal": 72675328,
+      "heapUsed": 36436920,
+      "external": 62150322,
+      "arrayBuffers": 29255178,
+      "v8_total_heap_size": 72675328,
+      "v8_used_heap_size": 36441888,
+      "v8_malloced_memory": 386056,
+      "v8_external_memory": 62150322,
+      "v8_heap_size_limit": 4345298944,
+      "VmRSS": 194551808,
+      "RssAnon": 144375808,
+      "RssFile": 50176000,
+      "VmHWM": 206495744,
+      "smaps": {
+        "Rss": 194834432,
+        "Pss": 190316544,
+        "Private_Clean": 43806720,
+        "Private_Dirty": 144658432,
+        "Anonymous": 144658432
+      },
+      "wasm_total": 28049408,
+      "wasm": [
+        {
+          "how": "instantiate:export:memory",
+          "label": "harfbuzz",
+          "bytes": 11272192
+        },
+        {
+          "how": "instantiate:export:E",
+          "label": "unknown",
+          "bytes": 16777216
+        }
+      ],
+      "phase": "loop"
+    },
+    {
+      "i": 360,
+      "rss": 194371584,
+      "heapTotal": 72675328,
+      "heapUsed": 36299400,
+      "external": 62150322,
+      "arrayBuffers": 29255178,
+      "v8_total_heap_size": 72675328,
+      "v8_used_heap_size": 36303328,
+      "v8_malloced_memory": 2339312,
+      "v8_external_memory": 62150322,
+      "v8_heap_size_limit": 4345298944,
+      "VmRSS": 194371584,
+      "RssAnon": 144195584,
+      "RssFile": 50176000,
+      "VmHWM": 206495744,
+      "smaps": {
+        "Rss": 194748416,
+        "Pss": 190230528,
+        "Private_Clean": 43806720,
+        "Private_Dirty": 144572416,
+        "Anonymous": 144572416
+      },
+      "wasm_total": 28049408,
+      "wasm": [
+        {
+          "how": "instantiate:export:memory",
+          "label": "harfbuzz",
+          "bytes": 11272192
+        },
+        {
+          "how": "instantiate:export:E",
+          "label": "unknown",
+          "bytes": 16777216
+        }
+      ],
+      "phase": "loop"
+    },
+    {
+      "i": 380,
+      "rss": 194281472,
+      "heapTotal": 72675328,
+      "heapUsed": 36303952,
+      "external": 62150322,
+      "arrayBuffers": 29255178,
+      "v8_total_heap_size": 72675328,
+      "v8_used_heap_size": 36308200,
+      "v8_malloced_memory": 386056,
+      "v8_external_memory": 62150322,
+      "v8_heap_size_limit": 4345298944,
+      "VmRSS": 194281472,
+      "RssAnon": 144105472,
+      "RssFile": 50176000,
+      "VmHWM": 206495744,
+      "smaps": {
+        "Rss": 194789376,
+        "Pss": 190271488,
+        "Private_Clean": 43806720,
+        "Private_Dirty": 144613376,
+        "Anonymous": 144613376
+      },
+      "wasm_total": 28049408,
+      "wasm": [
+        {
+          "how": "instantiate:export:memory",
+          "label": "harfbuzz",
+          "bytes": 11272192
+        },
+        {
+          "how": "instantiate:export:E",
+          "label": "unknown",
+          "bytes": 16777216
+        }
+      ],
+      "phase": "loop"
+    },
+    {
+      "i": 400,
+      "rss": 194416640,
+      "heapTotal": 73199616,
+      "heapUsed": 36428584,
+      "external": 62150322,
+      "arrayBuffers": 29255178,
+      "v8_total_heap_size": 73199616,
+      "v8_used_heap_size": 36432384,
+      "v8_malloced_memory": 386056,
+      "v8_external_memory": 62150322,
+      "v8_heap_size_limit": 4345298944,
+      "VmRSS": 194416640,
+      "RssAnon": 144240640,
+      "RssFile": 50176000,
+      "VmHWM": 206495744,
+      "smaps": {
+        "Rss": 194699264,
+        "Pss": 190181376,
+        "Private_Clean": 43806720,
+        "Private_Dirty": 144523264,
+        "Anonymous": 144523264
+      },
+      "wasm_total": 28049408,
+      "wasm": [
+        {
+          "how": "instantiate:export:memory",
+          "label": "harfbuzz",
+          "bytes": 11272192
+        },
+        {
+          "how": "instantiate:export:E",
+          "label": "unknown",
+          "bytes": 16777216
+        }
+      ],
+      "phase": "loop"
+    },
+    {
+      "i": 400,
+      "rss": 194416640,
+      "heapTotal": 73199616,
+      "heapUsed": 36440048,
+      "external": 62150322,
+      "arrayBuffers": 29255178,
+      "v8_total_heap_size": 73199616,
+      "v8_used_heap_size": 36443976,
+      "v8_malloced_memory": 386056,
+      "v8_external_memory": 62150322,
+      "v8_heap_size_limit": 4345298944,
+      "VmRSS": 194416640,
+      "RssAnon": 144240640,
+      "RssFile": 50176000,
+      "VmHWM": 206495744,
+      "smaps": {
+        "Rss": 194699264,
+        "Pss": 190181376,
+        "Private_Clean": 43806720,
+        "Private_Dirty": 144523264,
+        "Anonymous": 144523264
+      },
+      "wasm_total": 28180480,
+      "wasm": [
+        {
+          "how": "instantiate:export:memory",
+          "label": "harfbuzz",
+          "bytes": 11272192
+        },
+        {
+          "how": "instantiate:export:E",
+          "label": "unknown",
+          "bytes": 16777216
+        },
+        {
+          "how": "instantiate:export:memory",
+          "label": "unknown",
+          "bytes": 131072
+        }
+      ],
+      "phase": "after_gc_settle"
+    }
+  ]
+}

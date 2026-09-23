@@ -1,0 +1,83 @@
+{
+  "first_try": {
+    "command": "shashoku grareco.html -o grareco.png --width 900",
+    "exit": 1,
+    "result": "fail",
+    "stderr": "error[unsupported-value] at 82:77: `border-style: dashed` is not supported (supported: solid, none)",
+    "cause": "skill 文書の CSS 表に `border-style` が対応プロパティとして載っているが、対応する「値」が書かれていない。破線の箱（元ページの点線枠 3 か所）に dashed を使って止まった",
+    "html_snapshot": "iter0_first_try.html"
+  },
+  "iterations": [
+    {
+      "n": 1,
+      "kind": "error",
+      "exit": 1,
+      "error": "error[unsupported-value] at 82:77: `border-style: dashed` is not supported (supported: solid, none)",
+      "cause": "border-style に dashed を使った（.fa-r / .fc-ex / .foot の 3 か所）",
+      "fix": "3 か所とも border-style:solid に置換。破線と実線の区別は失われるので、色で区別を残した"
+    },
+    {
+      "n": 2,
+      "kind": "error",
+      "exit": 1,
+      "error": "error[unsupported-layout] at 9:38: `padding-top` is not supported on an inline element (`display: inline`); only `<img>` takes box properties while inline",
+      "cause": "マーカー線（蛍光ペン）の `.mk` は inline の span なのに padding:0 .12em を付けていた。inline 要素には box プロパティが付かないと文書に書かれていない",
+      "fix": ".mk から padding を外し background-color だけにした。inline への background-color は通ることがここで分かった"
+    },
+    {
+      "n": 3,
+      "kind": "error",
+      "exit": 1,
+      "error": "error[unsupported-layout] at 17:57: `padding-top` is not supported on an inline element (`display: inline`); only `<img>` takes box properties while inline",
+      "cause": "最大の誤解。flex コンテナ（h2 や .step など）の子の <span> が blockify されず display:inline のままだった。ブラウザの CSS では flex 項目は blockify されるので、padding/width/height/border を付けた span を flex 項目として多用していた（.tag .n .ttl .sn .stx .plb .plt .chip .fb-qn .fb-qt .fc-nm .fc-ph の 12 クラス）。加えて inline の .code にも padding/border を付けていた",
+      "fix": "flex 項目になる span を対応する閉じタグごと div に一括変換（小さな Python で入れ子を数えて置換）。.code は padding と border を捨てて background-color + color だけにした。→ exit=0、警告 0 で通過"
+    },
+    {
+      "n": 4,
+      "kind": "visual",
+      "exit": 0,
+      "cause": "PNG を見て発見。図 A の「保証と検証が及ぶのはここまで」の括弧バーを図の全幅（600px）に引いていたため、保証の外であるはずの「英語・その他」の箱まで覆い、元の SVG（括弧は左の日本語の箱の上だけ）と意味が逆になっていた。あわせて土台の注記 2 行を土台の箱の内側に入れてしまっていた（元は箱の外）",
+      "fix": ".fa-lbl と .fa-brk に width:350px を付けて左の箱の上だけに掛けた。注記 2 行は .fa-base の外に出した"
+    }
+  ],
+  "runs_total": 5,
+  "iterations_error": 3,
+  "iterations_visual": 1,
+  "final": "pass",
+  "png": "grareco.png",
+  "png_size": "900x5946",
+  "warnings": 0,
+  "dropped": [
+    "Google Fonts（Yusei Magic / Zen Kaku Gothic New）— 手書き風の見出し書体。既定の Noto Sans JP のみになり、グラレコらしい手書き感が最も大きく失われた",
+    "背景のドット方眼（background-image: radial-gradient + background-size）— 単色の紙色に",
+    "box-shadow（セクション・付箋の 5px 6px 0 の影）— 紙が浮いて見える表現が消えた",
+    "transform: rotate（スタンプ -2deg、付箋 -0.9 / 1 / -0.4deg の傾き）— すべて水平に",
+    "四隅バラバラの border-radius（20px 24px 20px 26px 等の手書き風の歪み）— 単一値の角丸に",
+    "border-style: dashed（英語・その他の箱、出口の箱、判断記録の枠、steps の区切り線）— すべて実線に。点線と実線で「保証の外」「出口」を示し分ける手がかりが弱まった",
+    "吹き出しのしっぽ（::after + rotate の三角）— 「▼」の文字で代用（枠線が無いのでベタ塗りの三角になった）",
+    "マーカー線のグラデーション（transparent 62% → 黄 62%。下 38% だけ塗る蛍光ペン）— 行全体の黄色ベタ塗りに",
+    "<code> の等幅フォント・枠線・内側余白 — inline に box プロパティを付けられないため背景色と文字色だけに",
+    "ダークモード（@media prefers-color-scheme と CSS カスタムプロパティ）— ライト固定。色はすべて literal に展開",
+    "ol / ul / li / table / section / figure / figcaption / header / b / code のセマンティックなタグ — すべて div・p・span に。counter() による自動採番は手書きの数字に",
+    "table の border-collapse — セルごとに 1px 枠を引いたので、隣り合う罫が 2px に見える",
+    "flex-wrap — チップ 6 個の折り返しができないので手で 2 行に分けた（幅 900 決め打ちになった）",
+    "手書き風の下向き矢印 doodle（ベジェの SVG パス）— 「↓」の文字 1 つに",
+    "SVG の図 3 枚 — 箱・罫線・文字で描き直した。矢印は「↓」の文字、図 A の括弧は 3px のバー、図 B の門の柱は細い枠付き矩形、図 C のブラケットは 3px の縦バー（高さを px で手計算して段に合わせた）"
+  ],
+  "fidelity": 4,
+  "skill_gaps": [
+    "border-style の対応値が書かれていない。表には `border-style` としか無く、dashed が不可だと読み取れない（エラー文には supported: solid, none とあり、そこで初めて分かった）",
+    "**inline 要素には padding / border / width / height が付かない**ことが書かれていない。CSS 表は「ボックス」分類に padding・border を並べているので span にも効くと読める。ここで 2 回止まった",
+    "**flex コンテナの子の <span> が blockify されない**（display:inline のまま）ことが書かれていない。ブラウザの flex とは違う挙動で、ここが一番大きな落とし穴。「flex 項目は div にする」と一行あれば 2 反復減った",
+    "display に inline-block が無いため「内容幅の箱」（チップ・タグ・スタンプ）を作れない。代わりに『flex の親 + flex:none の子』という定石が要るが、文書に無いので自力で見つける必要がある",
+    "align-items / justify-content の対応値の一覧が無い。stretch が効くか（= 表のセルや縦バーが行の高さに伸びるか）は試すまで分からなかった（実際は効いた）",
+    "line-height に単位なしの数値（1.85 など）が使えるか不明。「単位は px em と単位なしの 0」とあるので em に逃げたが、継承の仕方が変わるので明記してほしい",
+    "HTML コメント <!-- --> が使えるか不明（実際は通った）",
+    "flex / margin などの shorthand が使えるか不明（flex:1、margin:18px auto 6px、padding:20px 22px 24px はいずれも通った）",
+    "h1〜h6・p の UA 既定スタイル（margin / font-size / font-weight）が何か分からない。全部自分で上書きする羽目になる",
+    "エラーが 1 回に 1 件しか出ない（A46 の一括報告が未実装）ことが書かれていない。同種の誤りが何か所あっても 1 件ずつしか分からないので、反復回数の見積もりが立たない",
+    "border-collapse 相当が無いときに表をどう組むか（隣接セルの罫が 2 重になる）の定石が無い",
+    "元ページを移植するときの「代替表」（gradient→単色、shadow→なし、::after の三角→▼、dashed→色分け）があると、失われるものを早く見積もれる"
+  ],
+  "notes": "5 回実行（エラー起因 3 回、見た目起因 1 回、最終 1 回）。最終 exit=0・警告 0。エラー文は毎回 入力位置（行:桁）+ 原因 + 対応値 が付いていて、3 回とも文面だけで直せた（リポジトリのソースは一切読んでいない）。内容は 9 節・付箋 8 枚・表 3 つ・箇条書き 4 つ・数字・A46/A47 の注記をすべて残し、1 文字も削っていない。図 3 枚は箱と罫線と ↓ の文字だけで描き直し、元の SVG の関係（二層・門の分岐・6 段パイプラインと 3 つの約束が掛かる範囲）は保った。図 C はブラケットの高さを段の外寸から px で手計算して合わせる必要があり、ここが一番手間だった。"
+}

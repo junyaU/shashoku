@@ -1,0 +1,28 @@
+<style>
+.card { width: 656px; padding: 32px; background-color: #fbfaf7; border: 1px solid #ddd8cc; border-radius: 12px; }
+.kicker { font-size: 12px; color: #8a8271; letter-spacing: 0.12em; line-height: 1.5em; margin: 0 0 10px 0; }
+.term { font-size: 38px; font-weight: bold; color: #2b2a26; line-height: 1.9em; margin: 0 0 6px 0; }
+.yomi { font-size: 14px; color: #6f6a5d; line-height: 1.6em; margin: 0 0 20px 0; }
+.rule { height: 1px; background-color: #e2ddd1; margin: 0 0 20px 0; }
+.h { font-size: 13px; font-weight: bold; color: #7a6f57; line-height: 1.6em; margin: 0 0 6px 0; }
+.def { font-size: 16px; color: #33322d; line-height: 2em; margin: 0 0 20px 0; }
+.ex { font-size: 15px; color: #33322d; line-height: 2em; padding: 14px; background-color: #f2efe6; border-radius: 8px; margin: 0 0 20px 0; }
+.tags { display: flex; gap: 8px; align-items: center; }
+.tagslabel { font-size: 13px; font-weight: bold; color: #7a6f57; }
+.tag { padding: 5px 12px; background-color: #e7e2d4; border-radius: 12px; font-size: 12px; color: #5f5844; line-height: 1.5em; }
+</style>
+<div class="card">
+  <div class="kicker">社内 wiki / 用語カード</div>
+  <div class="term"><ruby>冪等性<rt>べきとうせい</rt></ruby></div>
+  <div class="yomi">読み: べきとうせい（idempotence）</div>
+  <div class="rule"></div>
+  <div class="h">定義</div>
+  <div class="def">ある操作を 1 回だけ行っても、2 回以上くり返して行っても、系の状態が同じになる性質のことです。結果が同じであればよく、途中の処理が毎回まったく同じである必要はありません。</div>
+  <div class="h">具体例</div>
+  <div class="ex">同じ注文 ID で決済 API を 2 回呼んでも、二重に課金されない。</div>
+  <div class="tags">
+    <div class="tagslabel">関連語</div>
+    <div class="tag">リトライ</div>
+    <div class="tag">at-least-once</div>
+  </div>
+</div>

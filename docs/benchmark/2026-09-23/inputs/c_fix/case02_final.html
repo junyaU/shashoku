@@ -1,0 +1,164 @@
+<style>
+  * {
+  }
+  body {
+    margin: 0;
+    padding: 48px 20px;
+    background: #fbfcfd;
+    font-family: "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, sans-serif;
+    color: #1f2933;
+  }
+  .sheet {
+    width: 934px;
+    margin: 0 auto;
+    background: #fff;
+    border: 1px solid #e1e6eb;
+    border-radius: 14px;
+    padding: 36px 32px 32px;
+  }
+  h1 {
+    margin: 0 0 4px;
+    font-size: 20px;
+    font-weight: 700;
+  }
+  .sub {
+    margin: 0 0 32px;
+    font-size: 13px;
+    color: #7b8794;
+  }
+  .flow {
+    display: flex;
+    align-items: stretch;
+    justify-content: space-between;
+    gap: 0;
+  }
+  .step {
+    flex: 1 1 0;
+    background: #f7f9fc;
+    border: 1px solid #d6e0ea;
+    border-radius: 10px;
+    padding: 18px 14px 16px;
+    text-align: center;
+    height: 150px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .g1 {
+    font-size: 26px;
+    line-height: 1;
+    margin-bottom: 10px;
+  }
+  .g2 {
+    margin: 0 0 8px;
+    font-size: 15px;
+    font-weight: 700;
+    color: #24496e;
+  }
+  .g3 {
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.75;
+    color: #52606d;
+    text-align: left;
+  }
+  .arrow {
+    flex: 0 0 56px;
+    height: 2px;
+    background: #9fb3c8;
+    margin: 0 6px;
+  }
+  .g6 {
+  }
+  .worker-col {
+    flex: 1 1 0;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .g4 {
+    flex: 1 1 auto;
+  }
+  .drop {
+    height: 22px;
+    width: 2px;
+    background: #cbd2d9;
+    margin: 0 auto;
+  }
+  .note {
+    border: 1px solid #d9a441;
+    background: #fff9ec;
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 11.5px;
+    line-height: 1.7;
+    color: #7a5c14;
+    text-align: left;
+  }
+  .g5 {
+    display: block;
+    font-size: 10.5px;
+    letter-spacing: 0.08em;
+    color: #b07d1a;
+    margin-bottom: 3px;
+  }
+  .legend {
+    margin-top: 28px;
+    padding-top: 16px;
+    font-size: 11.5px;
+    color: #9aa5b1;
+  }
+</style>
+<div class="sheet">
+    <h1>注文受付から確定までの非同期処理フロー</h1>
+    <p class="sub">設計レビュー資料 ／ 2026-09-23</p>
+
+    <div class="flow">
+      <div class="step">
+        <div class="icon g1">👤</div>
+        <h2 class="g2">ユーザー</h2>
+        <p class="g3">ブラウザから注文フォームを送信する。受付 ID をその場で受け取る。</p>
+      </div>
+
+      <div class="arrow"><span class="g6"></span></div>
+
+      <div class="step">
+        <div class="icon g1">🖥️</div>
+        <h2 class="g2">API サーバー</h2>
+        <p class="g3">入力値を検証し、受付 ID を採番。ジョブを積んで 202 をすぐ返す。</p>
+      </div>
+
+      <div class="arrow"><span class="g6"></span></div>
+
+      <div class="step">
+        <div class="icon g1">📥</div>
+        <h2 class="g2">キュー</h2>
+        <p class="g3">ジョブを順番に保持する。ワーカーが落ちても取りこぼさない。</p>
+      </div>
+
+      <div class="arrow"><span class="g6"></span></div>
+
+      <div class="worker-col">
+        <div class="step g4">
+          <div class="icon g1">⚙️</div>
+          <h2 class="g2">ワーカー</h2>
+          <p class="g3">在庫引き当てと決済を実行し、結果を書き戻して通知メールを送る。</p>
+        </div>
+        <div class="drop"></div>
+        <div class="note">
+          <span class="strong g5">再試行ポリシー</span>
+          失敗時は 3 回まで再試行し、それでも失敗したら dead letter に送る
+        </div>
+      </div>
+
+      <div class="arrow"><span class="g6"></span></div>
+
+      <div class="step">
+        <div class="icon g1">🗄️</div>
+        <h2 class="g2">DB</h2>
+        <p class="g3">注文の確定状態を保存する。受付 ID で冪等に書き込む。</p>
+      </div>
+    </div>
+
+    <div class="legend">→ は処理の流れ ／ 破線の枠は運用上の取り決めを示す</div>
+  </div>

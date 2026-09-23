@@ -1,0 +1,21 @@
+{
+  "mode": "resident",
+  "warmup": 3,
+  "iters": 20,
+  "cases": [
+    {"case": "case01", "width": 900, "height": 637, "png_bytes": 142653, "warnings": 0, "median_ms": 19.3227, "min_ms": 19.1475, "max_ms": 20.3432, "rss_after_bytes": 23146496},
+    {"case": "case02", "width": 1000, "height": 291, "png_bytes": 41543, "warnings": 0, "median_ms": 9.28768, "min_ms": 9.11108, "max_ms": 9.64891, "rss_after_bytes": 23146496},
+    {"case": "case03", "width": 720, "height": 531, "png_bytes": 50312, "warnings": 0, "median_ms": 14.1151, "min_ms": 13.9143, "max_ms": 14.7288, "rss_after_bytes": 23146496},
+    {"case": "case04", "width": 800, "height": 654, "png_bytes": 90060, "warnings": 0, "median_ms": 18.402, "min_ms": 17.9363, "max_ms": 19.1665, "rss_after_bytes": 23146496},
+    {"case": "case05", "width": 1080, "height": 1080, "png_bytes": 63986, "warnings": 0, "median_ms": 22.2017, "min_ms": 21.905, "max_ms": 22.9219, "rss_after_bytes": 30281728},
+    {"case": "case06", "width": 1200, "height": 630, "png_bytes": 52608, "warnings": 0, "median_ms": 15.211, "min_ms": 15.0066, "max_ms": 15.6341, "rss_after_bytes": 30281728},
+    {"case": "case07", "width": 1080, "height": 1080, "png_bytes": 80353, "warnings": 0, "median_ms": 29.7648, "min_ms": 29.2275, "max_ms": 30.8989, "rss_after_bytes": 30552064},
+    {"case": "case08", "width": 800, "height": 385, "png_bytes": 35739, "warnings": 0, "median_ms": 12.3298, "min_ms": 12.1201, "max_ms": 12.9182, "rss_after_bytes": 30552064},
+    {"case": "case09", "width": 800, "height": 424, "png_bytes": 66499, "warnings": 0, "median_ms": 12.517, "min_ms": 12.4052, "max_ms": 13.0103, "rss_after_bytes": 30552064},
+    {"case": "case10", "width": 800, "height": 1200, "png_bytes": 33821, "warnings": 0, "median_ms": 18.3137, "min_ms": 17.4977, "max_ms": 19.7545, "rss_after_bytes": 30552064}
+  ],
+  "rss_start_bytes": 1740800,
+  "rss_after_prepare_bytes": 15073280,
+  "rss_end_bytes": 30552064,
+  "vmhwm_bytes": 34787328
+}

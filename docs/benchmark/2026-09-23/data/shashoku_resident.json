@@ -1,0 +1,336 @@
+{
+  "target": "shashoku",
+  "env": {
+    "cpu": "Intel(R) Core(TM) i9-14900KF",
+    "logical_cpus": 32,
+    "cores_per_socket": 16,
+    "threads_per_core": 2,
+    "os": "Linux 5.15.167.4-microsoft-standard-WSL2 (WSL2)",
+    "ram_total_mb": 32017,
+    "shashoku_commit": "c157766",
+    "shashoku_build": "release (-O3 -DNDEBUG, clang-18 + libc++-18), bench.cpp は -O2",
+    "shashoku_png_compression_level": 6,
+    "node": "v20.18.1",
+    "satori": "0.33.5",
+    "satori_html": "0.3.2",
+    "resvg_js": "2.6.2",
+    "resvg_png_compression": "asPng() に圧縮レベルの指定口が無い（index.d.ts: asPng(): Buffer）ので既定のまま",
+    "date": "2026-09-23"
+  },
+  "method": "1 プロセスで LoadedFonts/LoadedImages を prepare() 後、ケースごとに 3 回捨てて 20 回測る。render() 1 回の wall clock（steady_clock）の中央値",
+  "run1": {
+    "mode": "resident",
+    "warmup": 3,
+    "iters": 20,
+    "cases": [
+      {
+        "case": "case01",
+        "width": 900,
+        "height": 637,
+        "png_bytes": 142653,
+        "warnings": 0,
+        "median_ms": 19.3227,
+        "min_ms": 19.1475,
+        "max_ms": 20.3432,
+        "rss_after_bytes": 23146496
+      },
+      {
+        "case": "case02",
+        "width": 1000,
+        "height": 291,
+        "png_bytes": 41543,
+        "warnings": 0,
+        "median_ms": 9.28768,
+        "min_ms": 9.11108,
+        "max_ms": 9.64891,
+        "rss_after_bytes": 23146496
+      },
+      {
+        "case": "case03",
+        "width": 720,
+        "height": 531,
+        "png_bytes": 50312,
+        "warnings": 0,
+        "median_ms": 14.1151,
+        "min_ms": 13.9143,
+        "max_ms": 14.7288,
+        "rss_after_bytes": 23146496
+      },
+      {
+        "case": "case04",
+        "width": 800,
+        "height": 654,
+        "png_bytes": 90060,
+        "warnings": 0,
+        "median_ms": 18.402,
+        "min_ms": 17.9363,
+        "max_ms": 19.1665,
+        "rss_after_bytes": 23146496
+      },
+      {
+        "case": "case05",
+        "width": 1080,
+        "height": 1080,
+        "png_bytes": 63986,
+        "warnings": 0,
+        "median_ms": 22.2017,
+        "min_ms": 21.905,
+        "max_ms": 22.9219,
+        "rss_after_bytes": 30281728
+      },
+      {
+        "case": "case06",
+        "width": 1200,
+        "height": 630,
+        "png_bytes": 52608,
+        "warnings": 0,
+        "median_ms": 15.211,
+        "min_ms": 15.0066,
+        "max_ms": 15.6341,
+        "rss_after_bytes": 30281728
+      },
+      {
+        "case": "case07",
+        "width": 1080,
+        "height": 1080,
+        "png_bytes": 80353,
+        "warnings": 0,
+        "median_ms": 29.7648,
+        "min_ms": 29.2275,
+        "max_ms": 30.8989,
+        "rss_after_bytes": 30552064
+      },
+      {
+        "case": "case08",
+        "width": 800,
+        "height": 385,
+        "png_bytes": 35739,
+        "warnings": 0,
+        "median_ms": 12.3298,
+        "min_ms": 12.1201,
+        "max_ms": 12.9182,
+        "rss_after_bytes": 30552064
+      },
+      {
+        "case": "case09",
+        "width": 800,
+        "height": 424,
+        "png_bytes": 66499,
+        "warnings": 0,
+        "median_ms": 12.517,
+        "min_ms": 12.4052,
+        "max_ms": 13.0103,
+        "rss_after_bytes": 30552064
+      },
+      {
+        "case": "case10",
+        "width": 800,
+        "height": 1200,
+        "png_bytes": 33821,
+        "warnings": 0,
+        "median_ms": 18.3137,
+        "min_ms": 17.4977,
+        "max_ms": 19.7545,
+        "rss_after_bytes": 30552064
+      }
+    ],
+    "rss_start_bytes": 1740800,
+    "rss_after_prepare_bytes": 15073280,
+    "rss_end_bytes": 30552064,
+    "vmhwm_bytes": 34787328
+  },
+  "run2_repeat": {
+    "mode": "resident",
+    "warmup": 3,
+    "iters": 20,
+    "cases": [
+      {
+        "case": "case01",
+        "width": 900,
+        "height": 637,
+        "png_bytes": 142653,
+        "warnings": 0,
+        "median_ms": 19.6869,
+        "min_ms": 18.6959,
+        "max_ms": 20.5059,
+        "rss_after_bytes": 23302144
+      },
+      {
+        "case": "case02",
+        "width": 1000,
+        "height": 291,
+        "png_bytes": 41543,
+        "warnings": 0,
+        "median_ms": 9.40091,
+        "min_ms": 8.97682,
+        "max_ms": 9.57986,
+        "rss_after_bytes": 23302144
+      },
+      {
+        "case": "case03",
+        "width": 720,
+        "height": 531,
+        "png_bytes": 50312,
+        "warnings": 0,
+        "median_ms": 13.9923,
+        "min_ms": 13.6355,
+        "max_ms": 14.7652,
+        "rss_after_bytes": 23302144
+      },
+      {
+        "case": "case04",
+        "width": 800,
+        "height": 654,
+        "png_bytes": 90060,
+        "warnings": 0,
+        "median_ms": 18.1013,
+        "min_ms": 17.9379,
+        "max_ms": 18.9821,
+        "rss_after_bytes": 23302144
+      },
+      {
+        "case": "case05",
+        "width": 1080,
+        "height": 1080,
+        "png_bytes": 63986,
+        "warnings": 0,
+        "median_ms": 22.1145,
+        "min_ms": 21.8401,
+        "max_ms": 23.0804,
+        "rss_after_bytes": 30498816
+      },
+      {
+        "case": "case06",
+        "width": 1200,
+        "height": 630,
+        "png_bytes": 52608,
+        "warnings": 0,
+        "median_ms": 15.1825,
+        "min_ms": 14.9625,
+        "max_ms": 15.8612,
+        "rss_after_bytes": 30498816
+      },
+      {
+        "case": "case07",
+        "width": 1080,
+        "height": 1080,
+        "png_bytes": 80353,
+        "warnings": 0,
+        "median_ms": 30.0026,
+        "min_ms": 29.1992,
+        "max_ms": 30.9808,
+        "rss_after_bytes": 30769152
+      },
+      {
+        "case": "case08",
+        "width": 800,
+        "height": 385,
+        "png_bytes": 35739,
+        "warnings": 0,
+        "median_ms": 12.8146,
+        "min_ms": 12.2745,
+        "max_ms": 12.989,
+        "rss_after_bytes": 30769152
+      },
+      {
+        "case": "case09",
+        "width": 800,
+        "height": 424,
+        "png_bytes": 66499,
+        "warnings": 0,
+        "median_ms": 12.4351,
+        "min_ms": 12.2761,
+        "max_ms": 12.911,
+        "rss_after_bytes": 30769152
+      },
+      {
+        "case": "case10",
+        "width": 800,
+        "height": 1200,
+        "png_bytes": 33821,
+        "warnings": 0,
+        "median_ms": 17.5176,
+        "min_ms": 17.2875,
+        "max_ms": 18.2531,
+        "rss_after_bytes": 30769152
+      }
+    ],
+    "rss_start_bytes": 1867776,
+    "rss_after_prepare_bytes": 15388672,
+    "rss_end_bytes": 30769152,
+    "vmhwm_bytes": 35246080
+  },
+  "longrun": {
+    "mode": "longrun",
+    "case": "case07",
+    "iters": 1000,
+    "samples": [
+      {
+        "n": 1,
+        "rss_bytes": 30552064,
+        "vmhwm_bytes": 37277696
+      },
+      {
+        "n": 100,
+        "rss_bytes": 30552064,
+        "vmhwm_bytes": 37277696
+      },
+      {
+        "n": 200,
+        "rss_bytes": 30552064,
+        "vmhwm_bytes": 37277696
+      },
+      {
+        "n": 300,
+        "rss_bytes": 30552064,
+        "vmhwm_bytes": 37277696
+      },
+      {
+        "n": 400,
+        "rss_bytes": 30552064,
+        "vmhwm_bytes": 37277696
+      },
+      {
+        "n": 500,
+        "rss_bytes": 30552064,
+        "vmhwm_bytes": 37277696
+      },
+      {
+        "n": 600,
+        "rss_bytes": 30552064,
+        "vmhwm_bytes": 37277696
+      },
+      {
+        "n": 700,
+        "rss_bytes": 30552064,
+        "vmhwm_bytes": 37277696
+      },
+      {
+        "n": 800,
+        "rss_bytes": 30552064,
+        "vmhwm_bytes": 37277696
+      },
+      {
+        "n": 900,
+        "rss_bytes": 30552064,
+        "vmhwm_bytes": 37277696
+      },
+      {
+        "n": 1000,
+        "rss_bytes": 30552064,
+        "vmhwm_bytes": 37277696
+      }
+    ],
+    "median_ms": 29.8386,
+    "total_s": 29.8676,
+    "rss_start_bytes": 1789952,
+    "rss_after_prepare_bytes": 15327232,
+    "rss_end_bytes": 30552064,
+    "vmhwm_bytes": 37277696
+  },
+  "sources": {
+    "run1": "/tmp/claude-1000/-home-junya-src-github-com-junyaU-shashoku/94c9fae6-a9a0-40c9-ac43-94fa14abccb2/scratchpad/exp/perf2/shashoku_resident_raw.json",
+    "run2": "/tmp/claude-1000/-home-junya-src-github-com-junyaU-shashoku/94c9fae6-a9a0-40c9-ac43-94fa14abccb2/scratchpad/exp/perf2/raw/sh_resident_rep2.json",
+    "longrun": "/tmp/claude-1000/-home-junya-src-github-com-junyaU-shashoku/94c9fae6-a9a0-40c9-ac43-94fa14abccb2/scratchpad/exp/perf2/shashoku_longrun.json"
+  }
+}

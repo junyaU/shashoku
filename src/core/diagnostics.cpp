@@ -1,6 +1,7 @@
 #include "core/diagnostics.hpp"
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <iterator>
 #include <optional>
@@ -42,6 +43,12 @@ bool warning_less(const Warning& lhs, const Warning& rhs) {
   return key(lhs) < key(rhs);
 }
 
+// 上限の実効値。**0 を渡されても 1 として扱う**（`RenderLimits::max_diagnostics` と
+// diagnostics.hpp の契約）。1 件も記録しないと、対応外の入力なのに `has_errors()` が false に
+// なり、api が診断なしで「成功」として PNG を返してしまう（fail loudly の穴。DESIGN.md §3-6）。
+// 0 が「無制限」でないのは他の上限と同じ。
+std::size_t effective_max(std::size_t max_entries) { return std::max(max_entries, std::size_t{1}); }
+
 // sort() と into_failure() が同じ規則で並べるための 1 か所。
 void sort_errors(std::vector<RenderError>& errors) {
   std::stable_sort(errors.begin(), errors.end(), error_less);
@@ -54,7 +61,7 @@ void sort_warnings(std::vector<Warning>& warnings) {
 }  // namespace
 
 bool Diagnostics::add_error(RenderError error) {
-  if (errors_.size() + warnings_.size() >= max_entries_) {
+  if (errors_.size() + warnings_.size() >= effective_max(max_entries_)) {
     truncated_ = true;
     return false;
   }
@@ -63,7 +70,7 @@ bool Diagnostics::add_error(RenderError error) {
 }
 
 bool Diagnostics::add_warning(Warning warning) {
-  if (errors_.size() + warnings_.size() >= max_entries_) {
+  if (errors_.size() + warnings_.size() >= effective_max(max_entries_)) {
     truncated_ = true;
     return false;
   }

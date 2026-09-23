@@ -2079,13 +2079,16 @@ layout に進まず `RenderFailure`（`std::move(diag).into_failure()`。整列�
 `None` にはならない）。
 
 `opts.warnings_as_errors` が true で警告が 1 件以上あれば、PNG を作らず `RenderFailure` を返す: errors は警告 1 件に
-つき `RenderError{kind = WarningAsError, message = warning.detail, location = warning.location, warning = warning.kind}`
-（`RenderFailure::warnings` は空）。並べ替えは `into_failure(extra)` に任せる（errors の契約は
+つき `RenderError{kind = WarningAsError, message = warning.detail から末尾の " at L:C" を除いたもの,
+location = warning.location, warning = warning.kind}`（`RenderFailure::warnings` は空）。**message に位置を残さない**のは、
+`to_string(RenderError)` が `location` から同じ書式で付け直すため（残すと 1 行に位置が二重に出る。`--diagnostics json` の
+`message` も同じ）。並べ替えは `into_failure(extra)` に任せる（errors の契約は
 位置 → kind → message で、警告の並びとは規則が違う）。**判定は ⑥ の直後**に置く: strict は診断を増やすだけで
 減らさない（`warnings_as_errors` を立てても ⑤b / ⑥ の `LimitExceeded` が隠れない）。
 `dump()` も Box 以降の段で同じ組み立てをする（Dom / Style は layout に入らないので警告は出ない）。
 `RenderResult::diagnostics_truncated` / `RenderFailure::truncated` は
-`diag.truncated()` を写す。**検査の順序はどの経路でも同じ**なので、同じ入力からは同じ診断が同じ順で出る。
+`diag.truncated()` を写す。`max_diagnostics` の**実効の下限は 1**（`Diagnostics` が 0 を 1 として扱う）:
+0 件だと対応外の入力でも `has_errors()` が false になり、診断なしで「成功」する穴ができる。**検査の順序はどの経路でも同じ**なので、同じ入力からは同じ診断が同じ順で出る。
 
 `validate(options)` は寸法・`scale`・`compression_level`（0〜9。A33）を見る。**オプションの誤りは
 HTML を読む前に返す**（壊れた HTML でも `InvalidOption` が先に出る）。`png::encode` も同じ範囲を

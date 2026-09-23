@@ -154,6 +154,13 @@ const auto result = shashoku::render(html, *fonts, *images, options);
 | `--license` | ライセンスを出す（MIT と第三者ソフトウェア） |
 
 終了コードは 0 成功 / 1 レンダリングエラー・入出力エラー / 2 引数の誤り。
+診断（エラー・警告）と成功時の `wrote` の行は**標準エラー**に出ます（標準出力は `--dump-stage` と
+`--diagnostics json` のためのもの）。
+
+配布している実行ファイルには既定フォント（Noto Sans JP Regular / Bold）が入っていて、
+`--font` を書かなければそれを Regular → Bold の順に使います。**同じ OTF を
+`--font` で明示したときとバイト単位で同じ PNG** が出ます。既定フォントは CLI だけの
+機能で、ライブラリ（`render()`）は今までどおりバイト列しか受け取りません。
 
 #### 診断（エラーと警告）
 
@@ -192,11 +199,6 @@ wrote out.png (1200x200)
 `--strict` で格上げしたものは `errors` 側に `kind: "warning-as-error"` として移ります
 （元の種類は `warning`）。`truncated` は `RenderLimits::max_diagnostics`（既定 100 件）に達して
 記録を打ち切ったことを表します。
-
-配布している実行ファイルには既定フォント（Noto Sans JP Regular / Bold）が入っていて、
-`--font` を書かなければそれを Regular → Bold の順に使います。**同じ OTF を
-`--font` で明示したときとバイト単位で同じ PNG** が出ます。既定フォントは CLI だけの
-機能で、ライブラリ（`render()`）は今までどおりバイト列しか受け取りません。
 
 ## 速さ
 

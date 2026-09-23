@@ -1493,9 +1493,10 @@ A46 の仕上げ（api + CLI）で決めた細部。仕様は §3.10。
 - **`--diagnostics` は `human` | `json`** の 2 値にした。`json` だけだと誤った値のときの文面が
   「json のいずれかです」になる
 - **確かめたこと**: `docs/benchmark/2026-09-23/inputs/a_plain/case01.html`（普段どおりに AI が書いた HTML）
-  を 1 回通すと 19 件の診断が位置の昇順で出る。A46 より前はこれが 1 件ずつだった。
-  ただしこの入力は 9 行目の `&display=swap`（Google Fonts の URL）で `HtmlParse` に当たって解析が止まるので、
-  19 件はそこまでの分（→「見つけたが直していない問題」）
+  を 1 回通すと **61 件**（① `unsupported-tag` 42 件 / ② `css-parse` 11 件・`unsupported-property` 8 件）が
+  入力位置の昇順で出る。A46 より前はこれが 1 件ずつで、同じ 1 枚に CLI が何十回も要った。
+  `examples/*.html` 5 本の PNG は main（c157766）の配布バイナリとバイト単位で一致する
+  （増えたのは成功時の `wrote` の行だけ）
 
 ---
 

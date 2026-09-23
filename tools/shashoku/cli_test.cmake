@@ -331,6 +331,23 @@ elseif(CASE STREQUAL "diagnostics_json")
   string(JSON promoted_warnings LENGTH "${stdout_text}" warnings)
   expect_equal("${promoted_warnings}" "0" "格上げしたものは warnings に残さない")
 
+  # エスケープ: `"` と `\` を逃がし、非 ASCII は UTF-8 のまま出す。
+  # string(JSON …) が読めた時点で JSON として壊れていないことの検査になる。
+  set(escape_html "${WORK_DIR}/json_escape.html")
+  file(WRITE "${escape_html}" "<img src=\"ア&quot;イ\\コン\">\n")
+  execute_process(
+    COMMAND "${CLI}" "${escape_html}" --font "${font}" -o "${WORK_DIR}/never.png"
+            --diagnostics json
+    RESULT_VARIABLE status OUTPUT_VARIABLE stdout_text ERROR_VARIABLE stderr_text)
+  expect_equal("${status}" "1" "exit code for the escaping case")
+  string(JSON escaped_kind GET "${stdout_text}" errors 0 kind)
+  expect_equal("${escaped_kind}" "image-not-found" "errors[0].kind")
+  string(JSON escaped_message GET "${stdout_text}" errors 0 message)
+  string(FIND "${escaped_message}" "ア\"イ\\コン" found)
+  if(found EQUAL -1)
+    message(FATAL_ERROR "JSON の文字列が元に戻りません: ${escaped_message}")
+  endif()
+
   # 使い方の誤りは終了コード 2（-o が要る / --dump-stage と併用できない）
   execute_process(
     COMMAND "${CLI}" "${SOURCE_DIR}/examples/hello.html" --font "${font}" --diagnostics json

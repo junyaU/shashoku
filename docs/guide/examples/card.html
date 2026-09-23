@@ -1,0 +1,11 @@
+<!-- カード（余白・角丸・枠線）。リポジトリの直下で:
+     shashoku docs/guide/examples/card.html -o card.png --width 640 -->
+<style>
+  .card  { padding: 24px; border: 1px solid #dfe3e8; border-radius: 12px; background: #ffffff; }
+  .title { margin: 0 0 8px 0; font-size: 20px; font-weight: bold; color: #1b2733; }
+  .body  { margin: 0; font-size: 15px; line-height: 1.8; color: #44546a; }
+</style>
+<div class="card">
+  <p class="title">冪等性</p>
+  <p class="body">同じ操作を何回行っても、1 回だけ行ったときと同じ結果になる性質のこと。通信の再試行を安全にする。</p>
+</div>

@@ -1,0 +1,15 @@
+<!-- タグ / pill（内容幅の箱）。display: inline-block は無いので
+     「flex の親 + flex: none の子」で作る。span には padding が付かない。
+     shashoku docs/guide/examples/pill.html -o pill.png --width 640 -->
+<style>
+  .tags { display: flex; gap: 8px; align-items: center; background: #ffffff; padding: 16px; }
+  .pill { flex: none; padding: 5px 12px; border-radius: 13px;
+          background: #e7f0ff; color: #14509b; font-size: 14px; }
+  .pill-strong { flex: none; padding: 5px 12px; border-radius: 13px;
+                 background: #14509b; color: #ffffff; font-size: 14px; font-weight: bold; }
+</style>
+<div class="tags">
+  <div class="pill-strong">新着</div>
+  <div class="pill">政策</div>
+  <div class="pill">AI</div>
+</div>

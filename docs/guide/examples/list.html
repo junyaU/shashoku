@@ -1,0 +1,15 @@
+<!-- 箇条書き（flex + 丸）。<ul> <li> と list-style は対応外。
+     丸は align-items: flex-start と margin-top で 1 行目の中心に合わせる。
+     shashoku docs/guide/examples/list.html -o list.png --width 640 -->
+<style>
+  .list { background: #ffffff; padding: 16px; }
+  .item { display: flex; align-items: flex-start; gap: 10px; margin: 0 0 10px 0; }
+  .dot  { flex: none; width: 7px; height: 7px; margin: 10px 0 0 0;
+          border-radius: 4px; background: #2f6fd0; }
+  .text { flex: 1 1 0; font-size: 15px; line-height: 1.8; color: #1b2733; }
+</style>
+<div class="list">
+  <div class="item"><div class="dot"></div><div class="text">対応表にないタグ・プロパティ・値はエラーになる。</div></div>
+  <div class="item"><div class="dot"></div><div class="text">高さを省くと内容に追従する。縦書きでは高さが必須。</div></div>
+  <div class="item"><div class="dot"></div><div class="text">同じ入力からは常にバイト単位で同じ PNG が出る。</div></div>
+</div>

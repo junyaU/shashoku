@@ -1,0 +1,25 @@
+<style>
+  .card  { padding: 28px; border: 1px solid #dfe3e8; border-radius: 12px; background: #fbfaf7; }
+  .term  { margin: 0 0 14px 0; font-size: 30px; font-weight: bold; color: #1f2a37; line-height: 1.9; }
+  .def   { margin: 0 0 16px 0; font-size: 15px; line-height: 1.9; color: #3c4a5c; }
+  .exbox { padding: 14px 16px; border-radius: 8px; background: #eef2f7; }
+  .exlabel { margin: 0 0 4px 0; font-size: 12px; font-weight: bold; color: #6b7a90; line-height: 1.5; }
+  .extext  { margin: 0; font-size: 14px; line-height: 1.8; color: #3c4a5c; }
+  .rel     { display: flex; align-items: center; gap: 8px; margin: 18px 0 0 0; }
+  .rellabel { flex: none; font-size: 12px; color: #6b7a90; }
+  .pill    { flex: none; padding: 5px 12px; border-radius: 13px;
+             background: #e7eef9; color: #2a5390; font-size: 13px; }
+</style>
+<div class="card">
+  <div class="term"><ruby>冪等性<rt>べきとうせい</rt></ruby></div>
+  <p class="def">同じ操作を何回繰り返しても、1 回だけ行ったときと同じ結果になる性質のこと。結果が呼び出し回数に左右されないため、通信が不安定な環境でも安心して再試行できる。</p>
+  <div class="exbox">
+    <p class="exlabel">例</p>
+    <p class="extext">同じ注文 ID で決済 API を 2 回呼んでも、二重に課金されない。</p>
+  </div>
+  <div class="rel">
+    <div class="rellabel">関連語</div>
+    <div class="pill">リトライ</div>
+    <div class="pill">at-least-once</div>
+  </div>
+</div>

@@ -1,0 +1,116 @@
+<style>
+  .og {
+    width: 1056px;
+    height: 502px;
+    background: #0f1526;
+    color: #ffffff;
+    font-family: "Noto Sans JP", "Inter", "Hiragino Kaku Gothic ProN", sans-serif;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 64px 72px;
+  }
+  .top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .site {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: #e7ecf7;
+  }
+  .dot {
+    flex: none;
+    width: 12px;
+    height: 12px;
+    border-radius: 6px;
+    background: #ff6a3d;
+  }
+  .tags { display: flex; gap: 10px; }
+  .tag {
+    flex: none;
+    font-size: 17px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    color: #cfe0ff;
+    background: rgba(120, 160, 255, 0.12);
+    border: 1px solid rgba(150, 180, 255, 0.32);
+    border-radius: 999px;
+    padding: 7px 20px;
+  }
+  .headline {
+    margin: 0;
+    font-size: 62px;
+    font-weight: 900;
+    line-height: 1.42;
+    letter-spacing: 0.005em;
+    width: 1010px;
+  }
+  .accent { color: #ff8a5c; }
+
+  .bottom-rule { height: 1px; background: rgba(255, 255, 255, 0.13); }
+  .bottom-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-top: 26px;
+  }
+  .author {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  .avatar {
+    width: 58px;
+    height: 58px;
+    border-radius: 31px;
+    border: 2px solid rgba(255, 255, 255, 0.55);
+    background: #2a3350;
+  }
+  .name {
+    font-size: 21px;
+    font-weight: 600;
+    line-height: 1.4;
+    color: #f2f5fb;
+  }
+  .handle {
+    font-size: 16px;
+    color: #96a3c0;
+    letter-spacing: 0.03em;
+  }
+  .date {
+    font-size: 18px;
+    color: #9aa7c4;
+    letter-spacing: 0.06em;
+  }
+</style>
+<div class="og">
+  <div class="top">
+    <div class="site"><div class="dot"></div>junya.dev</div>
+    <div class="tags">
+      <div class="tag">Rust</div>
+      <div class="tag">計測</div>
+    </div>
+  </div>
+
+  <h1 class="headline">Rust で書き直したら速くなった、と言うために<span class="accent">測ったこと、測らなかったこと</span></h1>
+
+  <div>
+    <div class="bottom-rule"></div>
+    <div class="bottom-row">
+      <div class="author">
+        <img class="avatar" src="avatar" alt="著者アイコン">
+        <div>
+          <div class="name">junya</div>
+          <div class="handle">junya.dev</div>
+        </div>
+      </div>
+      <div class="date">2026年9月23日</div>
+    </div>
+  </div>
+</div>

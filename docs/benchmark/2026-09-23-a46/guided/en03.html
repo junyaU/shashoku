@@ -1,0 +1,52 @@
+<style>
+  .sheet { padding: 24px; background: #ffffff; }
+  .cap   { margin: 0 0 16px 0; font-size: 18px; font-weight: bold; color: #1b2733; line-height: 1.6; }
+  .flow  { display: flex; }
+  .step  { flex: none; width: 142px; padding: 14px; border: 1px solid #ccd3dd;
+           border-radius: 8px; background: #f7f9fc; }
+  .stitle { margin: 0 0 6px 0; font-size: 15px; font-weight: bold; color: #1b2733; line-height: 1.5; }
+  .sdesc  { margin: 0; font-size: 13px; color: #44546a; line-height: 1.6; }
+  .arrow { flex: none; width: 23px; display: flex; align-items: center; justify-content: center; }
+  .amark { font-size: 18px; color: #6b7a90; }
+  .noterow { display: flex; margin: 10px 0 0 0; }
+  .spacer  { flex: none; width: 390px; }
+  .note    { flex: 1 1 0; }
+  .up      { font-size: 16px; color: #6b7a90; line-height: 1.3; }
+  .notetext { font-size: 13px; color: #44546a; line-height: 1.6; }
+</style>
+<div class="sheet">
+  <p class="cap">Incident response flow</p>
+  <div class="flow">
+    <div class="step">
+      <div class="stitle">Detect</div>
+      <div class="sdesc">Alerts and user reports open an incident channel.</div>
+    </div>
+    <div class="arrow"><div class="amark">&#8594;</div></div>
+    <div class="step">
+      <div class="stitle">Triage</div>
+      <div class="sdesc">Set severity and name an incident commander.</div>
+    </div>
+    <div class="arrow"><div class="amark">&#8594;</div></div>
+    <div class="step">
+      <div class="stitle">Mitigate</div>
+      <div class="sdesc">Stop the bleeding: roll back or disable the feature.</div>
+    </div>
+    <div class="arrow"><div class="amark">&#8594;</div></div>
+    <div class="step">
+      <div class="stitle">Communicate</div>
+      <div class="sdesc">Post status updates to customers every 30 minutes.</div>
+    </div>
+    <div class="arrow"><div class="amark">&#8594;</div></div>
+    <div class="step">
+      <div class="stitle">Postmortem</div>
+      <div class="sdesc">Write it up within five business days, blameless.</div>
+    </div>
+  </div>
+  <div class="noterow">
+    <div class="spacer"></div>
+    <div class="note">
+      <div class="up">&#8593;</div>
+      <div class="notetext">If rollback fails twice, page the on-call lead.</div>
+    </div>
+  </div>
+</div>

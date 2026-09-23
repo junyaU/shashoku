@@ -1,0 +1,1 @@
+{"ok": true, "width": 840, "height": 1035, "truncated": false, "errors": [], "warnings": [{"kind": "missing-glyph", "detail": "no font has a glyph for U+1F389 at 164:27", "codepoint": 127881, "line": 164, "column": 27, "offset": 5182, "overflow_px": 0, "edge": null}]}

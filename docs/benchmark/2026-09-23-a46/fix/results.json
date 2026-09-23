@@ -1,0 +1,281 @@
+{
+  "meta": {
+    "experiment": "V2-fix / A46 の効果測定（一括診断 JSON + hint だけで直す）",
+    "date": "2026-09-23",
+    "engine_commit": "08b82d9 (feature/a46)",
+    "cli": "build/release/tools/shashoku/shashoku",
+    "mode": "非 strict、--diagnostics json、警告は記録のみ",
+    "inputs": "docs/benchmark/2026-09-23/inputs/a_plain/case01..10.html（書き換えず、_r0 にコピー）",
+    "rounds_definition": "rounds = 修正した回数（= 失敗またはやり直しになった実行の回数）。CLI 実行回数は rounds+1",
+    "edits_per_round_note": "宣言・タグ単位の概算（r1 は全面書き換えのため特に概算）",
+    "font": "--font を渡していないため埋め込み既定（Noto Sans JP）。明朝・等幅の指定は効かない"
+  },
+  "cases": [
+    {
+      "case": "case01",
+      "rounds": 1,
+      "errors_per_round": [61],
+      "warnings_per_round": [0, 0],
+      "edits_per_round": [77],
+      "final": "ok",
+      "exit_codes": [1, 0],
+      "size": "940x837",
+      "fidelity": 5,
+      "usable": 5,
+      "lost_visuals": [
+        "box-shadow（カードの影）",
+        "角丸のクリップ（overflow: hidden がないため、表の見出し行の角が四角い）"
+      ],
+      "truncated_ever": false,
+      "hint_notes": [
+        "box-sizing の hint『content-box only: subtract padding and border from width / height』が th の width 150px→118px の再計算に直結した",
+        "border-bottom / border-top / border-right / border-collapse には hint が無い。1px の div で罫を引く定石はガイド §4.3 から持ってきた",
+        "descendant combinator の css-parse は 11 件出たが、そのルール内の宣言（vertical-align など）は検査されないので、クラスに書き換えた後に新しいエラーが出る可能性があった（今回は先回りして vertical-align も落としたので出なかった）"
+      ],
+      "notes": "初回 61 件を 1 回で全部直して通った。chrome_ref と並べるとほぼ一致（行の折り返し位置が数文字ずれる程度）"
+    },
+    {
+      "case": "case02",
+      "rounds": 4,
+      "errors_per_round": [22, 0, 0, 0],
+      "warnings_per_round": [0, 5, 0, 0, 0],
+      "edits_per_round": [46, 7, 1, 1],
+      "final": "ok",
+      "exit_codes": [1, 0, 0, 0, 0],
+      "size": "1040x645",
+      "fidelity": 3,
+      "usable": 4,
+      "lost_visuals": [
+        "矢印の線＋三角（border トリック）→ 「→」の文字で代用",
+        "絵文字アイコン 5 個 → 角丸の色付き div",
+        "破線の枠 → 実線（凡例の文言『破線の枠は』と絵が食い違う）",
+        "step の上辺 4px の色帯が角丸からはみ出して四角い",
+        "全カラムが worker 列の高さに引き伸ばされ、余白が大きい（元の Chrome と同じ挙動）"
+      ],
+      "truncated_ever": false,
+      "hint_notes": [
+        "min-height の hint『no min/max resolution: use a fixed height』は正しいが、この場合は align-items: stretch があるので宣言ごと削るのが正解だった。hint に従うと固定高さを入れてしまい、かえって崩れる",
+        "position の hint『no positioning: use display: flex with justify-content / align-items』は方向としては正しいが、::after の三角は flex では作れないので結局あきらめた"
+      ],
+      "notes": "最悪ケース。r1 で exit 0 になったが絵が壊れていた。原因は .step-body の flex: 1 1 0 が、高さが内容依存の列 flex（worker 列の中）で 0 に潰れ、ワーカーの見出しと本文が PNG から丸ごと消えたこと。エラーも警告も一切出ないので、原因の切り分けに 3 往復かかった（r2 で flex: 1 1 auto、r3 で flex 削除、r4 で親ではなく子の flex を削って解決）"
+    },
+    {
+      "case": "case03",
+      "rounds": 1,
+      "errors_per_round": [25],
+      "warnings_per_round": [0, 0],
+      "edits_per_round": [40],
+      "final": "ok",
+      "exit_codes": [1, 0],
+      "size": "760x567",
+      "fidelity": 4,
+      "usable": 5,
+      "lost_visuals": [
+        "上端のグラデーション帯 → 単色",
+        "box-shadow",
+        "明朝体（--font 未指定のため既定ゴシック）",
+        "align-items: baseline → flex-end で近似（読みの位置が 10px ほど違う）",
+        "example の左だけ角丸（0 6px 6px 0）→ 角丸なし"
+      ],
+      "truncated_ever": false,
+      "hint_notes": [
+        "unsupported-layout（inline への border-width）の hint『drop the declaration; display: block would accept it but breaks the surrounding text flow』は、この .label / .tag のような pill には誤解を招く。宣言を削ると枠も余白も消えて設計が壊れる。正解は『flex の親 + flex: none の子』（ガイド §3-(4)）で、hint はそこを指していない",
+        "同じ宣言に対して unsupported-layout が 2 回出た（111:13 が 2 件）。重複",
+        "border-radius: 0 6px 6px 0 のメッセージ『expected a single length』は的確"
+      ],
+      "notes": "1 回で通った"
+    },
+    {
+      "case": "case04",
+      "rounds": 2,
+      "errors_per_round": [40, 0],
+      "warnings_per_round": [0, 1, 0],
+      "edits_per_round": [63, 15],
+      "final": "ok",
+      "exit_codes": [1, 0, 0],
+      "size": "840x1035",
+      "fidelity": 4,
+      "usable": 5,
+      "lost_visuals": [
+        "バッジ同士をつなぐ縦のガイド線（li::before の絶対配置）→ 断念",
+        "バッジのグラデーション → 単色",
+        "code の枠線・余白（inline には付けられない）→ 背景色と色だけ",
+        "box-shadow",
+        "🎉（missing-glyph）→ 削除"
+      ],
+      "truncated_ever": false,
+      "hint_notes": [
+        "position の hint は方向として正しい",
+        "縦のガイド線は flex: 1 1 0 の div で作ろうとしたが伸びず、警告も出ないまま 22px の切れ端だけが描かれた。ガイド §5 の『飾りなら要素ごと消す』に従って削った"
+      ],
+      "notes": "r1 で exit 0。r2 は missing-glyph の警告（🎉）と、警告の出なかったガイド線の切れ端をまとめて直した"
+    },
+    {
+      "case": "case05",
+      "rounds": 1,
+      "errors_per_round": [20],
+      "warnings_per_round": [0, 0],
+      "edits_per_round": [30],
+      "final": "ok",
+      "exit_codes": [1, 0],
+      "size": "1080x1080",
+      "fidelity": 4,
+      "usable": 5,
+      "lost_visuals": [
+        "和紙風の radial + linear グラデーション → 単色",
+        "大きく掛けた鉤括弧（::before の 64px・ぶら下げ）→ 本文と同じ 46px のインライン文字",
+        "text-indent: 1em",
+        "明朝体"
+      ],
+      "truncated_ever": false,
+      "hint_notes": [
+        "inset: 56px の内枠は position が無いので、外側 div の padding 56px + 内側 div の border で作り直した。hint はそこまでは言わない（position の hint は flex を勧めるだけ）"
+      ],
+      "notes": "1 回で通った。1080x1080 固定で content-overflow は出ず"
+    },
+    {
+      "case": "case06",
+      "rounds": 1,
+      "errors_per_round": [25],
+      "warnings_per_round": [0, 0],
+      "edits_per_round": [38],
+      "final": "ok",
+      "exit_codes": [1, 0],
+      "size": "1200x630",
+      "fidelity": 4,
+      "usable": 5,
+      "lost_visuals": [
+        "背景の radial + linear グラデーションと薄いグリッド → 単色",
+        "background-clip: text のグラデーション文字 → 単色 #ff8a5c",
+        "dot のグラデーションと glow",
+        "text-shadow"
+      ],
+      "truncated_ever": false,
+      "hint_notes": [
+        "max-width の hint『no min/max resolution: use a fixed width』が h1 の幅 1010px 固定にそのまま使えた",
+        "background-clip: text + color: transparent は、ガイド §5『削ると危険な組み合わせ』に書いてあったので文字が消えずに済んだ。診断側には対になる宣言を教える仕組みは無い（.accent が子孫セレクタだったため、そもそも background-clip はエラーにすら出ていない）",
+        "<img src=\"avatar.png\"> はガイド §4.12 の注意書き通り src=\"avatar\" に直した。image-not-found は HTML/スタイルより後の段なので、ガイドが無ければもう 1 往復になっていたはず（今回は確認していない）"
+      ],
+      "notes": "1 回で通った。丸いアバターも border-radius でクリップされた"
+    },
+    {
+      "case": "case07",
+      "rounds": 2,
+      "errors_per_round": [32, 0],
+      "warnings_per_round": [0, 1, 0],
+      "edits_per_round": [50, 1],
+      "final": "ok",
+      "exit_codes": [1, 0, 0],
+      "size": "1080x1080",
+      "fidelity": 4,
+      "usable": 5,
+      "lost_visuals": [
+        "背景のグラデーションと右上の radial の光 → 単色",
+        "見出しの明朝体",
+        "pill と罫のグラデーション → 単色",
+        "box-shadow",
+        "🎟（missing-glyph）→ 削除",
+        "rt の letter-spacing（効かない仕様）"
+      ],
+      "truncated_ever": false,
+      "hint_notes": [
+        "display: inline-flex の unsupported-value は『supported: block, flex, inline, none』とだけ言う。inline-block / inline-flex の定石（flex の親 + flex: none）への hint は無い",
+        "ルビは <ruby><rt> のまま何もせずに通り、chrome_ref とほぼ同じ位置に出た"
+      ],
+      "notes": "chrome_ref と並べると、フォントとグラデーション以外はほぼ一致。r2 は絵文字の警告のみ"
+    },
+    {
+      "case": "case08",
+      "rounds": 2,
+      "errors_per_round": [25, 0],
+      "warnings_per_round": [0, 1, 0],
+      "edits_per_round": [35, 1],
+      "final": "ok",
+      "exit_codes": [1, 0, 0],
+      "size": "840x491",
+      "fidelity": 4,
+      "usable": 5,
+      "lost_visuals": [
+        "見出し帯のグラデーション → 単色",
+        "box-shadow",
+        "角丸のクリップ（見出し帯の上角が四角い。overflow: hidden がないため）",
+        "unit / ref の margin（inline には付けられない）",
+        "ref の opacity 0.85",
+        "📣（missing-glyph）→ ※"
+      ],
+      "truncated_ever": false,
+      "hint_notes": [
+        "display: grid と grid-template-columns は別々のエラーになり、どちらにも hint が無い。flex + flex: 1 1 0 が 1fr 相当という定石はガイド §5 から持ってきた",
+        "border-top（罫線）にも hint が無い。10 件中 6 件で出た最頻の書き換えなので、ここに hint があると効きそう"
+      ],
+      "notes": "r1 で exit 0。r2 は絵文字だけ"
+    },
+    {
+      "case": "case09",
+      "rounds": 1,
+      "errors_per_round": [22],
+      "warnings_per_round": [0, 0],
+      "edits_per_round": [30],
+      "final": "ok",
+      "exit_codes": [1, 0],
+      "size": "840x512",
+      "fidelity": 5,
+      "usable": 5,
+      "lost_visuals": [
+        "箇条書きの点（45 度回転した四角）→ 回転なしの角丸四角"
+      ],
+      "truncated_ever": false,
+      "hint_notes": [
+        "unsupported-layout が .kicker（padding-top）と .tag（border-width ×2）に出て、位置は正確。ただし hint は『宣言を削れ』なので、そのまま従うと見出しラベルとタグの箱が消える",
+        "margin-left: auto は使わず、伸びる空の div（ガイド §4.7）に置き換えた。診断は出ていない"
+      ],
+      "notes": "1 回で通った。10 件で最も素直"
+    },
+    {
+      "case": "case10",
+      "rounds": 4,
+      "errors_per_round": [27, 0, 0, 0],
+      "warnings_per_round": [0, 1, 0, 0, 0],
+      "edits_per_round": [33, 3, 2, 1],
+      "final": "ok",
+      "exit_codes": [1, 0, 0, 0, 0],
+      "size": "800x1200",
+      "fidelity": 4,
+      "usable": 5,
+      "lost_visuals": [
+        "和紙風のグラデーション → 単色",
+        "明朝体",
+        "朱印の opacity 0.75 → #b4462fbf",
+        "歌の折り返し位置が 1 文字ずれる（chrome_ref は『立ちつくし』まで 1 列目、こちらは『し』が 2 列目の頭）",
+        "朱印と署名の重なり（position が無いので横に並べるしかない）"
+      ],
+      "truncated_ever": false,
+      "hint_notes": [
+        "-webkit-writing-mode の hint『drop the vendor prefix: writing-mode is supported』は明快で、そのまま使えた",
+        "writing-mode の unsupported-layout メッセージが『the whole document uses one writing mode and only top-level elements may set it (ARCHITECTURE.md A1)』と設計判断の番号まで出す。外側に持ち上げる、という直し方が読み取れた",
+        "content-overflow の警告『overflows the canvas by 198.0px (left)』が決め手。edge=left という情報から、縦書きでは width も content-box で padding が外に足されると分かり、枠の寸法計算をやり直せた。この 1 行が無ければ原因にたどり着けなかった"
+      ],
+      "notes": "r1 は content-overflow（左 198px）で気づけた。r2 以降は署名『架空 花』が 2 列に割れる問題で、これは紙面からはみ出していないので警告が出ず、padding-top を 814→804→800→780 と詰めるのに 2 往復余計にかかった"
+    }
+  ],
+  "summary": {
+    "rounds": [1, 4, 1, 2, 1, 1, 2, 2, 1, 4],
+    "rounds_median": 1.5,
+    "rounds_max": 4,
+    "rounds_mean": 1.9,
+    "rounds_to_exit0": [1, 1, 1, 1, 1, 1, 1, 1, 1, 2],
+    "rounds_to_exit0_median": 1,
+    "rounds_to_exit0_max": 2,
+    "first_errors": [61, 22, 25, 40, 20, 25, 32, 25, 22, 27],
+    "first_errors_median": 25,
+    "first_errors_max": 61,
+    "total_errors_reported": 299,
+    "total_warnings_reported": 9,
+    "warning_kinds": {"missing-glyph": 8, "content-overflow": 1},
+    "truncated_ever": false,
+    "false_warnings": 0,
+    "before_a46": {"rounds_median": 16.5, "rounds_max": 31},
+    "gave_up": 0,
+    "permission_denied": 0
+  }
+}

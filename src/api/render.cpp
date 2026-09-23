@@ -427,6 +427,26 @@ std::unexpected<RenderFailure> to_failure(Diagnostics& diagnostics) {
   return std::unexpected(std::move(diagnostics).into_failure());
 }
 
+// strict（`warnings_as_errors`）の格上げ（A46）。警告 1 件につき WarningAsError の
+// エラーを 1 件作り、識別子（`RenderError::warning`）・位置・詳細をそのまま保つ。
+// 格上げしたものは errors 側にだけ残す（`RenderFailure::warnings` は空）。
+// 並べ替えは into_failure() に任せる: errors の契約（位置 → kind → message）は
+// 警告の並び（位置 → kind → コードポイント → detail）と同じとは限らない。
+RenderFailure promote_warnings(Diagnostics&& diagnostics) {
+  std::vector<RenderError> errors;
+  errors.reserve(diagnostics.warnings().size());
+  for (const Warning& warning : diagnostics.warnings()) {
+    errors.push_back(RenderError{.kind = ErrorKind::WarningAsError,
+                                 .message = warning.detail,
+                                 .location = warning.location,
+                                 .hint = {},
+                                 .warning = warning.kind});
+  }
+  RenderFailure failure = std::move(diagnostics).into_failure(std::move(errors));
+  failure.warnings.clear();
+  return failure;
+}
+
 // ---------------------------------------------------------------------------
 // パイプライン
 // ---------------------------------------------------------------------------
@@ -487,33 +507,78 @@ Result<float> output_height(const layout::BoxTree& tree, const RenderOptions& op
 }
 
 // 豆腐の記録（③ レイアウトが集める。A31）→ 公開 API の Warning。
-// 並びは layout が決めている（入力位置の昇順 → コードポイントの昇順。決定的）ので、
-// ここでは並べ替えない。detail には RenderError と同じ書式で位置を添える。
-std::vector<Warning> to_warnings(const std::vector<layout::MissingGlyph>& missing) {
-  std::vector<Warning> warnings;
-  warnings.reserve(missing.size());
-  for (const layout::MissingGlyph& glyph : missing) {
-    // 種類は MissingGlyph のまま。文面だけ理由で分ける（A43。WarningKind は増やさない）。
-    const auto codepoint = static_cast<std::uint32_t>(glyph.codepoint);
-    std::string detail =
-        glyph.reason == text::MissingReason::ColorOnly
-            ? std::format("the glyph for U+{:04X} has only color layers (COLR); drawn as tofu",
-                          codepoint)
-            : std::format("no font has a glyph for U+{:04X}", codepoint);
-    detail += std::format(" at {}:{}", glyph.location.line, glyph.location.column);
-    warnings.push_back(Warning{.kind = WarningKind::MissingGlyph,
-                               .detail = std::move(detail),
-                               .codepoint = glyph.codepoint,
-                               .location = glyph.location});
+// detail には RenderError と同じ書式で位置を添える。
+Warning to_warning(const layout::MissingGlyph& glyph) {
+  // 種類は MissingGlyph のまま。文面だけ理由で分ける（A43。WarningKind は増やさない）。
+  const auto codepoint = static_cast<std::uint32_t>(glyph.codepoint);
+  std::string detail =
+      glyph.reason == text::MissingReason::ColorOnly
+          ? std::format("the glyph for U+{:04X} has only color layers (COLR); drawn as tofu",
+                        codepoint)
+          : std::format("no font has a glyph for U+{:04X}", codepoint);
+  detail += std::format(" at {}:{}", glyph.location.line, glyph.location.column);
+  return Warning{.kind = WarningKind::MissingGlyph,
+                 .detail = std::move(detail),
+                 .codepoint = glyph.codepoint,
+                 .location = glyph.location,
+                 .overflow_px = 0.0F,
+                 .overflow_edge = OverflowEdge::None};
+}
+
+// ③ の辺（`layout::OverflowEdge`）→ 公開 API の `OverflowEdge`。③ は「はみ出していない」状態を
+// 持たない（記録があれば必ずどれかの辺）ので、`None` に写ることはない。
+OverflowEdge to_public(layout::OverflowEdge edge) {
+  switch (edge) {
+    case layout::OverflowEdge::Right:
+      return OverflowEdge::Right;
+    case layout::OverflowEdge::Bottom:
+      return OverflowEdge::Bottom;
+    case layout::OverflowEdge::Left:
+      return OverflowEdge::Left;
+    case layout::OverflowEdge::Top:
+      return OverflowEdge::Top;
   }
-  return warnings;
+  return OverflowEdge::None;
+}
+
+// 紙面からのはみ出しの記録（③ レイアウトが集める。A46 / A50）→ 公開 API の Warning。
+// `overflow_px` は ③ が CSS px で出しているので割らずにそのまま写す（A50）。
+// 文面の辺は公開 API の `to_string(OverflowEdge)`（= 診断 JSON の `edge`）と同じ綴りにする。
+Warning to_warning(const layout::ContentOverflow& overflow) {
+  const OverflowEdge edge = to_public(overflow.edge);
+  return Warning{.kind = WarningKind::ContentOverflow,
+                 .detail = std::format("content overflows the canvas by {:.1f}px ({}) at {}:{}",
+                                       overflow.overflow_px, to_string(edge),
+                                       overflow.location.line, overflow.location.column),
+                 .codepoint = 0,
+                 .location = overflow.location,
+                 .overflow_px = overflow.overflow_px,
+                 .overflow_edge = edge};
+}
+
+// ③ が集めた「続行できた問題」を Diagnostics に通す（A46 / §3.10）。
+// ここを通すことで (1) max_diagnostics の上限が警告にも掛かり (2) エラーと同じ規則で
+// 決定的に整列し (3) 失敗したときの `RenderFailure::warnings` にもそのまま乗る。
+// 上限に達したら記録をやめる（truncated は Diagnostics が立てる）。
+void collect_warnings(const layout::BoxTree& tree, Diagnostics& diagnostics) {
+  for (const layout::MissingGlyph& glyph : tree.missing_glyphs) {
+    if (!diagnostics.add_warning(to_warning(glyph))) {
+      break;  // 一度上限に達したら空きは戻らない
+    }
+  }
+  for (const layout::ContentOverflow& overflow : tree.overflows) {
+    if (!diagnostics.add_warning(to_warning(overflow))) {
+      break;
+    }
+  }
+  // (位置, 種類, コードポイント, detail) の昇順。豆腐だけの列では ③ が決めた順序（A31）と同じ。
+  diagnostics.sort();
 }
 
 std::expected<RenderResult, RenderFailure> render_impl(std::string_view html,
                                                        const ResourceSource& source,
                                                        const RenderOptions& options) {
   // 集める診断（A46）。①② に渡し、段の失敗もここを通して RenderFailure にする。
-  // opts.warnings_as_errors はまだ読まない（格上げは W4）。
   Diagnostics diagnostics{options.limits.max_diagnostics};
   if (const Result<void> ok = validate(options); !ok) {
     return to_failure(diagnostics, ok.error());
@@ -533,18 +598,13 @@ std::expected<RenderResult, RenderFailure> render_impl(std::string_view html,
   if (!styled) {
     return to_failure(diagnostics, styled.error());
   }
-  // ①② が集めた問題が 1 件でもあれば ③ には進まない（A46）。style は診断の網羅のために
-  // 木を最後まで解決するので、ここで止めないと「捨てた宣言の分だけ違う絵」が出てしまう。
-  // TODO(W4): 診断の組み立て（格上げ・JSON）と一緒に整理する。
-  if (diagnostics.has_errors()) {
-    diagnostics.sort();
-    return std::unexpected(std::move(diagnostics).into_failure());
-  }
   if (const Result<void> ok = check_computed_limits(*styled, options.scale, options.limits); !ok) {
     return to_failure(diagnostics, ok.error());
   }
-  // ①② が集めた問題が 1 件でもあれば、layout に進まずまとめて返す（A46 / §3.10）。
-  // ② が集め始めるまでは、ここに来るのは html の UnsupportedTag / UnsupportedAttribute だけ。
+  // ②の出口（A46 / §3.10）。①② が集めた問題が 1 件でもあれば、③ に進まずまとめて返す。
+  // style は診断の網羅のために木を最後まで解決するので、ここで止めないと
+  // 「捨てた宣言の分だけ違う絵」が出てしまう。致命的な失敗（LimitExceeded など）は
+  // 上の to_failure(diagnostics, error) が集めたものと合わせる。
   if (diagnostics.has_errors()) {
     return to_failure(diagnostics);
   }
@@ -559,6 +619,9 @@ std::expected<RenderResult, RenderFailure> render_impl(std::string_view html,
   if (!tree) {
     return to_failure(diagnostics, tree.error());
   }
+  // ③ が集めた「続行できた問題」（豆腐・紙面からのはみ出し）を診断に通す（A46）。
+  // ここから先で失敗したときも、`RenderFailure::warnings` にそのまま乗る。
+  collect_warnings(*tree, diagnostics);
   const Result<float> height = output_height(*tree, options);
   if (!height) {
     return to_failure(diagnostics, height.error());
@@ -591,14 +654,38 @@ std::expected<RenderResult, RenderFailure> render_impl(std::string_view html,
     return to_failure(diagnostics, encoded.error());
   }
 
+  // strict（A46）: 描画が終わって警告が 1 件以上あれば PNG を返さない。判定を最後に置くのは、
+  // `warnings_as_errors` を立てても ⑤b / ⑥ の失敗（LimitExceeded など）が隠れないようにするため
+  // （strict は診断を増やすだけで、減らさない）。
+  if (options.warnings_as_errors && !diagnostics.warnings().empty()) {
+    return std::unexpected(promote_warnings(std::move(diagnostics)));
+  }
+
   RenderResult result;
   result.png = std::move(*encoded);
-  result.warnings = to_warnings(tree->missing_glyphs);
-  // 警告はまだ Diagnostics を通していない（上限と格上げは W4）ので、打ち切りは起きない。
+  result.warnings = diagnostics.warnings();
   result.diagnostics_truncated = diagnostics.truncated();
   result.width = static_cast<int>(bitmap->width);
   result.height = static_cast<int>(bitmap->height);
   return result;
+}
+
+// ③ より後ろの段のダンプ。Dom / Style は layout に入る前に返すので、ここに来るのは
+// Box / DisplayList / Svg の 3 つだけ。段の順序は render_impl と同じ。
+Result<std::string> dump_after_layout(const layout::BoxTree& tree, const RenderOptions& options,
+                                      DumpStage stage) {
+  if (stage == DumpStage::Box) {
+    return layout::dump_json(tree);
+  }
+  const raster::DisplayList list = paint::build_display_list(tree);
+  if (stage == DumpStage::DisplayList) {
+    return paint::dump_json(list);
+  }
+  const Result<float> height = output_height(tree, options);
+  if (!height) {
+    return std::unexpected(height.error());
+  }
+  return paint::dump_svg(list, static_cast<float>(options.viewport_width), *height);
 }
 
 std::expected<std::string, RenderFailure> dump_impl(std::string_view html,
@@ -626,18 +713,13 @@ std::expected<std::string, RenderFailure> dump_impl(std::string_view html,
   if (!styled) {
     return to_failure(diagnostics, styled.error());
   }
-  // ①② が集めた問題が 1 件でもあれば ③ には進まない（A46）。style は診断の網羅のために
-  // 木を最後まで解決するので、ここで止めないと「捨てた宣言の分だけ違う絵」が出てしまう。
-  // TODO(W4): 診断の組み立て（格上げ・JSON）と一緒に整理する。
-  if (diagnostics.has_errors()) {
-    diagnostics.sort();
-    return std::unexpected(std::move(diagnostics).into_failure());
-  }
   if (const Result<void> ok = check_computed_limits(*styled, options.scale, options.limits); !ok) {
     return to_failure(diagnostics, ok.error());
   }
-  // ①② が集めた問題が 1 件でもあれば、layout に進まずまとめて返す（A46 / §3.10）。
-  // ② が集め始めるまでは、ここに来るのは html の UnsupportedTag / UnsupportedAttribute だけ。
+  // ②の出口（A46 / §3.10）。①② が集めた問題が 1 件でもあれば、③ に進まずまとめて返す。
+  // style は診断の網羅のために木を最後まで解決するので、ここで止めないと
+  // 「捨てた宣言の分だけ違う絵」が出てしまう。致命的な失敗（LimitExceeded など）は
+  // 上の to_failure(diagnostics, error) が集めたものと合わせる。
   if (diagnostics.has_errors()) {
     return to_failure(diagnostics);
   }
@@ -655,19 +737,17 @@ std::expected<std::string, RenderFailure> dump_impl(std::string_view html,
   if (!tree) {
     return to_failure(diagnostics, tree.error());
   }
-  if (stage == DumpStage::Box) {
-    return layout::dump_json(*tree);
+  // ③ が集めた警告は dump では返す先が無い（戻り値は文字列 1 本）が、診断には通す:
+  // strict の判定と `RenderFailure::warnings` を render() と同じ組み立てにするため（A46）。
+  collect_warnings(*tree, diagnostics);
+  const Result<std::string> dumped = dump_after_layout(*tree, options, stage);
+  if (!dumped) {
+    return to_failure(diagnostics, dumped.error());
   }
-
-  const raster::DisplayList list = paint::build_display_list(*tree);
-  if (stage == DumpStage::DisplayList) {
-    return paint::dump_json(list);
+  if (options.warnings_as_errors && !diagnostics.warnings().empty()) {
+    return std::unexpected(promote_warnings(std::move(diagnostics)));
   }
-  const Result<float> height = output_height(*tree, options);
-  if (!height) {
-    return to_failure(diagnostics, height.error());
-  }
-  return paint::dump_svg(list, static_cast<float>(options.viewport_width), *height);
+  return *dumped;
 }
 
 }  // namespace

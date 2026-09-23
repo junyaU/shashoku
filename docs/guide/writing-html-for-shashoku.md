@@ -197,7 +197,8 @@ rt { font-size: 0.5em }
 
 `flex: none`（= `flex: 0 0 auto`）を書かないと、幅が足りないときに既定の `flex-shrink: 1` で縮み、
 中の文字が折り返します。逆に `flex: none` は縮まないので、入りきらなければ親からはみ出します
-（v0.1.0 では**はみ出しは検出されません**。§6.4）。
+（**親の箱からのはみ出しは検出されません**。紙面の外まで出れば `warning[content-overflow]` が
+出ます。§6.4）。
 
 ### (5) `border-radius` は中身をクリップしない（`<img>` だけは例外）
 
@@ -587,7 +588,18 @@ warning[missing-glyph]: no font has a glyph for U+1F600 at 1:6
 
 `missing-glyph` は**豆腐（□）が出た**という意味です。絵文字か、渡したフォントに無い文字です。
 絵文字は使わない、フォントを足す、のどちらかで直します。
+
+```
+warning[content-overflow]: content overflows the canvas by 430.0px (bottom) at 19:1
+```
+
+`content-overflow` は**固定した紙面から中身が出ていて、その分が切れている**という意味です。
+`(bottom)` は出た辺で、直し方が変わります: `bottom` なら `--height` を増やすか中身を減らす、
+`right` なら `--width` を増やすか箱の幅・余白を減らします。`--height` を省いていれば
+（内容の高さに追従）縦には出られないので、この警告は横方向だけになります。
+
 **警告が出ても PNG は作られ、終了コードは 0 です。** 自動配信するなら stderr も見てください。
+**`--strict` を付ければ警告も失敗**になり、PNG は作られません（既にあるファイルも上書きされません）。
 
 ### 6.3 直す順序
 
@@ -605,31 +617,41 @@ warning[missing-glyph]: no font has a glyph for U+1F600 at 1:6
 
 いまの shashoku（0.1.0）は次の状態です。
 
-- **エラーは 1 回に 1 件しか出ません。** 同じ誤りが何か所にあっても 1 件ずつです。
-  直しては実行するループを覚悟してください（検証では 1 件の HTML に平均 16.5 回かかりました）
-- 警告は `missing-glyph`（豆腐）だけです。**固定した紙面からのはみ出しは検出されません**
-  （`--height` を固定して中身が多いと、黙って切れた PNG が出ます）
-- 成功時、CLI は**何も出力しません**。`--height` を省いたときの実際の高さは PNG を見てください
-- 「直し方」（hint）は、確かめた代替があるプロパティだけに、メッセージの末尾の括弧に入っています
+- **エラーは見つかった分が一度に全部出ます。** ① HTML と ② スタイルの段は、安全に読み進められる
+  問題（対応外のタグ・属性・プロパティ・値・セレクタ）を集めてから失敗します。1 件直すたびに
+  走らせ直す必要はありません。ただし**構造が壊れている場合**（閉じ忘れ、`&` の書き忘れ、不正な UTF-8）は
+  その場で止まるので、まずそれを直してからもう一度走らせてください
+- **「直し方」（hint）は独立した行**に出ます（`  hint: …`）。確かめた代替があるものにだけ付きます
+- 警告は 2 種類です。`missing-glyph`（豆腐）と `content-overflow`（**固定した紙面からのはみ出し**）。
+  `--height` を固定して中身が多いと、切れる量と辺つきで警告が出ます
+- **`--strict`** を付けると、警告 1 件以上で失敗になり **PNG は作られません**（既にあるファイルも
+  上書きしません）。サーバーで「検出した問題のある画像は配らない」判断に使えます
+- **`--diagnostics json`** で、標準出力に診断を 1 オブジェクトで出せます（成功でも失敗でも）
+- 成功すると CLI は `wrote out.png (1200x630)` を標準エラーに 1 行出します。
+  `--height` を省いたときの実際の高さはここで分かります
 
-設計済み・実装中のもの（[ARCHITECTURE.md A46](../ARCHITECTURE.md)）。**まだ使えません**:
-
-- **一度に全部**: HTML とスタイルの段で見つけた問題をまとめて返す
-- **hint を別の行に**: `  hint: …` の行になり、メッセージと分けて読めるようになる
-- **はみ出しの警告**: `warning[content-overflow]`（`overflow_px` 付き）
-- **`--strict`**: 警告 1 件以上で失敗にする（PNG を作らない）。サーバーで「配らない」判断に使う
-- **`--diagnostics json`**: 標準出力に JSON を 1 オブジェクトで出す。形はこうなる予定です:
+診断 JSON の形:
 
 ```json
 {"ok": true, "width": 1200, "height": 630, "truncated": false,
  "errors": [{"kind": "unsupported-property", "message": "…", "hint": "…",
              "line": 3, "column": 14, "offset": 120, "warning": null}],
  "warnings": [{"kind": "missing-glyph", "detail": "…", "codepoint": 128512,
-               "line": 3, "column": 1, "offset": 88, "overflow_px": 0}]}
+               "line": 3, "column": 1, "offset": 88, "overflow_px": 0, "edge": null},
+              {"kind": "content-overflow", "detail": "…", "codepoint": 0,
+               "line": 19, "column": 1, "offset": 700, "overflow_px": 430, "edge": "bottom"}]}
 ```
 
-`line` / `column` / `offset` は位置が無ければ `null`、`hint` が無ければ `""`。
-`--diagnostics json` のときは `-o` が必須で、`--dump-stage` とは併用できません。
+- `line` / `column` / `offset` は位置が無ければ `null`、`hint` が無ければ `""`
+- `warning` は `--strict` で格上げしたエラー（`"kind": "warning-as-error"`）だけ、
+  元の警告の種類（`"missing-glyph"` など）が入ります。それ以外は `null`
+- `edge` は `content-overflow` のとき `"top"` / `"right"` / `"bottom"` / `"left"`、それ以外は `null`
+- `truncated` は診断が多すぎて記録を打ち切った（既定 100 件）ことを表します
+- `--diagnostics json` のときは `-o` が必須で、`--dump-stage` とは併用できません。
+  人向けの標準エラー出力は出ません
+
+**まだできないこと**: 固定幅の箱から文字がはみ出す（箱のはみ出し）の検出、重なりの検出、
+文字色と背景色の同化の検出。エラーも警告も無いことは「絵が正しい」ことを意味しません。
 
 ---
 
@@ -654,6 +676,8 @@ shashoku <input.html> -o <out.png> [--width N] [--height N] [--scale S]
 | `--no-trim-line-end` | 行末の終わり括弧・句読点の後ろの空きを詰めない（既定は詰める） |
 | `--no-collapse-punctuation` | 連続する約物の間の空きを詰めない（既定は詰める） |
 | `--dump-stage` | 中間表現を出す `dom` / `style` / `box` / `display-list` / `svg` |
+| `--strict` | 警告（豆腐・紙面からのはみ出し）も失敗にする。PNG は作りません |
+| `--diagnostics` | 診断の出し方 `human`（既定）/ `json`。`json` は `-o` が必須で `--dump-stage` と併用不可 |
 | `--version` / `--license` | 版 / ライセンス（全オプションは `shashoku --help`） |
 
 ```bash
@@ -667,6 +691,10 @@ shashoku image.html --image icon=examples/icon.png -o out.png --width 560
 shashoku vertical.html -o v.png --width 480 --height 900
 # 箱の寸法を数字で確かめる
 shashoku card.html --dump-stage box --width 640
+# 診断を機械が読む形で（成功でも失敗でも 1 オブジェクト）
+shashoku card.html -o card.png --width 640 --diagnostics json
+# 警告（豆腐・はみ出し）も失敗にする（PNG は作られません）
+shashoku og-card.html -o og.png --width 1200 --height 630 --strict
 ```
 
 **太字**は `font-weight` を書けば出ます（既定フォントの Bold が選ばれます）。

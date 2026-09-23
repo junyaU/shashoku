@@ -8,6 +8,7 @@ shashoku_add_test(integration_test
   SOURCES
     golden_test.cpp
     color_font_test.cpp
+    diagnostics_test.cpp
     error_test.cpp
     limits_test.cpp
     nonfinite_test.cpp

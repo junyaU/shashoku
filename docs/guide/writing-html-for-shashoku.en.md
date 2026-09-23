@@ -202,7 +202,8 @@ That is how you build a shrink-to-fit box (tag, pill, badge, stamp).
 
 Without `flex: none` (i.e. `flex: 0 0 auto`), the default `flex-shrink: 1` squeezes the box when
 space runs short and the text inside wraps. Conversely, `flex: none` never shrinks, so items that
-do not fit overflow the parent (**overflow is not detected in v0.1.0**; see §6.4).
+do not fit overflow the parent (**overflowing the parent box is not detected**; only content that
+leaves the canvas is reported, as `warning[content-overflow]` — see §6.4).
 
 ### (5) `border-radius` does not clip content (`<img>` is the one exception)
 
@@ -601,7 +602,19 @@ warning[missing-glyph]: no font has a glyph for U+1F600 at 1:6
 
 `missing-glyph` means **tofu (□) was drawn** — an emoji, or a character missing from the fonts you
 passed. Fix it by not using the character, or by adding a font.
+
+```
+warning[content-overflow]: content overflows the canvas by 430.0px (bottom) at 19:1
+```
+
+`content-overflow` means **content sticks out of the fixed canvas and that part is cut off**.
+`(bottom)` is the edge it went over, and the fix depends on it: `bottom` means raise `--height` or
+cut content, `right` means raise `--width` or shrink the box's width and padding. If you omit
+`--height` (the height follows the content) nothing can overflow vertically, so only the horizontal
+edges are checked.
+
 **A warning still produces a PNG and still exits 0.** If you publish automatically, read stderr too.
+**`--strict` turns warnings into failures**: no PNG is written and an existing file is left untouched.
 
 ### 6.3 What order to fix things in
 
@@ -619,33 +632,42 @@ passed. Fix it by not using the character, or by adding a font.
 
 shashoku 0.1.0 today:
 
-- **Errors come one at a time.** The same mistake in twenty places is reported once per run.
-  Expect a fix-and-rerun loop (testing averaged 16.5 runs for one HTML file)
-- The only warning is `missing-glyph` (tofu). **Content overflowing a fixed canvas is not detected**
-  — fix `--height` too small and you silently get a cropped PNG
-- On success the CLI **prints nothing**. If you omitted `--height`, read the actual height off the PNG
-- Hints ("write this instead") exist only for properties with a verified substitute, and they are
-  appended in parentheses at the end of the message
+- **Every error found is reported at once.** The HTML and style stages collect every problem they
+  can step over (unsupported tags, attributes, properties, values, selectors) before failing, so you
+  do not have to rerun after every single fix. **Structural breakage stops the run on the spot**
+  though (an unclosed tag, a bare `&`, invalid UTF-8) — fix that first and run again
+- **Hints ("write this instead") are on their own line** (`  hint: …`), only for the properties
+  that have a verified substitute
+- There are two warnings: `missing-glyph` (tofu) and `content-overflow` (**content that does not fit
+  the fixed canvas**). Set `--height` too small and you are told how much is cut off, and on which edge
+- **`--strict`** turns any warning into a failure and **writes no PNG** (an existing file is left
+  untouched). That is the "do not publish" signal for a server
+- **`--diagnostics json`** writes one JSON object to stdout (on success and on failure)
+- On success the CLI writes one line to stderr: `wrote out.png (1200x630)`. That is where you read
+  the actual height when you omitted `--height`
 
-Designed and being implemented ([ARCHITECTURE.md A46](../ARCHITECTURE.md)). **Not available yet**:
-
-- **All at once**: the HTML and style stages collect every problem they find before failing
-- **Hints on their own line**: a `  hint: …` line, separate from the message
-- **Overflow warnings**: `warning[content-overflow]` with an `overflow_px` amount
-- **`--strict`**: fail (and write no PNG) if there is at least one warning — the "do not publish"
-  signal for a server
-- **`--diagnostics json`**: one JSON object on stdout, shaped like this:
+The diagnostics JSON:
 
 ```json
 {"ok": true, "width": 1200, "height": 630, "truncated": false,
  "errors": [{"kind": "unsupported-property", "message": "…", "hint": "…",
              "line": 3, "column": 14, "offset": 120, "warning": null}],
  "warnings": [{"kind": "missing-glyph", "detail": "…", "codepoint": 128512,
-               "line": 3, "column": 1, "offset": 88, "overflow_px": 0}]}
+               "line": 3, "column": 1, "offset": 88, "overflow_px": 0, "edge": null},
+              {"kind": "content-overflow", "detail": "…", "codepoint": 0,
+               "line": 19, "column": 1, "offset": 700, "overflow_px": 430, "edge": "bottom"}]}
 ```
 
-`line` / `column` / `offset` are `null` when there is no location, `hint` is `""` when there is none.
-With `--diagnostics json`, `-o` is required and `--dump-stage` cannot be combined with it.
+- `line` / `column` / `offset` are `null` when there is no location, `hint` is `""` when there is none
+- `warning` carries the original warning kind (`"missing-glyph"`, …) only on an error promoted by
+  `--strict` (`"kind": "warning-as-error"`); otherwise it is `null`
+- `edge` is `"top"` / `"right"` / `"bottom"` / `"left"` on `content-overflow`, `null` otherwise
+- `truncated` means the diagnostics were cut off at the limit (100 entries by default)
+- With `--diagnostics json`, `-o` is required, `--dump-stage` cannot be combined with it, and the
+  human-readable stderr output is suppressed
+
+**Still not detected**: text overflowing a fixed-size box (as opposed to the canvas), overlaps, and
+text the same colour as its background. No errors and no warnings does not mean the picture is right.
 
 ---
 
@@ -670,6 +692,8 @@ shashoku <input.html> -o <out.png> [--width N] [--height N] [--scale S]
 | `--no-trim-line-end` | Keep the space after a closing bracket or punctuation mark at the end of a line (trimmed by default) |
 | `--no-collapse-punctuation` | Keep the space between consecutive punctuation marks (collapsed by default) |
 | `--dump-stage` | Dump an intermediate form: `dom` / `style` / `box` / `display-list` / `svg` |
+| `--strict` | Turn warnings (tofu, canvas overflow) into failures. No PNG is written |
+| `--diagnostics` | How to report: `human` (default) / `json`. `json` needs `-o` and cannot be combined with `--dump-stage` |
 | `--version` / `--license` | Version / licences (`shashoku --help` lists everything) |
 
 ```bash
@@ -683,6 +707,10 @@ shashoku image.html --image icon=examples/icon.png -o out.png --width 560
 shashoku vertical.html -o v.png --width 480 --height 900
 # check the box dimensions numerically
 shashoku card.html --dump-stage box --width 640
+# diagnostics in machine-readable form (one object, success or failure)
+shashoku card.html -o card.png --width 640 --diagnostics json
+# treat warnings (tofu, overflow) as failures (no PNG is written)
+shashoku og-card.html -o og.png --width 1200 --height 630 --strict
 ```
 
 **Bold** comes from `font-weight` alone (the default font's Bold is selected).

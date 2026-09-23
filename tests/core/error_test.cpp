@@ -167,5 +167,20 @@ TEST(WarningKindToString, CoversEveryKind) {
   EXPECT_EQ(to_string(WarningKind::ContentOverflow), "content-overflow");
 }
 
+// OverflowEdge の全値 → 物理の辺の識別子（A50）。None だけは「辺が無い」ので空文字列。
+// 診断 JSON の `edge` はこの綴りをそのまま出すので、ここが契約（ARCHITECTURE.md §3.10）。
+TEST(OverflowEdgeToString, CoversEveryEdge) {
+  constexpr std::array<std::pair<OverflowEdge, std::string_view>, 5> kCases{{
+      {OverflowEdge::None, ""},
+      {OverflowEdge::Top, "top"},
+      {OverflowEdge::Right, "right"},
+      {OverflowEdge::Bottom, "bottom"},
+      {OverflowEdge::Left, "left"},
+  }};
+  for (const auto& [edge, text] : kCases) {
+    EXPECT_EQ(to_string(edge), text);
+  }
+}
+
 }  // namespace
 }  // namespace shashoku

@@ -1,7 +1,9 @@
 #pragma once
 
+#include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <variant>
 #include <vector>
 
@@ -215,6 +217,38 @@ struct MissingGlyph {
   }
 };
 
+// 紙面（= 出力の矩形）からはみ出した箱 1 件（A46 / DESIGN.md §3-6）。
+// 「固定した高さ・幅の外に出た部分は PNG
+// で切れる」という**結果**の問題を、警告として返すための記録。
+//
+// 報告の粒度は「**最も外側の該当要素ごとに 1 件**」: 祖先がはみ出していれば、その子孫は数えない
+// （1 つのずれで警告が何十件も出ないようにする）。行ボックスと画像断片は自分の入力位置を
+// 持たないので、**それを含むブロック要素の位置**で報告する。同じ位置の複数件は 1 件にまとめ、
+// 超過量は最大を採る。合成ルート `#root` は入力の要素ではなく、その border box は常に中身に
+// 追随する（= 中身がはみ出せば必ず一緒にはみ出す）ので、候補にしない。候補にすると
+// 実際に突き出した要素を隠して、位置が常に入力の先頭になってしまう。
+//
+// 紙面のどの辺から出たか（**物理**の 4 辺。縦書きでも「下」は物理の下）。
+// 直し方が辺で変わる（下 = 背が高すぎる、右 = 幅が広すぎる）ので、超過量と一緒に運ぶ。
+enum class OverflowEdge : std::uint8_t { Right, Bottom, Left, Top };
+
+// "right" / "bottom" / "left" / "top"（警告の文面とダンプ用）。定義は check_overflow.cpp。
+[[nodiscard]] std::string_view to_string(OverflowEdge edge) noexcept;
+
+struct ContentOverflow {
+  // はみ出した箱を作った要素の位置（`BlockBox::location`）。
+  SourceLocation location;
+  // 紙面の外に出た量の最大（正の値）。
+  // 単位は **CSS px**: レイアウトの座標は scale を掛ける前の CSS px で、scale は ⑤b raster が
+  // 掛ける（api は `RenderOptions::viewport_width` をそのまま `Options::viewport_width` に渡す）。
+  // なので api はこの値を割らずに `Warning::overflow_px`（CSS px）へ入れてよい。
+  float overflow_px = 0;
+  // 最大の超過量を出した辺。同点なら 右 → 下 → 左 → 上 の順で先のものを採る（決定的）。
+  OverflowEdge edge = OverflowEdge::Right;
+
+  bool operator==(const ContentOverflow&) const = default;
+};
+
 struct BoxTree {
   WritingMode writing_mode = WritingMode::HorizontalTb;
   float viewport_width = 0;              // 物理 px。paint が論理 → 物理の変換に使う
@@ -223,6 +257,9 @@ struct BoxTree {
   // 豆腐の記録。上の operator< の順（入力位置 → コードポイント）に並び、重複はない。
   // paint は読まない（絵には影響しない）。api が Warning にし、dump_json が出す。
   std::vector<MissingGlyph> missing_glyphs;
+  // 紙面からのはみ出しの記録（A46）。入力位置の昇順に並び、同じ位置は 1 件にまとめてある。
+  // paint は読まない（絵には影響しない）。api が Warning{ContentOverflow} にし、dump_json が出す。
+  std::vector<ContentOverflow> overflows;
 
   // 内容の block 方向の大きさ（api が画像の高さを決めるのに使う。ARCHITECTURE.md §3.10）。
   [[nodiscard]] float content_block_size() const { return root.rect.block_end(); }

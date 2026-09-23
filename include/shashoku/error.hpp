@@ -67,6 +67,8 @@ std::string_view to_string(ErrorKind kind) noexcept;
 
 // 例: "error[unsupported-property] at 3:14: `float` is not supported"
 // hint は含めない（含めるのは to_string(RenderFailure) と CLI）。
+// WarningAsError の message は警告の detail から末尾の " at L:C" を除いたもの（位置は location
+// にある。 文面に位置が二重に出ないようにする）。
 std::string to_string(const RenderError& error);
 
 // 1 行 1 件。各エラーは to_string(RenderError) の行、hint があれば続けて "  hint: <hint>" の行、

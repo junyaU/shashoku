@@ -14,7 +14,8 @@ namespace shashoku {
 // `Result<T>` の unexpected で返し、ここには入れない（api が集めたものと合わせる）。
 //
 // 上限: errors と warnings の合計が max_entries に達したら、それ以降は記録せず truncated を立てる
-// （解析は続ける。時間と入力の大きさは RenderLimits の他の上限が抑える）。
+// （解析は続ける。時間と入力の大きさは RenderLimits の他の上限が抑える）。**max_entries
+// の実効の下限は 1** （0 を渡されても 1 として扱う。`RenderLimits::max_diagnostics` の注記）。
 // 順序: 足された順で保持し、`sort()` で (location.offset, kind, message) の昇順に安定に整列する。
 // 位置の無いものは末尾。同じ入力からは同じ並びになる（DESIGN.md §3-5）。
 class Diagnostics {

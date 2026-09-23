@@ -10,6 +10,7 @@
 #include "core/utf8.hpp"
 #include "integration/integration_support.hpp"
 #include "shashoku/shashoku.hpp"
+#include "support/failure.hpp"
 
 // end-to-end のファジング（DESIGN.md §10-4 / ARCHITECTURE.md §4）。
 //
@@ -229,7 +230,7 @@ TEST(Fuzz, RandomJapaneseNeverBreaks) {
     const auto result = render(test_case.html, fonts, test_case.options);
     if (!result) {
       ADD_FAILURE() << to_string(result.error()) << "\n" << message();
-      EXPECT_FALSE(result.error().message.empty());
+      EXPECT_FALSE(first_error(result.error()).message.empty());
       continue;
     }
     EXPECT_FALSE(result->png.empty()) << message();

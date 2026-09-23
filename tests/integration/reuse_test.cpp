@@ -9,6 +9,7 @@
 
 #include "integration/integration_support.hpp"
 #include "shashoku/shashoku.hpp"
+#include "support/failure.hpp"
 
 // フォントと画像の再利用 API（ARCHITECTURE.md A34 / issue #7）。
 //
@@ -50,8 +51,9 @@ LoadedImages must_prepare_images(const ImageSet& images, const RenderLimits& lim
 }
 
 // 2 つの結果が「同じ」= PNG のバイト列も警告も大きさも一致すること。
-void expect_same(const std::expected<RenderResult, RenderError>& actual,
-                 const std::expected<RenderResult, RenderError>& expected, std::string_view what) {
+void expect_same(const std::expected<RenderResult, RenderFailure>& actual,
+                 const std::expected<RenderResult, RenderFailure>& expected,
+                 std::string_view what) {
   ASSERT_TRUE(expected.has_value()) << what << ": " << to_string(expected.error());
   ASSERT_TRUE(actual.has_value()) << what << ": " << to_string(actual.error());
   EXPECT_EQ(actual->png, expected->png) << what;
@@ -208,13 +210,13 @@ TEST(Reuse, MovedFromResourcesAreRejected) {
   // NOLINTBEGIN(bugprone-use-after-move): ムーブ済みを渡したときの扱いが主題
   const auto without_fonts = render(kSample, fonts, options);
   ASSERT_FALSE(without_fonts.has_value());
-  EXPECT_EQ(without_fonts.error().kind, ErrorKind::InvalidOption);
-  EXPECT_NE(without_fonts.error().message.find("moved from"), std::string::npos)
-      << without_fonts.error().message;
+  EXPECT_EQ(first_error(without_fonts.error()).kind, ErrorKind::InvalidOption);
+  EXPECT_NE(first_error(without_fonts.error()).message.find("moved from"), std::string::npos)
+      << first_error(without_fonts.error()).message;
 
   const auto without_images = render(kImageHtml, moved_fonts, images, options);
   ASSERT_FALSE(without_images.has_value());
-  EXPECT_EQ(without_images.error().kind, ErrorKind::InvalidOption);
+  EXPECT_EQ(first_error(without_images.error()).kind, ErrorKind::InvalidOption);
   // NOLINTEND(bugprone-use-after-move)
 
   // ムーブ先は普通に使える。
@@ -238,9 +240,9 @@ TEST(Reuse, StricterLimitsAtRenderTimeStillApply) {
 
   const auto result = render(kImageHtml, loaded_fonts, loaded_images, options);
   ASSERT_FALSE(result.has_value()) << "render() 側の上限が効いていない";
-  EXPECT_EQ(result.error().kind, ErrorKind::LimitExceeded);
-  EXPECT_NE(result.error().message.find("image_pixels"), std::string::npos)
-      << result.error().message;
+  EXPECT_EQ(first_error(result.error()).kind, ErrorKind::LimitExceeded);
+  EXPECT_NE(first_error(result.error()).message.find("image_pixels"), std::string::npos)
+      << first_error(result.error()).message;
 }
 
 TEST(Reuse, StricterTotalPixelLimitAtRenderTimeStillApplies) {
@@ -252,9 +254,9 @@ TEST(Reuse, StricterTotalPixelLimitAtRenderTimeStillApplies) {
 
   const auto result = render(kImageHtml, loaded_fonts, loaded_images, options);
   ASSERT_FALSE(result.has_value());
-  EXPECT_EQ(result.error().kind, ErrorKind::LimitExceeded);
-  EXPECT_NE(result.error().message.find("total_image_pixels"), std::string::npos)
-      << result.error().message;
+  EXPECT_EQ(first_error(result.error()).kind, ErrorKind::LimitExceeded);
+  EXPECT_NE(first_error(result.error()).message.find("total_image_pixels"), std::string::npos)
+      << first_error(result.error()).message;
 }
 
 // 枚数の上限（(a) の検査）も、デコード済みの共有資源に対して同じように効く。
@@ -267,9 +269,9 @@ TEST(Reuse, ImageCountLimitAppliesToPreparedImages) {
 
   const auto result = render(kImageHtml, loaded_fonts, loaded_images, options);
   ASSERT_FALSE(result.has_value());
-  EXPECT_EQ(result.error().kind, ErrorKind::LimitExceeded);
-  EXPECT_NE(result.error().message.find("RenderLimits::images"), std::string::npos)
-      << result.error().message;
+  EXPECT_EQ(first_error(result.error()).kind, ErrorKind::LimitExceeded);
+  EXPECT_NE(first_error(result.error()).message.find("RenderLimits::images"), std::string::npos)
+      << first_error(result.error()).message;
 }
 
 // 用意するときに厳しければ、そこで落ちる（デコードの前に判定する = (c) の約束）。

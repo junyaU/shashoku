@@ -5,15 +5,18 @@
 
 #include <gtest/gtest.h>
 
+#include "core/diagnostics.hpp"
 #include "core/result.hpp"
 #include "html/dom.hpp"
 #include "html/parser.hpp"
+#include "shashoku/limits.hpp"
 
 namespace shashoku::html {
 namespace {
 
 std::string dumped(std::string_view source) {
-  Result<Node> result = parse(source);
+  Diagnostics diagnostics{RenderLimits{}.max_diagnostics};
+  Result<Node> result = parse(source, diagnostics);
   if (!result) {
     ADD_FAILURE() << "parse failed: " << to_string(result.error());
     return {};

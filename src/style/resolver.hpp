@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <string>
 
+#include "core/diagnostics.hpp"
 #include "core/result.hpp"
 #include "html/dom.hpp"
 #include "style/computed_style.hpp"
@@ -38,7 +39,13 @@ inline constexpr float kMaxLengthPx = 16777216.0F;  // 2^24
 // 出力の不変条件（ARCHITECTURE.md A36）: 返ってきた木の ComputedStyle に入っている
 // 長さは、`font-size` を除いてすべて有限で、絶対値が max_length_px 以内である
 // （`%` と `auto` は layout が解決するので対象外）。超えたら LimitExceeded（位置つき）。
-Result<StyledNode> resolve(const html::Node& root, std::size_t max_style_rules = kMaxStyleRules,
+//
+// diagnostics（A46）: 「安全に解決を続けられる問題」（CssParse / UnsupportedProperty /
+// UnsupportedValue / UnsupportedLayout など）を集めて続行するための口。上限の超過
+// （LimitExceeded）は今までどおり unexpected で返す。
+// **まだ何も足していない**: 集めて続行するのは W2 の仕事で、いまは最初のエラーで止まる。
+Result<StyledNode> resolve(const html::Node& root, Diagnostics& diagnostics,
+                           std::size_t max_style_rules = kMaxStyleRules,
                            float max_length_px = kMaxLengthPx);
 
 // --dump-stage=style の出力。キー順は固定（DESIGN.md §3-3）。

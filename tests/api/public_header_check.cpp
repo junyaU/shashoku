@@ -34,7 +34,7 @@ int use_public_api() {
 
   // フォントが壊れている（1 バイト）ので必ず失敗する。ここで見たいのは
   // 「公開ヘッダだけで render() を呼んでエラーを読めること」。
-  const std::expected<RenderResult, RenderError> result =
+  const std::expected<RenderResult, RenderFailure> result =
       render("<p>あ</p>", fonts, images, options);
   if (result) {
     return static_cast<int>(result->png.size() + result->warnings.size());
@@ -46,23 +46,32 @@ int use_public_api() {
   const std::expected<LoadedImages, RenderError> loaded_images =
       LoadedImages::prepare(images, RenderLimits{});
   if (loaded_fonts && loaded_images) {
-    const std::expected<RenderResult, RenderError> reused =
+    const std::expected<RenderResult, RenderFailure> reused =
         render("<p>あ</p>", *loaded_fonts, *loaded_images, options);
-    const std::expected<RenderResult, RenderError> reused_without_images =
+    const std::expected<RenderResult, RenderFailure> reused_without_images =
         render("<p>あ</p>", *loaded_fonts, options);
-    const std::expected<std::string, RenderError> dumped =
+    const std::expected<std::string, RenderFailure> dumped =
         dump("<p>あ</p>", *loaded_fonts, *loaded_images, options, DumpStage::Box);
     return static_cast<int>(loaded_fonts->size() + loaded_images->size() +
                             (reused ? reused->png.size() : 0) + (reused_without_images ? 1 : 0) +
                             (dumped ? dumped->size() : 0));
   }
-  const std::string message = to_string(result.error());
-  const std::string_view kind = to_string(result.error().kind);
+  // 失敗は RenderFailure（診断の列。A46）。errors / warnings / truncated と
+  // SourceLocation が公開ヘッダだけで読めることを確かめる。
+  const RenderFailure& failure = result.error();
+  const std::string message = to_string(failure);
+  const std::string_view kind = failure.errors.empty() ? to_string(ErrorKind::WarningAsError)
+                                                       : to_string(failure.errors.front().kind);
+  const SourceLocation location = failure.errors.empty()
+                                      ? SourceLocation{}
+                                      : failure.errors.front().location.value_or(SourceLocation{});
   const std::string_view stage = to_string(DumpStage::DisplayList);
   const std::string_view warning = to_string(WarningKind::MissingGlyph);
+  const std::string_view overflow = to_string(WarningKind::ContentOverflow);
   const std::string_view release = version();
   return static_cast<int>(message.size() + kind.size() + stage.size() + warning.size() +
-                          release.size()) == 0
+                          overflow.size() + release.size() + failure.warnings.size() +
+                          location.line + (failure.truncated ? 1U : 0U)) == 0
              ? 1
              : 0;
 }

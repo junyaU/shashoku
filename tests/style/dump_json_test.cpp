@@ -18,7 +18,7 @@ TEST(StyleDump, GoldenOutput) {
       test_parent("p", {test_attr("style", "width: 50%; margin: 0 auto; border: 2px solid")},
                   test_text("写植")),
       test_element("img", {test_attr("src", "logo.png"), test_attr("width", "24")}));
-  const Result<StyledNode> styled = resolve(tree);
+  const Result<StyledNode> styled = resolve_for_test(tree);
   ASSERT_TRUE(styled.has_value()) << (styled ? "" : styled.error().message);
 
   EXPECT_EQ(dump_json(*styled), R"({
@@ -242,7 +242,7 @@ TEST(StyleDump, GoldenOutput) {
 TEST(StyleDump, WordWrapDumpsAsOverflowWrap) {
   const auto dump_of = [](const std::string& declarations) {
     const html::Node tree = test_root(test_element("div", {test_attr("style", declarations)}));
-    const Result<StyledNode> styled = resolve(tree);
+    const Result<StyledNode> styled = resolve_for_test(tree);
     EXPECT_TRUE(styled.has_value())
         << declarations << ": " << (styled ? "" : styled.error().message);
     return styled ? dump_json(*styled) : std::string{};

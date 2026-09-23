@@ -9,6 +9,7 @@
 
 #include "integration/integration_support.hpp"
 #include "shashoku/shashoku.hpp"
+#include "support/failure.hpp"
 
 // fail loudly（DESIGN.md §3-6）: 未対応・不正な入力は、原因の入力位置つきでエラーになる。
 // 各段のエラーが公開 API まで素通しで上がってくることを確かめる。
@@ -35,10 +36,10 @@ TEST_P(RenderErrorCase, IsReported) {
   const ErrorCase& test_case = GetParam();
   const auto result = render(test_case.html, japanese_fonts(), options_for(320));
   ASSERT_FALSE(result.has_value()) << "エラーになるはずが成功した: " << test_case.html;
-  EXPECT_EQ(result.error().kind, test_case.kind) << to_string(result.error());
-  EXPECT_NE(result.error().message.find(test_case.message_contains), std::string::npos)
+  EXPECT_EQ(first_error(result.error()).kind, test_case.kind) << to_string(result.error());
+  EXPECT_NE(first_error(result.error()).message.find(test_case.message_contains), std::string::npos)
       << to_string(result.error());
-  EXPECT_EQ(result.error().location.has_value(), test_case.has_location)
+  EXPECT_EQ(first_error(result.error()).location.has_value(), test_case.has_location)
       << to_string(result.error());
 }
 
@@ -78,7 +79,7 @@ TEST(RenderErrors, InvalidUtf8) {
   const std::string html = std::string("<div>") + '\xff' + "</div>";
   const auto result = render(html, japanese_fonts(), options_for(320));
   ASSERT_FALSE(result.has_value());
-  EXPECT_EQ(result.error().kind, ErrorKind::InvalidUtf8);
+  EXPECT_EQ(first_error(result.error()).kind, ErrorKind::InvalidUtf8);
 }
 
 // ---------------------------------------------------------------------------
@@ -88,8 +89,8 @@ TEST(RenderErrors, InvalidUtf8) {
 TEST(RenderErrors, NoFonts) {
   const auto result = render("<div>あ</div>", FontSet{}, options_for(320));
   ASSERT_FALSE(result.has_value());
-  EXPECT_EQ(result.error().kind, ErrorKind::NoFonts);
-  EXPECT_FALSE(result.error().location.has_value());
+  EXPECT_EQ(first_error(result.error()).kind, ErrorKind::NoFonts);
+  EXPECT_FALSE(first_error(result.error()).location.has_value());
 }
 
 TEST(RenderErrors, BrokenFontSaysWhichOne) {
@@ -100,9 +101,10 @@ TEST(RenderErrors, BrokenFontSaysWhichOne) {
 
   const auto result = render("<div>あ</div>", fonts, options_for(320));
   ASSERT_FALSE(result.has_value());
-  EXPECT_EQ(result.error().kind, ErrorKind::FontLoad);
+  EXPECT_EQ(first_error(result.error()).kind, ErrorKind::FontLoad);
   // 何番目のフォントが壊れているかを言う
-  EXPECT_NE(result.error().message.find("font #1"), std::string::npos) << result.error().message;
+  EXPECT_NE(first_error(result.error()).message.find("font #1"), std::string::npos)
+      << first_error(result.error()).message;
 }
 
 TEST(RenderErrors, BrokenImageSaysWhichOne) {
@@ -112,8 +114,9 @@ TEST(RenderErrors, BrokenImageSaysWhichOne) {
 
   const auto result = render(R"(<img src="broken">)", japanese_fonts(), images, options_for(320));
   ASSERT_FALSE(result.has_value());
-  EXPECT_EQ(result.error().kind, ErrorKind::ImageDecode);
-  EXPECT_NE(result.error().message.find("broken"), std::string::npos) << result.error().message;
+  EXPECT_EQ(first_error(result.error()).kind, ErrorKind::ImageDecode);
+  EXPECT_NE(first_error(result.error()).message.find("broken"), std::string::npos)
+      << first_error(result.error()).message;
 }
 
 // ImageSet に無い名前は ImageNotFound（A12）。黙って空白を描いたりしない。
@@ -121,9 +124,11 @@ TEST(RenderErrors, UnknownImageName) {
   const auto result =
       render(R"(<img src="missing">)", japanese_fonts(), ImageSet{}, options_for(320));
   ASSERT_FALSE(result.has_value());
-  EXPECT_EQ(result.error().kind, ErrorKind::ImageNotFound) << to_string(result.error());
-  EXPECT_NE(result.error().message.find("missing"), std::string::npos) << result.error().message;
-  EXPECT_TRUE(result.error().location.has_value());
+  EXPECT_EQ(first_error(result.error()).kind, ErrorKind::ImageNotFound)
+      << to_string(result.error());
+  EXPECT_NE(first_error(result.error()).message.find("missing"), std::string::npos)
+      << first_error(result.error()).message;
+  EXPECT_TRUE(first_error(result.error()).location.has_value());
 }
 
 TEST(RenderErrors, DuplicateImageName) {
@@ -134,8 +139,9 @@ TEST(RenderErrors, DuplicateImageName) {
 
   const auto result = render("<div>あ</div>", japanese_fonts(), images, options_for(320));
   ASSERT_FALSE(result.has_value());
-  EXPECT_EQ(result.error().kind, ErrorKind::InvalidOption);
-  EXPECT_NE(result.error().message.find("icon"), std::string::npos) << result.error().message;
+  EXPECT_EQ(first_error(result.error()).kind, ErrorKind::InvalidOption);
+  EXPECT_NE(first_error(result.error()).message.find("icon"), std::string::npos)
+      << first_error(result.error()).message;
 }
 
 struct OptionCase {
@@ -178,9 +184,10 @@ TEST(RenderErrors, InvalidOptions) {
   for (const OptionCase& test_case : cases) {
     const auto result = render("<div>あ</div>", japanese_fonts(), test_case.options);
     ASSERT_FALSE(result.has_value()) << test_case.name;
-    EXPECT_EQ(result.error().kind, test_case.kind) << test_case.name;
-    EXPECT_NE(result.error().message.find(test_case.message_contains), std::string::npos)
-        << test_case.name << ": " << result.error().message;
+    EXPECT_EQ(first_error(result.error()).kind, test_case.kind) << test_case.name;
+    EXPECT_NE(first_error(result.error()).message.find(test_case.message_contains),
+              std::string::npos)
+        << test_case.name << ": " << first_error(result.error()).message;
   }
 }
 
@@ -199,7 +206,7 @@ TEST(RenderErrors, DumpPropagatesTheSameError) {
   const auto result = dump(R"(<div style="float: left">あ</div>)", japanese_fonts(), ImageSet{},
                            options_for(320), DumpStage::Box);
   ASSERT_FALSE(result.has_value());
-  EXPECT_EQ(result.error().kind, ErrorKind::UnsupportedProperty);
+  EXPECT_EQ(first_error(result.error()).kind, ErrorKind::UnsupportedProperty);
 }
 
 }  // namespace

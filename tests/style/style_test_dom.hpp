@@ -6,8 +6,10 @@
 #include <utility>
 #include <vector>
 
+#include "core/diagnostics.hpp"
 #include "core/result.hpp"
 #include "html/dom.hpp"
+#include "shashoku/limits.hpp"
 #include "style/computed_style.hpp"
 #include "style/resolver.hpp"
 
@@ -19,6 +21,16 @@
 // コピーを使うと clang-tidy の misc-no-recursion に引っかかる。
 
 namespace shashoku::style {
+
+// A46 で resolve() は Diagnostics& を取るようになった（src/core/diagnostics.hpp）。
+// いまの style は診断を集めず最初のエラーで unexpected を返すので、診断を見ないテストは
+// 捨てる Diagnostics を渡すこの包みを使う。集めるようになったら（W2）ここを見直す。
+inline Result<StyledNode> resolve_for_test(const html::Node& root,
+                                           std::size_t max_style_rules = kMaxStyleRules,
+                                           float max_length_px = kMaxLengthPx) {
+  Diagnostics diagnostics{RenderLimits{}.max_diagnostics};
+  return resolve(root, diagnostics, max_style_rules, max_length_px);
+}
 
 inline html::Attribute test_attr(std::string_view name, std::string_view value,
                                  SourceLocation location = {}) {
@@ -77,7 +89,7 @@ inline html::Node test_style_element(std::string_view css, SourceLocation locati
 // `<div style="...">` を解決して div の計算値を返す。
 inline Result<ComputedStyle> inline_style(std::string_view declarations) {
   const html::Node tree = test_root(test_element("div", {test_attr("style", declarations)}));
-  Result<StyledNode> styled = resolve(tree);
+  Result<StyledNode> styled = resolve_for_test(tree);
   if (!styled) {
     return std::unexpected(styled.error());
   }
@@ -91,7 +103,7 @@ inline Result<ComputedStyle> inline_style(std::string_view declarations) {
 inline Result<ComputedStyle> sheet_style(std::string_view css,
                                          std::vector<html::Attribute> attrs = {}) {
   const html::Node tree = test_root(test_style_element(css), test_element("div", std::move(attrs)));
-  Result<StyledNode> styled = resolve(tree);
+  Result<StyledNode> styled = resolve_for_test(tree);
   if (!styled) {
     return std::unexpected(styled.error());
   }
@@ -104,7 +116,7 @@ inline Result<ComputedStyle> sheet_style(std::string_view css,
 // タグだけの要素を解決して計算値を返す（UA スタイルの検査用）。
 inline Result<ComputedStyle> tag_style(std::string_view tag) {
   const html::Node tree = test_root(test_element(tag));
-  Result<StyledNode> styled = resolve(tree);
+  Result<StyledNode> styled = resolve_for_test(tree);
   if (!styled) {
     return std::unexpected(styled.error());
   }

@@ -76,7 +76,7 @@ TEST(StyleCascade, UserAgentParagraphAndRubyText) {
 
 TEST(StyleCascade, SyntheticRootUsesInitialValuesAndBlockDisplay) {
   const html::Node tree = test_root(test_style_element("* { color: red }"));
-  const Result<StyledNode> styled = resolve(tree);
+  const Result<StyledNode> styled = resolve_for_test(tree);
   ASSERT_TRUE(styled.has_value()) << (styled ? "" : styled.error().message);
   EXPECT_EQ(styled->tag, "#root");
   EXPECT_EQ(styled->style.display, Display::Block);  // 合成ルートだけの例外
@@ -90,7 +90,7 @@ TEST(StyleCascade, SyntheticRootUsesInitialValuesAndBlockDisplay) {
 
 TEST(StyleCascade, AuthorSheetBeatsUserAgent) {
   const html::Node tree = test_root(test_style_element("p { margin: 0 }"), test_element("p"));
-  const Result<StyledNode> styled = resolve(tree);
+  const Result<StyledNode> styled = resolve_for_test(tree);
   ASSERT_TRUE(styled.has_value()) << (styled ? "" : styled.error().message);
   EXPECT_EQ(styled->children.front().style.margin.top, Dimension::px(0));
 }
@@ -100,7 +100,7 @@ TEST(StyleCascade, InlineStyleBeatsAuthorSheetEvenWithHigherSpecificity) {
       test_root(test_style_element("#a.b { color: red }"),
                 test_element("div", {test_attr("id", "a"), test_attr("class", "b"),
                                      test_attr("style", "color: blue")}));
-  const Result<StyledNode> styled = resolve(tree);
+  const Result<StyledNode> styled = resolve_for_test(tree);
   ASSERT_TRUE(styled.has_value()) << (styled ? "" : styled.error().message);
   EXPECT_EQ(styled->children.front().style.color, (Color{0, 0, 255, 255}));
 }
@@ -127,7 +127,7 @@ TEST(StyleCascade, SameSpecificityUsesSourceOrder) {
 TEST(StyleCascade, MultipleStyleElementsAreConcatenatedInDocumentOrder) {
   const html::Node tree = test_root(test_style_element("div { color: red; background: white }"),
                                     test_element("div"), test_style_element("div { color: blue }"));
-  const Result<StyledNode> styled = resolve(tree);
+  const Result<StyledNode> styled = resolve_for_test(tree);
   ASSERT_TRUE(styled.has_value()) << (styled ? "" : styled.error().message);
   ASSERT_EQ(styled->children.size(), 1U);  // <style> は木から落ちる
   EXPECT_EQ(styled->children.front().style.color, (Color{0, 0, 255, 255}));
@@ -138,7 +138,7 @@ TEST(StyleCascade, StyleElementAppliesToTheWholeDocumentWhereverItIs) {
   // 木の深いところに書いた <style> も文書全体に効く
   const html::Node tree = test_root(test_parent("div", {test_attr("class", "outer")},
                                                 test_style_element(".outer { color: red }")));
-  const Result<StyledNode> styled = resolve(tree);
+  const Result<StyledNode> styled = resolve_for_test(tree);
   ASSERT_TRUE(styled.has_value()) << (styled ? "" : styled.error().message);
   EXPECT_EQ(styled->children.front().style.color, (Color{255, 0, 0, 255}));
 }

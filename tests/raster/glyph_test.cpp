@@ -230,7 +230,11 @@ TEST(RasterGlyph, MalformedGlyphBitmapIsInternalError) {
 // issue #3: GlyphSource の失敗は「空白グリフ」に化けさせず、そのまま伝播する。
 TEST(RasterGlyph, GlyphSourceFailureIsPropagated) {
   FakeGlyphSource glyphs;
-  glyphs.set_error(1, Error{ErrorKind::FontLoad, "text: グリフを読めません", std::nullopt});
+  glyphs.set_error(1, Error{.kind = ErrorKind::FontLoad,
+                            .message = "text: グリフを読めません",
+                            .location = std::nullopt,
+                            .hint = {},
+                            .warning = std::nullopt});
   const Error e = must_fail({one_glyph(1, Point{0, 0})}, square(4), glyphs);
   EXPECT_EQ(e.kind, ErrorKind::FontLoad);
   EXPECT_EQ(e.message, "text: グリフを読めません");
@@ -240,7 +244,11 @@ TEST(RasterGlyph, GlyphSourceFailureIsPropagated) {
 TEST(RasterGlyph, FailureInTheMiddleOfARunStopsTheWholeRasterization) {
   FakeGlyphSource glyphs;
   glyphs.set(1, solid_glyph(0, 0, 1, 1, 255));
-  glyphs.set_error(2, Error{ErrorKind::Internal, "text: FontId がありません", std::nullopt});
+  glyphs.set_error(2, Error{.kind = ErrorKind::Internal,
+                            .message = "text: FontId がありません",
+                            .location = std::nullopt,
+                            .hint = {},
+                            .warning = std::nullopt});
   DrawGlyphs cmd = one_glyph(1, Point{0, 0});
   cmd.glyphs = {GlyphInstance{1, Point{0, 0}}, GlyphInstance{2, Point{1, 0}},
                 GlyphInstance{1, Point{2, 0}}};

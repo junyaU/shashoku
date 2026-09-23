@@ -13,6 +13,7 @@
 #include <utility>
 #include <vector>
 
+#include "core/diagnostics.hpp"
 #include "core/json_writer.hpp"
 #include "core/result.hpp"
 #include "core/utf8.hpp"
@@ -874,7 +875,10 @@ void begin_node(JsonWriter& writer, const Node& node) {
 
 }  // namespace
 
-Result<Node> parse(std::string_view source, std::size_t max_nesting_depth) {
+Result<Node> parse(std::string_view source, [[maybe_unused]] Diagnostics& diagnostics,
+                   std::size_t max_nesting_depth) {
+  // diagnostics はまだ使わない（A46 の「集めて続行」は W1 で入れる）。引数だけ先に通して、
+  // 呼び出し側の契約を確定させてある。
   // SourceLocation::offset は 32 bit。黙って切り詰めて誤った位置を報告しない。
   // これは実装の都合による絶対上限で、RenderLimits では緩められない。
   if (source.size() > kMaxSourceBytes) {

@@ -10,6 +10,7 @@
 #include <gtest/gtest.h>
 
 #include "shashoku/shashoku.hpp"
+#include "support/failure.hpp"
 
 // 公開 API そのものの振る舞い（ARCHITECTURE.md §3.10）。
 // 組版の中身は tests/integration/ が見る。ここは「箱」の検査。
@@ -138,7 +139,7 @@ TEST(ApiStrings, Version) {
 TEST(RenderErrors, EmptyFontSet) {
   const auto result = render("<p>あ</p>", FontSet{});
   ASSERT_FALSE(result.has_value());
-  EXPECT_EQ(result.error().kind, ErrorKind::NoFonts);
+  EXPECT_EQ(first_error(result.error()).kind, ErrorKind::NoFonts);
 }
 
 // オプションの検証は HTML のパースより前（壊れた HTML でも InvalidOption が返る）。
@@ -147,16 +148,16 @@ TEST(RenderErrors, OptionsAreValidatedFirst) {
   options.viewport_width = 0;
   const auto result = render("<div>", FontSet{}, options);
   ASSERT_FALSE(result.has_value());
-  EXPECT_EQ(result.error().kind, ErrorKind::InvalidOption);
-  EXPECT_NE(result.error().message.find("viewport width"), std::string::npos);
+  EXPECT_EQ(first_error(result.error()).kind, ErrorKind::InvalidOption);
+  EXPECT_NE(first_error(result.error()).message.find("viewport width"), std::string::npos);
 }
 
 TEST(RenderErrors, BrokenHtmlBeforeFonts) {
   // fail loudly: 閉じ忘れは HtmlParse。FontSet が空でも HTML のエラーが先に出る
   const auto result = render("<div><p>あ</div>", FontSet{});
   ASSERT_FALSE(result.has_value());
-  EXPECT_EQ(result.error().kind, ErrorKind::HtmlParse);
-  EXPECT_TRUE(result.error().location.has_value());
+  EXPECT_EQ(first_error(result.error()).kind, ErrorKind::HtmlParse);
+  EXPECT_TRUE(first_error(result.error()).location.has_value());
 }
 
 // Dom / Style のダンプはフォントを見ない（空の FontSet でも成功する）。
@@ -173,7 +174,7 @@ TEST(DumpStages, DomAndStyleWorkWithoutFonts) {
 TEST(DumpStages, BoxNeedsFonts) {
   const auto box = dump("<p>あ</p>", FontSet{}, ImageSet{}, RenderOptions{}, DumpStage::Box);
   ASSERT_FALSE(box.has_value());
-  EXPECT_EQ(box.error().kind, ErrorKind::NoFonts);
+  EXPECT_EQ(first_error(box.error()).kind, ErrorKind::NoFonts);
 }
 
 }  // namespace

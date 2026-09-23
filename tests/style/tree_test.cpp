@@ -13,7 +13,7 @@ namespace shashoku::style {
 namespace {
 
 TEST(StyleTree, RootIsKeptWithItsTag) {
-  const Result<StyledNode> styled = resolve(test_root());
+  const Result<StyledNode> styled = resolve_for_test(test_root());
   ASSERT_TRUE(styled.has_value()) << (styled ? "" : styled.error().message);
   EXPECT_EQ(styled->type, StyledNode::Type::Element);
   EXPECT_EQ(styled->tag, "#root");
@@ -24,7 +24,7 @@ TEST(StyleTree, DisplayNoneSubtreesAreDropped) {
   const html::Node tree =
       test_root(test_parent("div", {test_attr("style", "display: none")}, test_text("hidden")),
                 test_parent("div", {}, test_text("kept")));
-  const Result<StyledNode> styled = resolve(tree);
+  const Result<StyledNode> styled = resolve_for_test(tree);
   ASSERT_TRUE(styled.has_value()) << (styled ? "" : styled.error().message);
   ASSERT_EQ(styled->children.size(), 1U);
   ASSERT_EQ(styled->children.front().children.size(), 1U);
@@ -36,7 +36,7 @@ TEST(StyleTree, StyleAndRpElementsAreDropped) {
       test_style_element("div { color: red }"),
       test_parent("ruby", {}, test_text("漢"), test_parent("rp", {}, test_text("(")),
                   test_parent("rt", {}, test_text("かん")), test_parent("rp", {}, test_text(")"))));
-  const Result<StyledNode> styled = resolve(tree);
+  const Result<StyledNode> styled = resolve_for_test(tree);
   ASSERT_TRUE(styled.has_value()) << (styled ? "" : styled.error().message);
   ASSERT_EQ(styled->children.size(), 1U);
   const StyledNode& ruby = styled->children.front();
@@ -53,7 +53,7 @@ TEST(StyleTree, TextNodesCopyInheritedStyleAndResetBoxProperties) {
                                        "color: red; font-size: 20px; padding: 5px; width: 100px; "
                                        "background-color: blue; border: 2px solid green")},
                             test_text("こんにちは")));
-  const Result<StyledNode> styled = resolve(tree);
+  const Result<StyledNode> styled = resolve_for_test(tree);
   ASSERT_TRUE(styled.has_value()) << (styled ? "" : styled.error().message);
   ASSERT_EQ(styled->children.size(), 1U);
   ASSERT_EQ(styled->children.front().children.size(), 1U);
@@ -77,7 +77,7 @@ TEST(StyleTree, TextNodesCopyInheritedStyleAndResetBoxProperties) {
 TEST(StyleTree, TextNodesKeepSourceWhitespaceAndLocation) {
   const SourceLocation location{.offset = 7, .line = 1, .column = 8};
   const html::Node tree = test_root(test_parent("div", {}, test_text("  a\n  b  ", location)));
-  const Result<StyledNode> styled = resolve(tree);
+  const Result<StyledNode> styled = resolve_for_test(tree);
   ASSERT_TRUE(styled.has_value()) << (styled ? "" : styled.error().message);
   const StyledNode& text = styled->children.front().children.front();
   EXPECT_EQ(text.text, "  a\n  b  ");  // 空白の畳み込みは ③ の仕事
@@ -88,7 +88,7 @@ TEST(StyleTree, ImageAttributes) {
   const html::Node tree = test_root(
       test_element("img", {test_attr("src", "hero.png"), test_attr("width", "320"),
                            test_attr("height", "180.5"), test_attr("alt", "見出し画像")}));
-  const Result<StyledNode> styled = resolve(tree);
+  const Result<StyledNode> styled = resolve_for_test(tree);
   ASSERT_TRUE(styled.has_value()) << (styled ? "" : styled.error().message);
   const StyledNode& image = styled->children.front();
   EXPECT_EQ(image.tag, "img");
@@ -100,7 +100,7 @@ TEST(StyleTree, ImageAttributes) {
 
 TEST(StyleTree, ImageWithoutSizeAttributes) {
   const html::Node tree = test_root(test_element("img", {test_attr("src", "x")}));
-  const Result<StyledNode> styled = resolve(tree);
+  const Result<StyledNode> styled = resolve_for_test(tree);
   ASSERT_TRUE(styled.has_value()) << (styled ? "" : styled.error().message);
   EXPECT_FALSE(styled->children.front().attr_width.has_value());
   EXPECT_FALSE(styled->children.front().attr_height.has_value());
@@ -109,7 +109,7 @@ TEST(StyleTree, ImageWithoutSizeAttributes) {
 TEST(StyleTree, ElementLocationIsCarriedOver) {
   const SourceLocation location{.offset = 3, .line = 2, .column = 1};
   const html::Node tree = test_root(test_element("div", {}, location));
-  const Result<StyledNode> styled = resolve(tree);
+  const Result<StyledNode> styled = resolve_for_test(tree);
   ASSERT_TRUE(styled.has_value()) << (styled ? "" : styled.error().message);
   EXPECT_EQ(styled->children.front().location, location);
 }
@@ -119,8 +119,8 @@ TEST(StyleTree, ResolveIsDeterministic) {
       test_style_element("div { color: red } .a { color: blue } div.a { font-size: 2em }"),
       test_parent("div", {test_attr("class", "a")}, test_text("あ")),
       test_parent("p", {}, test_text("い")));
-  const Result<StyledNode> first = resolve(tree);
-  const Result<StyledNode> second = resolve(tree);
+  const Result<StyledNode> first = resolve_for_test(tree);
+  const Result<StyledNode> second = resolve_for_test(tree);
   ASSERT_TRUE(first.has_value()) << (first ? "" : first.error().message);
   ASSERT_TRUE(second.has_value());
   EXPECT_EQ(dump_json(*first), dump_json(*second));

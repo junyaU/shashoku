@@ -4,6 +4,7 @@
 #include <string>
 #include <string_view>
 
+#include "core/diagnostics.hpp"
 #include "core/result.hpp"
 #include "html/dom.hpp"
 
@@ -44,7 +45,13 @@ inline constexpr std::size_t kMaxSourceBytes = 0xFFFFFFFFU;
 // 文字参照に関するエラーはその先頭の位置を指す。
 //
 // max_nesting_depth を超える入れ子と、kMaxSourceBytes を超える入力は LimitExceeded。
-Result<Node> parse(std::string_view source, std::size_t max_nesting_depth = kMaxNestingDepth);
+//
+// diagnostics（A46）: 「安全に解析を続けられる問題」（UnsupportedTag / UnsupportedAttribute）を
+// ここに足して続行するための口。致命的な問題（InvalidUtf8 / HtmlParse / LimitExceeded）は
+// 今までどおり unexpected で返す。
+// **まだ何も足していない**: 集めて続行するのは W1 の仕事で、いまは最初のエラーで止まる。
+Result<Node> parse(std::string_view source, Diagnostics& diagnostics,
+                   std::size_t max_nesting_depth = kMaxNestingDepth);
 
 // --dump-stage=dom の出力。キー順は固定（element: type / tag / attrs / location / children、
 // text: type / text / location）。

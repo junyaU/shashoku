@@ -9,6 +9,8 @@ DESIGN.md のスケッチを実装可能な粒度まで具体化し、その過�
 | 契約ヘッダ | 結ぶもの |
 |---|---|
 | [include/shashoku/error.hpp](../include/shashoku/error.hpp), [src/core/result.hpp](../src/core/result.hpp) | 全モジュール共通のエラー型 |
+| [include/shashoku/source_location.hpp](../include/shashoku/source_location.hpp), [include/shashoku/warning.hpp](../include/shashoku/warning.hpp) | 入力位置と警告（エラーと共有。A46） |
+| [src/core/diagnostics.hpp](../src/core/diagnostics.hpp) | ① html / ② style → api: 集めた診断（A46） |
 | [src/core/](../src/core/) の各ヘッダ | 基本型（Rect / Color / Bitmap / ID）、UTF-8、JSON ダンプ |
 | [src/html/dom.hpp](../src/html/dom.hpp) | ① html → ② style |
 | [src/style/computed_style.hpp](../src/style/computed_style.hpp) | ② style → ③ layout |
@@ -1601,8 +1603,9 @@ class FreeTypeGlyphSource final : public raster::GlyphSource { /* FontStore を�
 
 ```cpp
 namespace shashoku::html {
-// 合成ルート "#root" を返す
-Result<Node> parse(std::string_view source, std::size_t max_nesting_depth = kMaxNestingDepth);
+// 合成ルート "#root" を返す。非致命の問題は diagnostics に足して続行する（A46）
+Result<Node> parse(std::string_view source, Diagnostics& diagnostics,
+                   std::size_t max_nesting_depth = kMaxNestingDepth);
 std::string dump_json(const Node& root);
 }
 ```
@@ -1617,6 +1620,14 @@ std::string dump_json(const Node& root);
 - 文字参照: `&amp; &lt; &gt; &quot; &apos; &nbsp;` と数値参照（10 進・16 進）。未知の名前、
   範囲外・サロゲートの数値は `HtmlParse`。`<style>` の中身は生テキスト（文字参照を解決しない）
 - 入力が不正な UTF-8 なら `InvalidUtf8`。すべてのエラーに `SourceLocation` を付ける
+- **集めて続行するもの（A46）**: `UnsupportedTag` と `UnsupportedAttribute` は `diagnostics.add_error()` に足し、
+  **解析を続ける**。対応外の要素は**透過**として扱う（その開始タグ・終了タグは無いものとし、子は親の子として
+  読む。閉じタグの対応は取る）ので、`<html><head><style>…</style></head><body>…</body></html>` のような入力でも
+  中の `<style>` と本体の全問題が 1 回で出る。対応外の属性は捨てて要素は残す。**返る木は errors が 1 件でも
+  あれば描画されない**（api が失敗にする）ので、透過の意味論は診断の網羅のためだけにある。
+  **その場で止めるもの**: `InvalidUtf8`、`HtmlParse`（閉じ忘れ・対応しない終了タグ・入れ子の誤り・不正な文字参照・
+  属性の重複。安全に読み続けられない）、`LimitExceeded`。これらは今までどおり unexpected で返す
+  （api が diagnostics に集めたものと合わせて 1 つの `RenderFailure` にする）
 - `max_nesting_depth` を超える入れ子は `LimitExceeded`（位置つき。api は
   `RenderLimits::nesting_depth` を渡す）。入力が 4 GiB を超える場合も `LimitExceeded` だが、
   こちらは `SourceLocation::offset` が 32 bit であることによる絶対上限（A25）
@@ -1625,8 +1636,9 @@ std::string dump_json(const Node& root);
 
 ```cpp
 namespace shashoku::style {
-// ルートの ComputedStyle は初期値
-Result<StyledNode> resolve(const html::Node& root, std::size_t max_style_rules = kMaxStyleRules,
+// ルートの ComputedStyle は初期値。非致命の問題は diagnostics に足して続行する（A46）
+Result<StyledNode> resolve(const html::Node& root, Diagnostics& diagnostics,
+                           std::size_t max_style_rules = kMaxStyleRules,
                            float max_length_px = kMaxLengthPx);
 std::string dump_json(const StyledNode& root);
 }
@@ -1646,7 +1658,17 @@ std::string dump_json(const StyledNode& root);
   カスケード・継承・計算値・ダンプの名前はすべて `overflow-wrap` と同じ。A35）。
   一覧にないプロパティは `UnsupportedProperty`、値が対応外なら `UnsupportedValue`
   （別名に対応外の値を書いたときの文面は**著者の綴り**のまま。`` `word-wrap: foo` is not supported … ``）
-- **`UnsupportedProperty` の文面には代替案を一言添える**（#20。試用版で「未対応です」だけでは
+- **集めて続行するもの（A46）**: `CssParse`（宣言の単位で読み飛ばす。セレクタが読めなければ規則の単位）、
+  `UnsupportedProperty` / `UnsupportedValue`（その宣言を捨てる）、`img` の `width` / `height` 属性の不正、
+  計算値の検査で分かる `UnsupportedLayout`（inline への箱プロパティ、`writing-mode` の途中変更）は
+  `diagnostics.add_error()` に足して続行する。返る木は errors が 1 件でもあれば描画されない。
+  **その場で止めるもの**: `LimitExceeded`（規則数・長さの上限）。今までどおり unexpected
+- **hint は `RenderError::hint` に入れ、`message` には混ぜない**（A46。機械側が分けて読める。以前は message の
+  末尾に括弧で足していた）。`kPropertyHints` の規則「shashoku で同じ結果が出せると確かめた代替だけ」は変えない。
+  足すもの: (a) ベンダー接頭辞（`-webkit-*` / `-moz-*` / `-ms-*` / `-o-*`）は「接頭辞を外す（対応表にあれば）」
+  (b) **削ると危険な組**: `background-clip` / `-webkit-background-clip` は「`color: transparent` も外さないと
+  文字が消える」(c) inline への箱プロパティの `UnsupportedLayout` は「宣言を削る（`display: block` にすると
+  文の流れが切れる）」。hint の無いものは空のまま
   次に何をすればよいか分からない）。`value_parser.cpp` の `kPropertyHints` に
   **未対応だと分かっているものだけ**を載せ、`` `box-sizing` is not a supported property
   (content-box only: subtract padding and border from `width` / `height`) `` のように
@@ -1700,6 +1722,18 @@ std::string dump_json(const BoxTree&);
   （`text::MissingReason`。A43））を持つ。**絵には影響しない**
   （paint は読まない）が、api が `Warning` にし、`dump_json()` が出す。
   理由は報告順にも重複除去にも効かない（順序は今までどおり位置 → コードポイント）
+- **紙面からのはみ出しの記録（`BoxTree::overflows`。A46）**: `struct ContentOverflow { SourceLocation location;
+  float overflow_px; }` の列。layout の出口で箱を走査し、**箱の border box が出力の矩形の外に 0.5 px を超えて
+  出ている**ものを見つける。出力の矩形は幅 `viewport_width`、高さは `viewport_height`（固定のときだけ。省略
+  = 内容追従のときは縦方向にはみ出せないので横方向だけ判定する）。対象の箱はブロックの border box、行ボックス、
+  置換要素（`<img>`）。**最も外側の該当要素ごとに 1 件**（祖先がはみ出していればその子孫は数えない）。行ボックスの
+  はみ出しはそれを含むブロック要素の位置で報告する。`overflow_px` はその要素の超過量の最大（右・下・左・上の
+  いずれか。負のマージンで左・上に出た場合も対象）。並びは位置の昇順。**絵には影響しない**（paint は読まない）が、
+  api が `Warning{ContentOverflow}` にし、`dump_json()` が出す。
+  **見ないもの（受け入れ例として先にテストに書く）**: グリフのインク（イタリックの張り出し、ぶら下げで行ボックスの
+  外に出た約物）は箱ではないので判定しない／ルビの注記は行ボックスの中にあるので単独では判定しない／
+  固定幅の箱から文字がはみ出しても紙面の中なら対象外（箱からのはみ出しは別種 `BoxOverflow` として将来）／
+  0.5 px 以下の差は丸めとして無視する
 - **block**: 幅は親から降り、高さは子から戻る。`width: auto` は利用可能幅いっぱい。
   `margin: 0 auto` の中央寄せ。兄弟間のマージン相殺（A10）。子が inline と block の混在なら
   inline の連続を無名ブロックで包む
@@ -1817,6 +1851,18 @@ HarfBuzz / `src/` の型は名前も出さない（`tests/api/public_header_chec
 api は並べ替えない（順序を決めるのは ③ の仕事）。CLI は `warning[missing-glyph]: <detail>` を
 stderr に出す。
 
+**診断の組み立て（A46）**: api は `Diagnostics diag{opts.limits.max_diagnostics}` を作り、`html::parse` と
+`style::resolve` に渡す。② の終わりで `diag.sort()` し、`diag.has_errors()` なら layout に進まず
+`RenderFailure`（`std::move(diag).into_failure()`）を返す。①② が unexpected（致命）を返したときは、その 1 件を
+`into_failure(extra)` で集めたものと合わせて返す（整列後）。③ 以降の失敗は今までどおり 1 件で、
+`RenderFailure{errors = {その 1 件}}`。警告は `BoxTree::missing_glyphs`（A31）と `BoxTree::overflows`（A46）から作り、
+`diag.add_warning()` で上限を掛けてから (offset, kind, codepoint, detail) で安定に整列する（豆腐だけの列では
+A31 の順序と同じ）。`ContentOverflow` の `detail` は `content overflows the canvas by <px>px (<side>) at L:C`。
+`opts.warnings_as_errors` が true で警告が 1 件以上あれば、PNG を作らず `RenderFailure` を返す: errors は警告 1 件に
+つき `RenderError{kind = WarningAsError, message = warning.detail, location = warning.location, warning = warning.kind}`
+（`RenderFailure::warnings` は空）。`RenderResult::diagnostics_truncated` / `RenderFailure::truncated` は
+`diag.truncated()` を写す。**検査の順序はどの経路でも同じ**なので、同じ入力からは同じ診断が同じ順で出る。
+
 `validate(options)` は寸法・`scale`・`compression_level`（0〜9。A33）を見る。**オプションの誤りは
 HTML を読む前に返す**（壊れた HTML でも `InvalidOption` が先に出る）。`png::encode` も同じ範囲を
 自分で検査するが、api はそこに頼らない。
@@ -1834,8 +1880,22 @@ CLI に上限を変えるフラグは足していない（既定値のまま使�
 CLI は `tools/shashoku/`: `shashoku input.html [--font A.otf [--font B.ttf …]] [--image name=path …]
 -o out.png [--width N] [--height N] [--scale S] [--compression 0-9]
 [--overflow oidashi|oikomi|burasage] [--dump-stage dom|style|box|display-list|svg]`。
-エラーは `to_string(RenderError)` を stderr に出して終了コード 1。
+エラーは `to_string(RenderFailure)` を stderr に出して終了コード 1（1 行 1 件、hint は `  hint: …` の行）。
 値の範囲の検査は `render()` に任せる（オプションの正は 1 か所。CLI は形だけを見る）。
+
+**A46 の CLI**: `--strict` は `warnings_as_errors` を立てる。**失敗したときは出力ファイルを作らない・上書きしない**
+（`render()` が成功してから開いて書く。`-o` の既存ファイルは失敗時に触らない）。`--diagnostics json` は
+**標準出力に JSON を 1 オブジェクト**で出す（成功でも失敗でも。人向けの stderr 出力は出さない）:
+```json
+{"ok": true, "width": 1200, "height": 630, "truncated": false,
+ "errors": [{"kind": "unsupported-property", "message": "…", "hint": "…", "line": 3, "column": 14, "offset": 120, "warning": null}],
+ "warnings": [{"kind": "missing-glyph", "detail": "…", "codepoint": 128512, "line": 3, "column": 1, "offset": 88, "overflow_px": 0}]}
+```
+`line` / `column` / `offset` は位置が無ければ `null`、`hint` が無ければ `""`、`warning` は `WarningAsError` のとき
+`"missing-glyph"` のような識別子、それ以外は `null`。成功時は `width` / `height` に出力の寸法、失敗時は `null`。
+JSON を選んだときは `-o` が必須で、`--dump-stage` と併用できない（`InvalidOption` 相当の使い方の誤りとして
+stderr に出し終了コード 2）。人向けの出力（既定）は、成功時に `wrote out.png (1200x630)` を stderr に 1 行出す
+（`--height` 省略時の実際の高さが分かる。検証 B の指摘）。
 
 **CLI 層だけの機能**（A38 / A39。ライブラリには一切漏らさない）:
 

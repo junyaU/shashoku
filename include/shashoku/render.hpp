@@ -21,6 +21,8 @@ struct RenderResult {
   // 豆腐など、続行できた問題。並びは入力位置の昇順 → コードポイントの昇順（決定的）。
   // 同じ (コードポイント, テキストノード) の組は 1 件にまとまる（ARCHITECTURE.md A31）
   std::vector<Warning> warnings;
+  // warnings が `RenderLimits::max_diagnostics` に達して記録を打ち切った（ARCHITECTURE.md A46）
+  bool diagnostics_truncated = false;
   int width = 0;   // 出力画像の幅（デバイスピクセル = ceil(CSS px * scale)）
   int height = 0;  // 同・高さ
 };
@@ -32,21 +34,24 @@ struct RenderResult {
 // viewport_height を指定しなければ内容の高さに追従する（内容が空なら InvalidOption）。
 // どちらも scale を掛けて切り上げたものがデバイスピクセル数になる。
 //
-// エラー（ErrorKind）は fail loudly の原則どおり、原因の入力位置つきで返る:
+// 失敗は RenderFailure（ARCHITECTURE.md A46）。①（HTML）と②（スタイル）の段は見つけた問題を
+// 集めてから失敗し、errors に全部入れる（入力位置の昇順）。③ 以降は 1 件目で止まる:
 //   InvalidUtf8 / HtmlParse / UnsupportedTag / UnsupportedAttribute … ① HTML
 //   CssParse / UnsupportedProperty / UnsupportedValue / UnsupportedLayout … ② スタイル
 //   NoFonts / FontLoad … フォント、ImageDecode / ImageNotFound … 画像
 //   InvalidOption … RenderOptions の値が不正
 //   LimitExceeded … 入力が opts.limits の上限を超えた（limits.hpp）
 //   OutOfMemory … メモリを確保できなかった（最善努力。ARCHITECTURE.md A26）
+//   WarningAsError … opts.warnings_as_errors のとき、警告（豆腐・はみ出し）を格上げしたもの
+// errors と warnings の合計は opts.limits.max_diagnostics で打ち切られる（truncated）。
 //
 // 信頼できない HTML を受けるときは `opts.limits` で予算を決める（limits.hpp）。既定値でも
 // 事故は止まるが、無制限ではない。OutOfMemory は保証ではなく最後の網であることに注意。
-std::expected<RenderResult, RenderError> render(std::string_view html, const FontSet& fonts,
+std::expected<RenderResult, RenderFailure> render(std::string_view html, const FontSet& fonts,
                                                 const RenderOptions& opts = {});
 
 // 画像つき（ARCHITECTURE.md A12）。`<img src="名前">` は images から引く。
-std::expected<RenderResult, RenderError> render(std::string_view html, const FontSet& fonts,
+std::expected<RenderResult, RenderFailure> render(std::string_view html, const FontSet& fonts,
                                                 const ImageSet& images,
                                                 const RenderOptions& opts = {});
 
@@ -58,10 +63,10 @@ std::expected<RenderResult, RenderError> render(std::string_view html, const Fon
 // `opts.limits` は用意し直した資源にも効く: `prepare()` に渡した `RenderLimits` と
 // ここの `opts.limits` が違っても、両方の検査を通ったものだけが描かれる。
 // ムーブ済みの `LoadedFonts` / `LoadedImages` を渡すと `InvalidOption`。
-std::expected<RenderResult, RenderError> render(std::string_view html, const LoadedFonts& fonts,
+std::expected<RenderResult, RenderFailure> render(std::string_view html, const LoadedFonts& fonts,
                                                 const RenderOptions& opts = {});
 
-std::expected<RenderResult, RenderError> render(std::string_view html, const LoadedFonts& fonts,
+std::expected<RenderResult, RenderFailure> render(std::string_view html, const LoadedFonts& fonts,
                                                 const LoadedImages& images,
                                                 const RenderOptions& opts = {});
 
@@ -76,12 +81,12 @@ enum class DumpStage : std::uint8_t {
 
 // 指定した段までしか実行しない。Dom / Style はフォントを見ないので、
 // 空の FontSet でも成功する（HTML と CSS だけを確かめたいとき用）。
-std::expected<std::string, RenderError> dump(std::string_view html, const FontSet& fonts,
+std::expected<std::string, RenderFailure> dump(std::string_view html, const FontSet& fonts,
                                              const ImageSet& images, const RenderOptions& opts,
                                              DumpStage stage);
 
 // 用意済みの共有資源を使う dump（A34）。出力は上の dump() と文字単位で同じ。
-std::expected<std::string, RenderError> dump(std::string_view html, const LoadedFonts& fonts,
+std::expected<std::string, RenderFailure> dump(std::string_view html, const LoadedFonts& fonts,
                                              const LoadedImages& images, const RenderOptions& opts,
                                              DumpStage stage);
 

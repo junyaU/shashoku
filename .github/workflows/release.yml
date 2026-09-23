@@ -39,6 +39,16 @@ jobs:
           docker run --rm -v "$PWD:/src" -w /src \
             ubuntu:22.04 bash scripts/dist_container_build.sh
 
+      # 検査そのものが壊れていないことを見る（#31。ELF ですらないテキストファイルが
+      # 合格していた）。落ちてほしい側には同じ dist ビルドのテスト実行ファイルを渡す:
+      # 静的リンク（-static-libstdc++）は CLI にだけ効くので、これは release プリセットの
+      # CLI と同じく libc++ を動的に引く。docker は要らない（readelf だけで足りる）。
+      - name: Check the dist binary check itself
+        run: |
+          scripts/check_dist_binary_test.sh \
+            build/dist/tools/shashoku/shashoku \
+            build/dist/tests/core/core_test
+
       # ビルドツールを何も入れていない素の Ubuntu で、展開して 1 コマンドで PNG が
       # 出ることを確かめる（#20 の受け入れ条件）。22.04 は glibc が古い側の下限。
       - name: Run in bare Ubuntu containers

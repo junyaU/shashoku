@@ -1754,13 +1754,14 @@ std::string dump_json(const BoxTree&);
   （paint は読まない）が、api が `Warning` にし、`dump_json()` が出す。
   理由は報告順にも重複除去にも効かない（順序は今までどおり位置 → コードポイント）
 - **紙面からのはみ出しの記録（`BoxTree::overflows`。A46）**: `struct ContentOverflow { SourceLocation location;
-  float overflow_px; }` の列。layout の出口で箱を走査し、**箱の border box が出力の矩形の外に 0.5 px を超えて
+  float overflow_px; OverflowEdge edge; }` の列（`edge` は実装時に足した。下の細目）。layout の出口で箱を走査し、**箱の border box が出力の矩形の外に 0.5 px を超えて
   出ている**ものを見つける。出力の矩形は幅 `viewport_width`、高さは `viewport_height`（固定のときだけ。省略
   = 内容追従のときは縦方向にはみ出せないので横方向だけ判定する）。対象の箱はブロックの border box、行ボックス、
   置換要素（`<img>`）。**最も外側の該当要素ごとに 1 件**（祖先がはみ出していればその子孫は数えない）。行ボックスの
   はみ出しはそれを含むブロック要素の位置で報告する。`overflow_px` はその要素の超過量の最大（右・下・左・上の
   いずれか。負のマージンで左・上に出た場合も対象）。並びは位置の昇順。**絵には影響しない**（paint は読まない）が、
-  api が `Warning{ContentOverflow}` にし、`dump_json()` が出す。
+  api が `Warning{ContentOverflow}` にし、`dump_json()` が `"overflows": [{"location", "overflow_px", "edge"}]`
+  として出す（1 件も無ければキーごと省く。豆腐と同じ流儀）。
   **見ないもの（受け入れ例として先にテストに書く）**: グリフのインク（イタリックの張り出し、ぶら下げで行ボックスの
   外に出た約物）は箱ではないので判定しない／ルビの注記は行ボックスの中にあるので単独では判定しない／
   固定幅の箱から文字がはみ出しても紙面の中なら対象外（箱からのはみ出しは別種 `BoxOverflow` として将来）／

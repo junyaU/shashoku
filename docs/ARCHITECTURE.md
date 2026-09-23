@@ -709,7 +709,8 @@ fail loudly（DESIGN.md §3-6）の目的を果たしていない。旧来の日
   一問「日本語の文章を正しく組むことに寄与するか」に対し `word-wrap` は Yes（旧来の日本語
   ページの標準的な書き方）、`grid-gap` は No（shashoku に grid は無く、flex に `grid-gap` と
   書く動機がない）。代わりに `kPropertyHints` に 3 行足して写し先を案内する
-  （`` `grid-gap` is not a supported property (legacy name: use `gap`) ``）
+  （`` `grid-gap` is not a supported property `` + hint `` legacy name: use `gap` ``。
+  A46 より前は hint を message の末尾に括弧で足していた。A48 で `RenderError::hint` に移した）
 - **出力は 1 ビットも変わらない。** `examples/` とゴールデン 16 枚の入力に `word-wrap` は無く、
   `overflow-wrap` の経路自体は触っていない（`release` の CLI で修正前後の
   `--dump-stage style` / `box` と PNG がバイト一致することを確かめた）

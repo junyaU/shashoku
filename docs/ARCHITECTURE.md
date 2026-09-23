@@ -1370,8 +1370,10 @@ A46 の「① html と ② style は見つけた問題を集めてから失敗�
   （`is_recoverable(kind)` も同じ理由でここ）
 
 **A49. ① html の「透過」の細部: 対応外の要素は開始タグ・終了タグを無いものとして読み、
-HTML の空要素はスタックに積まず、入れ子の上限は透過を含むスタックの深さで見る。**
-（2026-09-23、W1 の実装で決めた。A46「集めて続行する」の具体化。仕様は §3.6）
+HTML の空要素はスタックに積まず、入れ子の上限は透過を含むスタックの深さで見る。
+捨てるもの（透過した要素の属性・対応外の属性の値・対応外の生テキスト要素の中身）は
+読み飛ばすだけで、報告も検証もしない。**
+（2026-09-23、W1 と W1b の実装で決めた。A46「集めて続行する」の具体化。仕様は §3.6）
 
 - **なぜ透過か**: `<html><head>…</head><body>…</body></html>` で包まれた入力（AI が普段どおりに書く HTML の
   10/10 がこの形。A46 の検証）で、外側の対応外のタグで解析を止めると中身の問題が 1 件も出ない。
@@ -1390,9 +1392,48 @@ HTML の空要素はスタックに積まず、入れ子の上限は透過を含
   `<section>` を 1 万個並べただけの入力で解析器のメモリが伸びないようにするため（上限の数値は同じ）
 - **透過した要素の境界でテキストノードが分かれる**（`<div>a<section>b</section>c</div>` は
   テキスト 3 個）。errors が 1 件でもある木は描画されないので結果には出ない
-- **残る穴**: `<script>` `<textarea>` の中身を生テキストとして飛ばさないので、JS の `<` や `&` は
-  `HtmlParse`（致命）になり、そこで解析が止まる（それまでに集めた分は返る）。読み飛ばしを足すかは
-  A47 の関門（依頼集の実例）で判断する。検証に使った入力 10 件に `<script>` は無かった
+
+**追記（2026-09-23、W1b）。「捨てるものは読み飛ばすだけ」を 3 点そろえた。** 動機は同じ検証入力
+（`docs/benchmark/2026-09-23/inputs/a_plain/`）で、W1 の透過だけでは 10/10 が `<head>` の
+`<link href="…&display=swap">` の `&display` で `HtmlParse`（致命）になり、15〜18 件集めたところで
+止まっていた（`<style>` の中身にも本体にも届かない）。
+
+- **透過した要素の属性は報告しない**（`UnsupportedAttribute` を足さない）。`<meta charset="utf-8">` に
+  「`class` / `id` / `style` なら使える」と読める報告が並ぶのは雑音で、AI が直すときの妨げになる。
+  「`<meta>` が対応外」の 1 件で必要な情報は足りている。**対応済みの要素の対応外の属性**
+  （`<p onclick>`）は今までどおり報告する: その要素は残るので、その属性だけが効かないと知らせないと直せない。
+  ついでに**重複の検査も残す属性だけ**にした（捨てる属性が重なっても結果に影響しないのに、
+  そこで致命にすると後ろの問題が 1 件も出なくなる）
+- **捨てる属性の値は文字参照を検証しない**（生のまま読み飛ばす）。対象は透過した要素の全属性と、
+  対応済みの要素の対応外の属性の両方。Google Fonts の URL（`?family=A&display=swap`）が典型で、
+  値を捨てると決めたあとに中身の綴りで致命にするのは筋が通らない。**残す属性は今までどおり検証する**。
+  値の**終わり**の判定（引用符・空白・`>`・引用符なしの値に書けない `"` `'` `=` `<` `` ` `` `/`）は
+  捨てる値でも同じ: そこは値の中身ではなく「タグをどこまで読むか」の構文なので、曖昧なまま進めない
+- **対応外の生テキスト要素**（`script textarea title xmp iframe noembed noframes`）は、対応する
+  終了タグまでを生テキストとして読み飛ばす（`<style>` と同じ扱い。`UnsupportedTag` は 1 件、子は作らない）。
+  一覧は WHATWG の raw text / escapable raw text から対応済みの `style` を除いたもの。終了タグが無ければ
+  `HtmlParse`（どこまでが中身か決められない）。`/>` で閉じたものはその場で終わる（透過と同じ規則。
+  ブラウザは `<script/>` を閉じないが、ここは「厳格なサブセットのパーサ」なので A49 の規則をそろえる）
+- **確かめたこと**: 上の 3 点で `a_plain/case01.html` 〜 `case10.html` の 10 件すべてが ① で致命にならず、
+  ① の診断を全部集めて ② へ進むようになった。絵は変わらない（ゴールデン不変）。
+  release の CLI（`--font NotoSansJP-Regular.otf`）で数えた 1 回あたりの診断件数:
+
+  | 入力 | 変更前（合計 / 致命） | 変更後 ①（tag） | 変更後 ②（property / value / selector / layout） | 変更後 合計 / 致命 |
+  |---|---|---|---|---|
+  | case01 | 19 / `html-parse` | 42 | 19 | 61 / なし |
+  | case02 | 16 / `html-parse` | 9 | 13 | 22 / なし |
+  | case03 | 16 / `html-parse` | 8 | 17 | 25 / なし |
+  | case04 | 16 / `html-parse` | 19 | 21 | 40 / なし |
+  | case05 | 16 / `html-parse` | 8 | 12 | 20 / なし |
+  | case06 | 16 / `html-parse` | 8 | 17 | 25 / なし |
+  | case07 | 16 / `html-parse` | 8 | 24 | 32 / なし |
+  | case08 | 16 / `html-parse` | 8 | 17 | 25 / なし |
+  | case09 | 16 / `html-parse` | 12 | 10 | 22 / なし |
+  | case10 | 16 / `html-parse` | 8 | 19 | 27 / なし |
+
+  変更前は 10/10 が `<link href="…&display=swap">` の `&display` で止まり、そこから先（`<style>` の中身も
+  本体も）を一切見られなかった。終了コードは前後とも 1（診断があるので描画しない）で、PNG は作らない。
+  `max_diagnostics` の既定では 10 件とも打ち切られていない
 
 **A50. 紙面からのはみ出し（A46 の「結果にも」③）の
 細部: 単位は CSS px のまま、合成ルートは候補にしない、断片は含むブロックの位置で報告する。**
@@ -1736,11 +1777,13 @@ std::string dump_json(const Node& root);
   （`html head body script …` も含めてエラー。集めて続行し、要素は透過にする。下記）。
   コメントと `<!DOCTYPE>` は読み飛ばす
 - 対応属性: 共通 `style class id`、`img` は加えて `src width height alt`。それ以外は
-  `UnsupportedAttribute`。属性の重複は `HtmlParse`。引用符は `"` `'` なし の 3 形式
+  `UnsupportedAttribute`。属性の重複は `HtmlParse`（**残す属性だけ**。A49）。引用符は `"` `'` なし の 3 形式
 - 空要素 `br img` は閉じタグなし（`<br/>` も可）。それ以外の要素の閉じ忘れ・対応しない終了タグ・
   入れ子の誤りは `HtmlParse`（WHATWG の暗黙の閉じ規則は実装しない。fail loudly）
 - 文字参照: `&amp; &lt; &gt; &quot; &apos; &nbsp;` と数値参照（10 進・16 進）。未知の名前、
-  範囲外・サロゲートの数値は `HtmlParse`。`<style>` の中身は生テキスト（文字参照を解決しない）
+  範囲外・サロゲートの数値は `HtmlParse`。`<style>` の中身は生テキスト（文字参照を解決しない）。
+  対応外の生テキスト要素（`script textarea title xmp iframe noembed noframes`）も同じ読み方で、
+  中身は捨てる（A49）。**捨てる属性の値も生テキスト**（同）
 - 入力が不正な UTF-8 なら `InvalidUtf8`。すべてのエラーに `SourceLocation` を付ける
 - **集めて続行するもの（A46）**: `UnsupportedTag` と `UnsupportedAttribute` は `diagnostics.add_error()` に足し、
   **解析を続ける**。対応外の要素は**透過**として扱う（その開始タグ・終了タグは無いものとし、子は親の子として
@@ -1755,9 +1798,17 @@ std::string dump_json(const Node& root);
     `UnsupportedTag` を足して読み飛ばす。その名前の要素が開いているのに一致しないときは `HtmlParse`
   - 透過した要素も**スタックには積む**ので、`max_nesting_depth` の判定は透過を含む深さで行う
   - 透過した要素の境界でテキストノードは分かれる（描画されないので結果には出ない）
-  - `<script>` `<textarea>` の中身は生テキストとして飛ばさないので、JS の `<` や `&` は `HtmlParse` になる
-  **その場で止めるもの**: `InvalidUtf8`、`HtmlParse`（閉じ忘れ・入れ子の誤り・不正な文字参照・
-  属性の重複。安全に読み続けられない）、`LimitExceeded`。これらは今までどおり unexpected で返す
+  - **透過した要素の属性は報告しない**（`UnsupportedAttribute` を足さない）。「そのタグが対応外」の
+    1 件で足りる。重複の検査もしない（`<section class="a" class="b">` は `HtmlParse` にならない）
+  - **捨てる属性の値は文字参照を検証しない**（透過した要素の全属性と、対応済みの要素の対応外の属性）。
+    `<link href="…?family=Noto&display=swap">` が致命にならない。残す属性（`style` `class` `id`、
+    `img` の `src` など）は今までどおり検証する
+  - **対応外の生テキスト要素**（`script textarea title xmp iframe noembed noframes`）は、対応する
+    終了タグまでを生テキストとして読み飛ばす（中の `<` と `&` を解釈しない。`UnsupportedTag` は 1 件、
+    子は作らない）。終了タグが無ければ `HtmlParse`
+  **その場で止めるもの**: `InvalidUtf8`、`HtmlParse`（閉じ忘れ・入れ子の誤り・**残す**属性の値の
+  不正な文字参照・**残す**属性の重複・生テキスト要素の閉じ忘れ。安全に読み続けられない）、
+  `LimitExceeded`。これらは今までどおり unexpected で返す
   （api が diagnostics に集めたものと合わせて 1 つの `RenderFailure` にする）
 - `max_nesting_depth` を超える入れ子は `LimitExceeded`（位置つき。api は
   `RenderLimits::nesting_depth` を渡す）。入力が 4 GiB を超える場合も `LimitExceeded` だが、

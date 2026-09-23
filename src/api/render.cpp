@@ -529,6 +529,13 @@ std::expected<RenderResult, RenderFailure> render_impl(std::string_view html,
   if (!styled) {
     return to_failure(diagnostics, styled.error());
   }
+  // ①② が集めた問題が 1 件でもあれば ③ には進まない（A46）。style は診断の網羅のために
+  // 木を最後まで解決するので、ここで止めないと「捨てた宣言の分だけ違う絵」が出てしまう。
+  // TODO(W4): 診断の組み立て（格上げ・JSON）と一緒に整理する。
+  if (diagnostics.has_errors()) {
+    diagnostics.sort();
+    return std::unexpected(std::move(diagnostics).into_failure());
+  }
   if (const Result<void> ok = check_computed_limits(*styled, options.scale, options.limits); !ok) {
     return to_failure(diagnostics, ok.error());
   }
@@ -609,6 +616,13 @@ std::expected<std::string, RenderFailure> dump_impl(std::string_view html,
       style::resolve(*dom, diagnostics, options.limits.style_rules, options.limits.length_px);
   if (!styled) {
     return to_failure(diagnostics, styled.error());
+  }
+  // ①② が集めた問題が 1 件でもあれば ③ には進まない（A46）。style は診断の網羅のために
+  // 木を最後まで解決するので、ここで止めないと「捨てた宣言の分だけ違う絵」が出てしまう。
+  // TODO(W4): 診断の組み立て（格上げ・JSON）と一緒に整理する。
+  if (diagnostics.has_errors()) {
+    diagnostics.sort();
+    return std::unexpected(std::move(diagnostics).into_failure());
   }
   if (const Result<void> ok = check_computed_limits(*styled, options.scale, options.limits); !ok) {
     return to_failure(diagnostics, ok.error());

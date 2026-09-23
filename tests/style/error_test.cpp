@@ -1,6 +1,7 @@
 #include "shashoku/error.hpp"
 
 #include <array>
+#include <cstddef>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -11,33 +12,79 @@
 #include "style/computed_style.hpp"
 #include "style_test_dom.hpp"
 
-// fail loudly（DESIGN.md §3-6）の網羅。黙って無視される宣言が 1 つもないことを確かめる。
+// fail loudly（DESIGN.md §3-6 / ARCHITECTURE.md A46）の網羅。
+//
+// 見るのは **kind の識別子・入力位置・hint** の 3 つ（A46-6「機械が読める契約」）。
+// message の文面は人向けで版が変われば変わりうるので、文字列の一致を見るのは
+// 「文面そのものが仕様」の箇所（著者の綴りを残す、など）だけに限る。
+//
+// A46「一度に全部」: style は安全に解決を続けられる問題を集めて最後まで解決する。
+// `resolve_collect()`（style_test_dom.hpp）が集めた診断をそのまま返す。
 
 namespace shashoku::style {
 namespace {
+
+// ---- 共通の道具 -----------------------------------------------------------------
+
+// `<div style="...">` を解決して、計算値と集めた診断をまとめて返す。
+struct Outcome {
+  ComputedStyle style;  // errors があっても木は最後まで解決される（捨てた宣言は「無かった」扱い）
+  std::vector<RenderError> errors;
+  bool truncated = false;
+
+  [[nodiscard]] std::vector<ErrorKind> kinds() const {
+    std::vector<ErrorKind> out;
+    out.reserve(errors.size());
+    for (const RenderError& error : errors) {
+      out.push_back(error.kind);
+    }
+    return out;
+  }
+};
+
+Outcome collect(const html::Node& tree,
+                std::size_t max_diagnostics = RenderLimits{}.max_diagnostics) {
+  Resolved resolved = resolve_collect(tree, kMaxStyleRules, kMaxLengthPx, max_diagnostics);
+  Outcome out;
+  out.errors = std::move(resolved.errors);
+  out.truncated = resolved.truncated;
+  if (resolved.tree && !resolved.tree->children.empty()) {
+    out.style = resolved.tree->children.front().style;
+  }
+  return out;
+}
+
+Outcome collect_inline(std::string_view declarations, SourceLocation attribute = {}) {
+  return collect(test_root(test_element("div", {test_attr("style", declarations, attribute)})));
+}
+
+Outcome collect_sheet(std::string_view css) {
+  return collect(test_root(test_style_element(css), test_element("div")));
+}
 
 struct Case {
   std::string_view css;
   ErrorKind kind;
 };
 
+// 宣言 1 つにつき診断 1 件。kind はその種類（位置は下の「エラーの位置」節で見る）。
 void expect_errors(const std::vector<Case>& cases) {
   for (const Case& test : cases) {
     SCOPED_TRACE(test.css);
-    const Result<ComputedStyle> style = inline_style(test.css);
-    ASSERT_FALSE(style.has_value()) << "should have failed";
-    EXPECT_EQ(style.error().kind, test.kind) << style.error().message;
-    EXPECT_FALSE(style.error().message.empty());
+    const Outcome outcome = collect_inline(test.css);
+    ASSERT_EQ(outcome.errors.size(), 1U) << "診断が 1 件のはず";
+    EXPECT_EQ(outcome.errors.front().kind, test.kind) << outcome.errors.front().message;
+    EXPECT_FALSE(outcome.errors.front().message.empty());
   }
 }
 
 void expect_sheet_errors(const std::vector<Case>& cases) {
   for (const Case& test : cases) {
     SCOPED_TRACE(test.css);
-    const Result<ComputedStyle> style = sheet_style(test.css);
-    ASSERT_FALSE(style.has_value()) << "should have failed";
-    EXPECT_EQ(style.error().kind, test.kind) << style.error().message;
-    EXPECT_FALSE(style.error().message.empty());
+    const Outcome outcome = collect_sheet(test.css);
+    ASSERT_EQ(outcome.errors.size(), 1U) << "診断が 1 件のはず";
+    EXPECT_EQ(outcome.errors.front().kind, test.kind) << outcome.errors.front().message;
+    EXPECT_FALSE(outcome.errors.front().message.empty());
   }
 }
 
@@ -63,81 +110,178 @@ TEST(StyleError, UnsupportedProperties) {
   });
 }
 
-TEST(StyleError, UnsupportedPropertyMessageNamesTheProperty) {
-  const Result<ComputedStyle> style = inline_style("float: left");
-  ASSERT_FALSE(style.has_value());
-  EXPECT_NE(style.error().message.find("float"), std::string::npos) << style.error().message;
+// 安定した契約はケバブケースの識別子（A46-6）。message ではなくこちらで機械が読む。
+TEST(StyleError, KindIdentifierIsTheStableContract) {
+  EXPECT_EQ(to_string(collect_inline("float: left").errors.front().kind), "unsupported-property");
+  EXPECT_EQ(to_string(collect_inline("display: grid").errors.front().kind), "unsupported-value");
+  EXPECT_EQ(to_string(collect_inline("color red").errors.front().kind), "css-parse");
+  EXPECT_EQ(to_string(collect(test_root(test_element("span", {test_attr("style", "padding: 1px")})))
+                          .errors.front()
+                          .kind),
+            "unsupported-layout");
 }
 
-// 「未対応です」だけでは次に何をすればよいか分からない（#20。試用版の体験に直接効く）。
-// **未対応だと分かっているプロパティ**には、代替の書き方を一言だけ後ろに足す。
-// 文面の**先頭は変えない**（前方一致で見ているものがあるかもしれないため、括弧で足すだけ）。
-// 添える内容は「shashoku で実際に同じ結果が出せること」を確かめたものだけにする。
-TEST(StyleError, KnownUnsupportedPropertiesCarryAWorkaround) {
+TEST(StyleError, UnsupportedPropertyMessageNamesTheProperty) {
+  const Outcome outcome = collect_inline("float: left");
+  ASSERT_EQ(outcome.errors.size(), 1U);
+  EXPECT_NE(outcome.errors.front().message.find("float"), std::string::npos)
+      << outcome.errors.front().message;
+}
+
+// ---- hint（A46「直し方つき」）-----------------------------------------------------
+//
+// 「未対応です」だけでは次に何をすればよいか分からない（#20）。**未対応だと分かっている
+// プロパティ**には一言だけ添える。A46 以降、その一言は `RenderError::hint` に入り、
+// **message には混ぜない**（機械側が分けて読める。CLI は別の行に出す）。
+
+// `kPropertyHints`（src/style/value_parser.cpp）に載っている名前。
+// ここが実質的な表の写しなので、表を増やしたらこの配列も増やす。
+constexpr auto kHintedProperties = std::to_array<std::string_view>({
+    "background-clip",
+    "box-sizing",
+    "flex-wrap",
+    "float",
+    "grid-column-gap",
+    "grid-gap",
+    "grid-row-gap",
+    "max-height",
+    "max-width",
+    "min-height",
+    "min-width",
+    "position",
+    "text-combine-upright",
+});
+
+TEST(StyleError, KnownUnsupportedPropertiesCarryAHint) {
+  for (const std::string_view property : kHintedProperties) {
+    SCOPED_TRACE(property);
+    const Outcome outcome = collect_inline(std::string{property} + ": 1px");
+    ASSERT_EQ(outcome.errors.size(), 1U);
+    const RenderError& error = outcome.errors.front();
+    EXPECT_EQ(error.kind, ErrorKind::UnsupportedProperty);
+    EXPECT_FALSE(error.hint.empty()) << "hint が空: " << error.message;
+    // message は「何が対応外か」だけ。代替は hint 側にある（括弧の文は残っていない）
+    EXPECT_EQ(error.message, "`" + std::string{property} + "` is not a supported property");
+    EXPECT_EQ(error.message.find('('), std::string::npos) << error.message;
+  }
+}
+
+// 代替の中身（「shashoku で実際に同じ結果が出せると確かめたものだけ」という規則は A46 でも不変）。
+TEST(StyleError, HintsNameTheVerifiedAlternative) {
   struct Hint {
     std::string_view css;
-    std::string_view property;
     std::string_view needle;
   };
   const std::array<Hint, 12> cases{{
-      {"box-sizing: border-box", "box-sizing", "content-box"},
+      {"box-sizing: border-box", "content-box"},
       // CSS Box Alignment 3 §8.4 の legacy gap properties。写し先は 3 つとも対応済みだが、
       // shashoku に grid は無く flex に `grid-gap` と書く動機もないので別名は入れない（A35）。
       // 代わりに写し先を案内する
-      {"grid-gap: 4px", "grid-gap", "`gap`"},
-      {"grid-row-gap: 4px", "grid-row-gap", "`row-gap`"},
-      {"grid-column-gap: 4px", "grid-column-gap", "`column-gap`"},
-      {"max-width: 200px", "max-width", "`width`"},
-      {"min-width: 200px", "min-width", "`width`"},
-      {"max-height: 200px", "max-height", "`height`"},
-      {"min-height: 200px", "min-height", "`height`"},
-      {"float: left", "float", "display: flex"},
-      {"position: absolute", "position", "display: flex"},
-      {"flex-wrap: wrap", "flex-wrap", "single-line"},
-      {"text-combine-upright: all", "text-combine-upright", "not implemented"},
+      {"grid-gap: 4px", "`gap`"},
+      {"grid-row-gap: 4px", "`row-gap`"},
+      {"grid-column-gap: 4px", "`column-gap`"},
+      {"max-width: 200px", "`width`"},
+      {"min-width: 200px", "`width`"},
+      {"max-height: 200px", "`height`"},
+      {"min-height: 200px", "`height`"},
+      {"float: left", "display: flex"},
+      {"position: absolute", "display: flex"},
+      {"flex-wrap: wrap", "single-line"},
+      {"text-combine-upright: all", "not implemented"},
   }};
   for (const Hint& test : cases) {
     SCOPED_TRACE(test.css);
-    const Result<ComputedStyle> style = inline_style(test.css);
-    ASSERT_FALSE(style.has_value()) << "should have failed";
-    EXPECT_EQ(style.error().kind, ErrorKind::UnsupportedProperty);
-    const std::string& message = style.error().message;
-    // 先頭は今までどおり
-    const std::string head = "`" + std::string(test.property) + "` is not a supported property";
-    EXPECT_TRUE(message.starts_with(head)) << message;
-    EXPECT_NE(message.find(test.needle), std::string::npos) << message;
+    const Outcome outcome = collect_inline(test.css);
+    ASSERT_EQ(outcome.errors.size(), 1U);
+    EXPECT_NE(outcome.errors.front().hint.find(test.needle), std::string::npos)
+        << outcome.errors.front().hint;
   }
+}
+
+// (a) ベンダー接頭辞。外した名前が対応表にあれば「接頭辞を外す」と言う。
+TEST(StyleError, VendorPrefixesHintToDropThePrefix) {
+  for (const std::string_view css : {"-webkit-border-radius: 4px", "-moz-border-radius: 4px",
+                                     "-ms-flex: 1", "-o-writing-mode: vertical-rl"}) {
+    SCOPED_TRACE(css);
+    const Outcome outcome = collect_inline(css);
+    ASSERT_EQ(outcome.errors.size(), 1U);
+    const RenderError& error = outcome.errors.front();
+    EXPECT_EQ(error.kind, ErrorKind::UnsupportedProperty);
+    EXPECT_NE(error.hint.find("drop the vendor prefix"), std::string::npos) << error.hint;
+  }
+  // 外した名前を hint に書く（何と書き直せばよいかが分かる）
+  EXPECT_NE(
+      collect_inline("-webkit-border-radius: 4px").errors.front().hint.find("`border-radius`"),
+      std::string::npos);
+}
+
+// 外しても対応外なら「接頭辞を外せ」とは言わない（間違った助言をしない）。
+TEST(StyleError, VendorPrefixesOnUnsupportedNamesGetNoPrefixHint) {
+  for (const std::string_view css : {"-webkit-line-clamp: 2", "-o-transform: rotate(3deg)"}) {
+    SCOPED_TRACE(css);
+    const Outcome outcome = collect_inline(css);
+    ASSERT_EQ(outcome.errors.size(), 1U);
+    EXPECT_TRUE(outcome.errors.front().hint.empty()) << outcome.errors.front().hint;
+  }
+}
+
+// (b) 削ると危険な組（docs/guide/writing-html-for-shashoku.md §5）。
+// `background-clip: text` だけ消して `color: transparent` を残すと**文字が消える**。
+TEST(StyleError, BackgroundClipWarnsAboutTheDangerousPair) {
+  for (const std::string_view css : {"background-clip: text", "-webkit-background-clip: text"}) {
+    SCOPED_TRACE(css);
+    const Outcome outcome = collect_inline(css);
+    ASSERT_EQ(outcome.errors.size(), 1U);
+    const RenderError& error = outcome.errors.front();
+    EXPECT_EQ(error.kind, ErrorKind::UnsupportedProperty);
+    EXPECT_NE(error.hint.find("color: transparent"), std::string::npos) << error.hint;
+    EXPECT_NE(error.hint.find("disappear"), std::string::npos) << error.hint;
+  }
+}
+
+// (c) inline への箱プロパティ。`display: block` でも通るが文の流れが切れるので、
+// **宣言を削る**ほうを勧める（A46 の 2。検証 C の観察）。
+TEST(StyleError, InlineBoxPropertyHintPrefersDroppingTheDeclaration) {
+  const Outcome outcome =
+      collect(test_root(test_element("span", {test_attr("style", "padding: 4px")})));
+  ASSERT_EQ(outcome.errors.size(), 1U);
+  const RenderError& error = outcome.errors.front();
+  EXPECT_EQ(error.kind, ErrorKind::UnsupportedLayout);
+  EXPECT_NE(error.hint.find("drop the declaration"), std::string::npos) << error.hint;
+  EXPECT_NE(error.hint.find("display: block"), std::string::npos) << error.hint;
+  // message のほうには代替を書かない
+  EXPECT_EQ(error.message.find("drop the declaration"), std::string::npos) << error.message;
 }
 
 // 表に無い名前（綴り間違い・そもそも知らないプロパティ）には何も足さない。
 // 間違った助言をするくらいなら、何も言わないほうがよい。
-TEST(StyleError, UnknownPropertiesGetNoWorkaround) {
+TEST(StyleError, UnknownPropertiesGetNoHint) {
   for (const std::string_view css :
        {"floatt: left", "-webkit-line-clamp: 2", "grid-template-columns: 1fr 1fr",
         "text-orientation: upright"}) {
     SCOPED_TRACE(css);
-    const Result<ComputedStyle> style = inline_style(css);
-    ASSERT_FALSE(style.has_value()) << "should have failed";
-    EXPECT_EQ(style.error().kind, ErrorKind::UnsupportedProperty);
-    EXPECT_EQ(style.error().message.find('('), std::string::npos) << style.error().message;
+    const Outcome outcome = collect_inline(css);
+    ASSERT_EQ(outcome.errors.size(), 1U);
+    EXPECT_EQ(outcome.errors.front().kind, ErrorKind::UnsupportedProperty);
+    EXPECT_TRUE(outcome.errors.front().hint.empty()) << outcome.errors.front().hint;
+    EXPECT_EQ(outcome.errors.front().message.find('('), std::string::npos)
+        << outcome.errors.front().message;
   }
 }
 
 // `word-wrap` は `overflow-wrap` の legacy name alias（CSS Text 3 §5.4。issue #25）なので
 // プロパティとしては通る。値が対応外のときだけ落ち、そのときは**著者が書いた綴り**と
 // 宣言の位置で報告する（CSSOM を持たない shashoku で旧名が見える唯一の場所。A35）。
+// ここは「文面そのものが仕様」なので、例外的に message を見る。
 TEST(StyleError, WordWrapValueErrorsKeepTheAuthorSpellingAndLocation) {
   const SourceLocation attribute{.offset = 12, .line = 1, .column = 6};
-  const html::Node tree =
-      test_root(test_element("div", {test_attr("style", "word-wrap: foo", attribute)}));
-  const Result<StyledNode> styled = resolve_for_test(tree);
-  ASSERT_FALSE(styled.has_value());
-  EXPECT_EQ(styled.error().kind, ErrorKind::UnsupportedValue);
-  EXPECT_EQ(styled.error().location.value_or(SourceLocation{}), attribute);
-  EXPECT_TRUE(styled.error().message.starts_with("`word-wrap: foo` is not supported"))
-      << styled.error().message;
-  EXPECT_EQ(styled.error().message.find("overflow-wrap"), std::string::npos)
-      << styled.error().message;
+  const Outcome outcome = collect_inline("word-wrap: foo", attribute);
+  ASSERT_EQ(outcome.errors.size(), 1U);
+  const RenderError& error = outcome.errors.front();
+  EXPECT_EQ(error.kind, ErrorKind::UnsupportedValue);
+  EXPECT_EQ(error.location.value_or(SourceLocation{}), attribute);
+  EXPECT_TRUE(error.message.starts_with("`word-wrap: foo` is not supported")) << error.message;
+  EXPECT_EQ(error.message.find("overflow-wrap"), std::string::npos) << error.message;
 }
 
 // ---- 対応外の値・単位 -----------------------------------------------------------
@@ -173,11 +317,14 @@ TEST(StyleError, UnsupportedKeywords) {
   });
 }
 
+// 値のエラーは「何が使えるか」を数え上げる（hint を持たない代わりの手がかり）。
 TEST(StyleError, UnsupportedValueMessageListsWhatIsSupported) {
-  const Result<ComputedStyle> style = inline_style("display: grid");
-  ASSERT_FALSE(style.has_value());
-  EXPECT_EQ(style.error().message,
-            "`display: grid` is not supported (supported: block, flex, inline, none)");
+  const Outcome outcome = collect_inline("display: grid");
+  ASSERT_EQ(outcome.errors.size(), 1U);
+  for (const std::string_view supported : {"block", "flex", "inline", "none"}) {
+    EXPECT_NE(outcome.errors.front().message.find(supported), std::string::npos)
+        << outcome.errors.front().message;
+  }
 }
 
 TEST(StyleError, UnsupportedColors) {
@@ -237,15 +384,12 @@ struct ValueCase {
 void expect_rejected_with_location(const std::vector<ValueCase>& cases) {
   for (const ValueCase& test : cases) {
     SCOPED_TRACE(test.css);
-    const html::Node tree =
-        test_root(test_element("div", {test_attr("style", test.css, kStyleAttribute)}));
-    const Result<StyledNode> styled = resolve_for_test(tree);
-    ASSERT_FALSE(styled.has_value()) << "should have failed";
-    EXPECT_EQ(styled.error().kind, ErrorKind::UnsupportedValue) << styled.error().message;
-    EXPECT_EQ(styled.error().location.value_or(SourceLocation{}), kStyleAttribute)
-        << styled.error().message;
-    EXPECT_NE(styled.error().message.find(test.detail), std::string::npos)
-        << styled.error().message;
+    const Outcome outcome = collect_inline(test.css, kStyleAttribute);
+    ASSERT_EQ(outcome.errors.size(), 1U) << "診断が 1 件のはず";
+    const RenderError& error = outcome.errors.front();
+    EXPECT_EQ(error.kind, ErrorKind::UnsupportedValue) << error.message;
+    EXPECT_EQ(error.location.value_or(SourceLocation{}), kStyleAttribute) << error.message;
+    EXPECT_NE(error.message.find(test.detail), std::string::npos) << error.message;
   }
 }
 
@@ -286,15 +430,12 @@ TEST(StyleError, NegativeImgSizeAttributesAreRejectedWithTheAttributeLocation) {
   for (const std::string_view name : {"width", "height"}) {
     SCOPED_TRACE(name);
     const SourceLocation attribute{.offset = 17, .line = 2, .column = 11};
-    const html::Node tree =
-        test_root(test_element("img", {test_attr("src", "x"), test_attr(name, "-5", attribute)}));
-    const Result<StyledNode> styled = resolve_for_test(tree);
-    ASSERT_FALSE(styled.has_value()) << "should have failed";
-    EXPECT_EQ(styled.error().kind, ErrorKind::UnsupportedValue) << styled.error().message;
-    EXPECT_EQ(styled.error().location.value_or(SourceLocation{}), attribute);
-    EXPECT_NE(styled.error().message.find("non-negative number of px, without a unit"),
-              std::string::npos)
-        << styled.error().message;
+    const Outcome outcome = collect(
+        test_root(test_element("img", {test_attr("src", "x"), test_attr(name, "-5", attribute)})));
+    ASSERT_EQ(outcome.errors.size(), 1U);
+    EXPECT_EQ(outcome.errors.front().kind, ErrorKind::UnsupportedValue)
+        << outcome.errors.front().message;
+    EXPECT_EQ(outcome.errors.front().location.value_or(SourceLocation{}), attribute);
   }
 }
 
@@ -412,13 +553,14 @@ TEST(StyleError, UnsupportedSelectors) {
 }
 
 TEST(StyleError, SelectorErrorMessagesExplainWhy) {
-  const Result<ComputedStyle> descendant = sheet_style("div p { color: red }");
-  ASSERT_FALSE(descendant.has_value());
-  EXPECT_NE(descendant.error().message.find("combinator"), std::string::npos)
-      << descendant.error().message;
-  const Result<ComputedStyle> pseudo = sheet_style("a:hover { color: red }");
-  ASSERT_FALSE(pseudo.has_value());
-  EXPECT_NE(pseudo.error().message.find("pseudo"), std::string::npos) << pseudo.error().message;
+  const Outcome descendant = collect_sheet("div p { color: red }");
+  ASSERT_EQ(descendant.errors.size(), 1U);
+  EXPECT_NE(descendant.errors.front().message.find("combinator"), std::string::npos)
+      << descendant.errors.front().message;
+  const Outcome pseudo = collect_sheet("a:hover { color: red }");
+  ASSERT_EQ(pseudo.errors.size(), 1U);
+  EXPECT_NE(pseudo.errors.front().message.find("pseudo"), std::string::npos)
+      << pseudo.errors.front().message;
 }
 
 TEST(StyleError, AtRulesAreNotSupported) {
@@ -427,31 +569,29 @@ TEST(StyleError, AtRulesAreNotSupported) {
       {"@import url(x.css);", ErrorKind::CssParse},
       {"@font-face { font-family: x }", ErrorKind::CssParse},
   });
-  const Result<ComputedStyle> style = sheet_style("@media screen { div { color: red } }");
-  ASSERT_FALSE(style.has_value());
-  EXPECT_NE(style.error().message.find("at-rule"), std::string::npos) << style.error().message;
+  const Outcome outcome = collect_sheet("@media screen { div { color: red } }");
+  ASSERT_EQ(outcome.errors.size(), 1U);
+  EXPECT_NE(outcome.errors.front().message.find("at-rule"), std::string::npos)
+      << outcome.errors.front().message;
 }
 
 // ---- エラーの位置 ---------------------------------------------------------------
 
 TEST(StyleError, InlineStyleErrorsPointAtTheAttribute) {
   const SourceLocation attribute{.offset = 42, .line = 3, .column = 6};
-  const html::Node tree =
-      test_root(test_element("div", {test_attr("style", "float: left", attribute)}));
-  const Result<StyledNode> styled = resolve_for_test(tree);
-  ASSERT_FALSE(styled.has_value());
-  EXPECT_EQ(styled.error().location.value_or(SourceLocation{}), attribute);
+  const Outcome outcome = collect_inline("float: left", attribute);
+  ASSERT_EQ(outcome.errors.size(), 1U);
+  EXPECT_EQ(outcome.errors.front().location.value_or(SourceLocation{}), attribute);
 }
 
 TEST(StyleError, StyleElementErrorsAddTheCssLineAndColumn) {
   // <style> のテキストは 5 行目 8 桁目から始まる、という想定
   const SourceLocation base{.offset = 100, .line = 5, .column = 8};
-  const html::Node tree = test_root(test_style_element("div {\n  float: left;\n}", base));
-  const Result<StyledNode> styled = resolve_for_test(tree);
-  ASSERT_FALSE(styled.has_value());
-  EXPECT_EQ(styled.error().kind, ErrorKind::UnsupportedProperty);
+  const Outcome outcome = collect(test_root(test_style_element("div {\n  float: left;\n}", base)));
+  ASSERT_EQ(outcome.errors.size(), 1U);
+  EXPECT_EQ(outcome.errors.front().kind, ErrorKind::UnsupportedProperty);
   // CSS の 2 行目 3 桁目 → 入力の 6 行目 3 桁目（2 行目以降は桁がそのまま）
-  const SourceLocation location = styled.error().location.value_or(SourceLocation{});
+  const SourceLocation location = outcome.errors.front().location.value_or(SourceLocation{});
   EXPECT_EQ(location.line, 6U);
   EXPECT_EQ(location.column, 3U);
   EXPECT_EQ(location.offset, 100U + 8U);
@@ -459,12 +599,125 @@ TEST(StyleError, StyleElementErrorsAddTheCssLineAndColumn) {
 
 TEST(StyleError, FirstLineOfCssKeepsTheAttributeColumnOffset) {
   const SourceLocation base{.offset = 10, .line = 2, .column = 4};
-  const html::Node tree = test_root(test_style_element("div { float: left }", base));
-  const Result<StyledNode> styled = resolve_for_test(tree);
-  ASSERT_FALSE(styled.has_value());
-  const SourceLocation location = styled.error().location.value_or(SourceLocation{});
+  const Outcome outcome = collect(test_root(test_style_element("div { float: left }", base)));
+  ASSERT_EQ(outcome.errors.size(), 1U);
+  const SourceLocation location = outcome.errors.front().location.value_or(SourceLocation{});
   EXPECT_EQ(location.line, 2U);
   EXPECT_EQ(location.column, 4U + 6U);  // `float` は CSS の 7 桁目
+}
+
+// ---- A46「一度に全部」: 集めて続行する ---------------------------------------------
+
+// 1 つの `<style>` と複数の `style` 属性から、対応外が 1 回で全部集まる。
+TEST(StyleError, AllProblemsAreCollectedInOnePass) {
+  constexpr SourceLocation kSheet{.offset = 10, .line = 2, .column = 1};
+  constexpr SourceLocation kFirst{.offset = 200, .line = 8, .column = 6};
+  constexpr SourceLocation kSecond{.offset = 300, .line = 9, .column = 7};
+  const html::Node tree =
+      test_root(test_style_element("p { float: left; box-sizing: border-box }\n"
+                                   "div p { color: red }",
+                                   kSheet),
+                test_element("div", {test_attr("style", "position: absolute", kFirst)}),
+                test_element("span", {test_attr("style", "padding: 4px", kSecond)}));
+  const Outcome outcome = collect(tree);
+  EXPECT_EQ(outcome.kinds(), (std::vector<ErrorKind>{
+                                 ErrorKind::UnsupportedProperty,  // float（<style>）
+                                 ErrorKind::UnsupportedProperty,  // box-sizing（<style>）
+                                 ErrorKind::CssParse,             // div p（子孫結合子）
+                                 ErrorKind::UnsupportedProperty,  // position（1 つ目の属性）
+                                 ErrorKind::UnsupportedLayout,    // span への padding
+                             }));
+  EXPECT_FALSE(outcome.truncated);
+  // 位置も全部付いている（`style` 属性の診断は属性を指す）
+  for (const RenderError& error : outcome.errors) {
+    EXPECT_TRUE(error.location.has_value()) << error.message;
+  }
+  EXPECT_EQ(outcome.errors.at(3).location.value_or(SourceLocation{}), kFirst);
+  EXPECT_EQ(outcome.errors.at(4).location.value_or(SourceLocation{}), kSecond);
+}
+
+// 壊れた宣言は「書かれなかった」扱いで捨て、**後ろの宣言は効く**（計算値で確認する）。
+TEST(StyleError, BrokenDeclarationsAreSkippedAndLaterOnesStillApply) {
+  const Outcome inline_case =
+      collect_inline("color: rgb(1, 2); background-color: blue; padding: 4px");
+  ASSERT_EQ(inline_case.errors.size(), 1U);
+  EXPECT_EQ(inline_case.errors.front().kind, ErrorKind::UnsupportedValue);
+  EXPECT_EQ(inline_case.style.background_color, (Color{0, 0, 255, 255}));
+  EXPECT_EQ(inline_case.style.padding, (Edges<float>{4, 4, 4, 4}));
+  EXPECT_EQ(inline_case.style.color, ComputedStyle{}.color);  // 捨てた宣言は効かない
+
+  // `!important` のように値の途中で落ちるものでも、次の宣言から読み直す
+  const Outcome important = collect_inline("color: red !important; background-color: blue");
+  ASSERT_EQ(important.errors.size(), 1U);
+  EXPECT_EQ(important.errors.front().kind, ErrorKind::CssParse);
+  EXPECT_EQ(important.style.background_color, (Color{0, 0, 255, 255}));
+
+  // ショートハンドが途中まで展開されても残さない
+  const Outcome shorthand = collect_inline("margin: 1px 2px 3px 4px 5px; padding: 8px");
+  ASSERT_EQ(shorthand.errors.size(), 1U);
+  EXPECT_EQ(shorthand.style.margin.top, Dimension::px(0));
+  EXPECT_EQ(shorthand.style.padding, (Edges<float>{8, 8, 8, 8}));
+}
+
+// `<style>` の中でも同じ。宣言の単位・規則の単位で読み飛ばし、続きの規則は効く。
+TEST(StyleError, StylesheetsRecoverPerDeclarationAndPerRule) {
+  const Outcome per_declaration = collect_sheet("div { float: left; color: blue }");
+  ASSERT_EQ(per_declaration.errors.size(), 1U);
+  EXPECT_EQ(per_declaration.style.color, (Color{0, 0, 255, 255}));
+
+  // セレクタが読めなければ規則ごと捨て、次の規則から読み直す
+  const Outcome per_rule = collect_sheet("div p { color: red } div { color: blue }");
+  ASSERT_EQ(per_rule.errors.size(), 1U);
+  EXPECT_EQ(per_rule.errors.front().kind, ErrorKind::CssParse);
+  EXPECT_EQ(per_rule.style.color, (Color{0, 0, 255, 255}));
+
+  // `@` 規則はブロックごと飛ばす（中の宣言を二重に報告しない）
+  const Outcome at_rule = collect_sheet("@media screen { div { color: red } } div { color: blue }");
+  ASSERT_EQ(at_rule.errors.size(), 1U);
+  EXPECT_EQ(at_rule.style.color, (Color{0, 0, 255, 255}));
+
+  // 余分な `}` は 1 つ捨てて続ける
+  const Outcome stray = collect_sheet("} div { color: blue }");
+  ASSERT_EQ(stray.errors.size(), 1U);
+  EXPECT_EQ(stray.style.color, (Color{0, 0, 255, 255}));
+}
+
+// 同じ入力からは同じ診断が同じ順で出る（DESIGN.md §3-5）。
+TEST(StyleError, CollectedDiagnosticsAreDeterministic) {
+  const auto run = [] {
+    return collect(test_root(test_style_element("p { float: left; overflow: hidden }"),
+                             test_element("div", {test_attr("style", "position: fixed")}),
+                             test_element("span", {test_attr("style", "margin: 2px")})))
+        .errors;
+  };
+  EXPECT_EQ(run(), run());
+  EXPECT_EQ(run().size(), 4U);
+}
+
+// 上限（RenderLimits::max_diagnostics）に達したら記録をやめ、truncated を立てて解析は続ける。
+TEST(StyleError, DiagnosticsAreTruncatedAtTheLimit) {
+  const html::Node tree =
+      test_root(test_element("div", {test_attr("style",
+                                               "float: left; position: absolute; overflow: hidden; "
+                                               "opacity: 0.5; transform: none")}));
+  const Outcome all = collect(tree);
+  EXPECT_EQ(all.errors.size(), 5U);
+  EXPECT_FALSE(all.truncated);
+
+  const Outcome limited = collect(tree, 2);
+  EXPECT_EQ(limited.errors.size(), 2U);
+  EXPECT_TRUE(limited.truncated);
+}
+
+// 致命（LimitExceeded）はその場で止める（unexpected のまま）。それまでに集めた診断は残る。
+TEST(StyleError, LimitExceededStopsImmediatelyAndKeepsWhatWasCollected) {
+  const html::Node tree = test_root(test_element("div", {test_attr("style", "float: left")}),
+                                    test_element("div", {test_attr("style", "padding: 1e38em")}));
+  const Resolved resolved = resolve_collect(tree);
+  ASSERT_FALSE(resolved.tree.has_value()) << "上限の超過は止める";
+  EXPECT_EQ(resolved.tree.error().kind, ErrorKind::LimitExceeded);
+  ASSERT_EQ(resolved.errors.size(), 1U);
+  EXPECT_EQ(resolved.errors.front().kind, ErrorKind::UnsupportedProperty);
 }
 
 // ---- inline 要素への箱の指定 -----------------------------------------------------
@@ -476,10 +729,11 @@ TEST(StyleError, BoxPropertiesOnInlineElements) {
   };
   for (const std::string_view property : properties) {
     SCOPED_TRACE(property);
-    const html::Node tree = test_root(test_element("span", {test_attr("style", property)}));
-    const Result<StyledNode> styled = resolve_for_test(tree);
-    ASSERT_FALSE(styled.has_value()) << "should have failed";
-    EXPECT_EQ(styled.error().kind, ErrorKind::UnsupportedLayout) << styled.error().message;
+    const Outcome outcome =
+        collect(test_root(test_element("span", {test_attr("style", property)})));
+    ASSERT_EQ(outcome.errors.size(), 1U);
+    EXPECT_EQ(outcome.errors.front().kind, ErrorKind::UnsupportedLayout)
+        << outcome.errors.front().message;
   }
 }
 
@@ -520,21 +774,23 @@ TEST(StyleError, WritingModeOnTopLevelElementIsAdoptedByTheRoot) {
 }
 
 TEST(StyleError, TopLevelElementsMustAgreeOnWritingMode) {
+  constexpr SourceLocation kSecond{.offset = 80, .line = 4, .column = 6};
   const html::Node tree =
       test_root(test_element("div", {test_attr("style", "writing-mode: vertical-rl")}),
-                test_element("div", {test_attr("style", "writing-mode: horizontal-tb")}));
-  const Result<StyledNode> styled = resolve_for_test(tree);
-  ASSERT_FALSE(styled.has_value());
-  EXPECT_EQ(styled.error().kind, ErrorKind::UnsupportedLayout);
+                test_element("div", {test_attr("style", "writing-mode: horizontal-tb", kSecond)}));
+  const Outcome outcome = collect(tree);
+  ASSERT_FALSE(outcome.errors.empty());
+  EXPECT_EQ(outcome.errors.front().kind, ErrorKind::UnsupportedLayout);
+  EXPECT_EQ(outcome.errors.front().location.value_or(SourceLocation{}), kSecond);
 }
 
 TEST(StyleError, WritingModeCannotChangeDeeperInTheTree) {
   const html::Node tree = test_root(
       test_parent("div", {test_attr("style", "writing-mode: vertical-rl")},
                   test_element("div", {test_attr("style", "writing-mode: horizontal-tb")})));
-  const Result<StyledNode> styled = resolve_for_test(tree);
-  ASSERT_FALSE(styled.has_value());
-  EXPECT_EQ(styled.error().kind, ErrorKind::UnsupportedLayout);
+  const Outcome outcome = collect(tree);
+  ASSERT_EQ(outcome.errors.size(), 1U);
+  EXPECT_EQ(outcome.errors.front().kind, ErrorKind::UnsupportedLayout);
 }
 
 TEST(StyleError, RepeatingTheDocumentWritingModeDeeperIsAllowed) {
@@ -548,31 +804,51 @@ TEST(StyleError, RepeatingTheDocumentWritingModeDeeperIsAllowed) {
 TEST(StyleError, WritingModeDeeperThanTopLevelIsRejected) {
   const html::Node tree = test_root(test_parent(
       "div", {}, test_element("div", {test_attr("style", "writing-mode: vertical-rl")})));
-  const Result<StyledNode> styled = resolve_for_test(tree);
-  ASSERT_FALSE(styled.has_value());
-  EXPECT_EQ(styled.error().kind, ErrorKind::UnsupportedLayout);
+  const Outcome outcome = collect(tree);
+  ASSERT_EQ(outcome.errors.size(), 1U);
+  EXPECT_EQ(outcome.errors.front().kind, ErrorKind::UnsupportedLayout);
+}
+
+// トップレベルの先読み（文書の writing-mode を決める走査）で、同じ診断が 2 件にならない。
+TEST(StyleError, TopLevelElementsAreNotDiagnosedTwice) {
+  const html::Node tree =
+      test_root(test_element("div", {test_attr("style", "float: left")}),
+                test_element("div", {test_attr("style", "writing-mode: vertical-rl")}));
+  const Outcome outcome = collect(tree);
+  ASSERT_EQ(outcome.errors.size(), 1U) << "先読みと本番で 2 件になっていないか";
+  EXPECT_EQ(outcome.errors.front().kind, ErrorKind::UnsupportedProperty);
 }
 
 // ---- img の属性 -------------------------------------------------------------------
 
 TEST(StyleError, ImgRequiresSrc) {
-  const html::Node tree = test_root(test_element("img"));
-  const Result<StyledNode> styled = resolve_for_test(tree);
-  ASSERT_FALSE(styled.has_value());
-  EXPECT_EQ(styled.error().kind, ErrorKind::UnsupportedValue);
-  EXPECT_EQ(styled.error().message, "`<img>` requires a `src` attribute");
+  constexpr SourceLocation kElement{.offset = 5, .line = 1, .column = 6};
+  const Outcome outcome = collect(test_root(test_element("img", {}, kElement)));
+  ASSERT_EQ(outcome.errors.size(), 1U);
+  EXPECT_EQ(outcome.errors.front().kind, ErrorKind::UnsupportedValue);
+  EXPECT_EQ(outcome.errors.front().location.value_or(SourceLocation{}), kElement);
+  EXPECT_NE(outcome.errors.front().message.find("src"), std::string::npos)
+      << outcome.errors.front().message;
 }
 
 TEST(StyleError, ImgSizeAttributesMustBeNonNegativeNumbers) {
   const std::vector<std::string_view> bad = {"-1", "10px", "abc", "", "50%"};
   for (const std::string_view value : bad) {
     SCOPED_TRACE(value);
-    const html::Node tree =
-        test_root(test_element("img", {test_attr("src", "x"), test_attr("width", value)}));
-    const Result<StyledNode> styled = resolve_for_test(tree);
-    ASSERT_FALSE(styled.has_value()) << "should have failed";
-    EXPECT_EQ(styled.error().kind, ErrorKind::UnsupportedValue) << styled.error().message;
+    const Outcome outcome =
+        collect(test_root(test_element("img", {test_attr("src", "x"), test_attr("width", value)})));
+    ASSERT_EQ(outcome.errors.size(), 1U);
+    EXPECT_EQ(outcome.errors.front().kind, ErrorKind::UnsupportedValue)
+        << outcome.errors.front().message;
   }
+}
+
+// width と height が両方おかしければ 2 件とも出る（A46「一度に全部」）。
+TEST(StyleError, BothImgSizeAttributesAreReported) {
+  const Outcome outcome = collect(test_root(test_element(
+      "img", {test_attr("src", "x"), test_attr("width", "abc"), test_attr("height", "50%")})));
+  EXPECT_EQ(outcome.kinds(),
+            (std::vector<ErrorKind>{ErrorKind::UnsupportedValue, ErrorKind::UnsupportedValue}));
 }
 
 // ---- 落とされる部分木の中でも黙らない ---------------------------------------------
@@ -581,15 +857,15 @@ TEST(StyleError, DeclarationsInsideDisplayNoneSubtreesAreStillChecked) {
   const html::Node tree =
       test_root(test_parent("div", {test_attr("style", "display: none")},
                             test_element("div", {test_attr("style", "float: left")})));
-  const Result<StyledNode> styled = resolve_for_test(tree);
-  ASSERT_FALSE(styled.has_value());
-  EXPECT_EQ(styled.error().kind, ErrorKind::UnsupportedProperty);
+  const Outcome outcome = collect(tree);
+  ASSERT_EQ(outcome.errors.size(), 1U);
+  EXPECT_EQ(outcome.errors.front().kind, ErrorKind::UnsupportedProperty);
 }
 
 TEST(StyleError, RulesThatMatchNothingAreStillChecked) {
-  const Result<ComputedStyle> style = sheet_style("nosuchtag { float: left }");
-  ASSERT_FALSE(style.has_value());
-  EXPECT_EQ(style.error().kind, ErrorKind::UnsupportedProperty);
+  const Outcome outcome = collect_sheet("nosuchtag { float: left }");
+  ASSERT_EQ(outcome.errors.size(), 1U);
+  EXPECT_EQ(outcome.errors.front().kind, ErrorKind::UnsupportedProperty);
 }
 
 }  // namespace

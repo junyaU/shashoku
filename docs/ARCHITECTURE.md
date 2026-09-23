@@ -1335,6 +1335,37 @@ W5 対応範囲と書き方のガイド（`docs/guide/`。どの LLM にもテ�
   「AI 向けガイドは他に無い」は前提にしない（Vercel は AI 向け skill を提供している）。差別化はガイドとエンジンを一緒に設計して
   一連の成功率を検証すること。**設計上の目標（A46）と現在の機能は文書で区別する**
 
+**A-new（W3 / layout。番号はオーケストレーターが振る）. 紙面からのはみ出し（A46 の「結果にも」③）の
+細部: 単位は CSS px のまま、合成ルートは候補にしない、断片は含むブロックの位置で報告する。**
+（2026-09-23、実装時に決めた。実装は `src/layout/check_overflow.cpp`、仕様は §3.8）
+
+- **辺（`OverflowEdge`）を `ContentOverflow` に足した**: §3.8 が決めていた構造体は
+  `{ SourceLocation location; float overflow_px; }` の 2 つだけだったが、それだと
+  `warning.hpp` が例示している detail（`"... by 42.5px (bottom) ..."`）を api が作れない。
+  「下に出た（背が高すぎる）」と「右に出た（幅が広すぎる）」は直し方が別なので、
+  最大の超過量を出した辺を一緒に運ぶ。物理の 4 辺で、縦書きでも「下」は物理の下
+- **単位は CSS px**: レイアウトの座標は scale を掛ける**前**の CSS px（api は `RenderOptions::viewport_width`
+  をそのまま `layout::Options::viewport_width` に渡し、scale は ⑤b raster が `raster::Target::scale` で掛ける）。
+  だから `ContentOverflow::overflow_px` はそのまま `Warning::overflow_px`（CSS px）になる。**api は割らない**
+- **合成ルート `#root` は候補にしない**: ルートの border box は高さが `auto` で常に中身に追随するので、
+  中身が縦にはみ出せば必ず一緒にはみ出す。候補にすると「最も外側の 1 件」が毎回ルートになり、位置が
+  入力の先頭（1:1）に化けて、実際に突き出した要素を隠してしまう。ルートは入力の要素でもない。
+  除いても取りこぼしはない: ルートがはみ出すときは必ずその子孫のどれかが同じ辺からはみ出している
+  （負のマージンでルートの外に出た子も、子として判定される）
+- **行ボックスと画像断片は、含むブロック要素の位置で報告する**: `LineBox` と `ImageFragment` は
+  `SourceLocation` を持たない（`BlockBox` と `TextFragment` だけが持つ。A31 / A36）。位置のためだけに
+  型を増やすより、含むブロックを指すほうが直せる形になる（「この段落が紙面から出ている」）。
+  §3.8 が行について決めていた規則を、断片にもそのまま広げた
+- **同じ位置は 1 件にまとめ、超過量は最大を採る**: 1 つの要素から複数の箱（複数行・複数の断片）が出ることが
+  あり、位置が同じ警告を何件も出しても直し方は変わらない。並べ替えは (offset, line, column) の昇順で
+  `std::stable_sort`（`MissingGlyph::operator<` と同じ比べ方。決定的）
+- **`check_geometry()` のあとに見る**: 座標が有限で上限以内であることを確かめてから引き算するので、
+  はみ出し量が非有限になることはない。失敗はしない（警告のための記録なので、木を返せなくしない）
+- **確かめたこと**: A46 の動機になった `examples/og_card.html --height 200` で、`.card`（19 行目）の
+  はみ出し 430 px が 1 件だけ出る。`--height 630`（正しい高さ）では 0 件。
+  縦書き（`examples/vertical.html`）も、`--width 200` で行送り方向の 320 px、`--height 120` で
+  字送り方向のはみ出しを段落ごとに出す
+
 ---
 
 ## 2. モジュールと依存
@@ -1734,6 +1765,24 @@ std::string dump_json(const BoxTree&);
   外に出た約物）は箱ではないので判定しない／ルビの注記は行ボックスの中にあるので単独では判定しない／
   固定幅の箱から文字がはみ出しても紙面の中なら対象外（箱からのはみ出しは別種 `BoxOverflow` として将来）／
   0.5 px 以下の差は丸めとして無視する
+  - 実装は `layout/check_overflow.cpp`（`collect_overflows()`）。`check_geometry()` の**あと**に呼ぶので、
+    引き算の入力はすべて有限で上限以内。失敗はしない（記録するだけ）。費用は O(N) の走査 1 回
+  - **判定は物理座標で行う**: 論理座標のまま見ると縦書きで上下左右を取り違える（縦書きの「下」は論理の
+    inline 方向の終端、「左」は block 方向の終端）。読み替えは paint と同じ式（A1。`vertical-rl` は
+    `x = viewport_width - block_end`、`y = inline_start`）
+  - **`overflow_px` の単位は CSS px**（scale を掛ける前）。レイアウトの座標が CSS px なので、api は
+    割らずにそのまま `Warning::overflow_px` へ入れる（A-new）
+  - **辺を一緒に返す**: `ContentOverflow::edge`（`OverflowEdge{Right, Bottom, Left, Top}`。**物理**の 4 辺で、
+    縦書きでも「下」は物理の下）。直し方が辺で変わる（下 = 背が高すぎる、右 = 幅が広すぎる）ので、
+    `warning.hpp` が例に書いている文面（`"content overflows the canvas by 42.5px (bottom) at 12:3"`）を
+    api が作れるようにする。同点なら 右 → 下 → 左 → 上 の順で先のものを採る（A-new）
+  - **合成ルート `#root` は候補にしない**（A-new）。高さが `auto` のルートは中身に追随するので、候補にすると
+    「最も外側の 1 件」が毎回ルートになり、位置が入力の先頭に化けて実際に突き出した要素を隠す
+  - **画像断片（`ImageFragment`）も、行ボックスと同じく含むブロック要素の位置で報告する**（A-new）。
+    断片は `SourceLocation` を持たないため。行が収まっていても画像は行の外に出られる（行の inline 範囲は
+    ブロックの content 幅で固定）ので、行が収まっている行の中だけ断片を見る
+  - **同じ位置の複数件は 1 件にまとめ、`overflow_px` は最大を採る**（A-new）。並べ替えは (offset, line, column)
+    の昇順で安定ソート（`MissingGlyph::operator<` と同じ比べ方）
 - **block**: 幅は親から降り、高さは子から戻る。`width: auto` は利用可能幅いっぱい。
   `margin: 0 auto` の中央寄せ。兄弟間のマージン相殺（A10）。子が inline と block の混在なら
   inline の連続を無名ブロックで包む

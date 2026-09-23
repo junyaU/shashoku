@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "layout/check_geometry.hpp"
+#include "layout/check_overflow.hpp"
 #include "layout/engine.hpp"
 #include "layout/flex_layout.hpp"
 #include "layout/inline_layout.hpp"
@@ -312,6 +313,9 @@ Result<BoxTree> layout_root(const style::StyledNode& root, const Options& option
   if (const Result<void> ok = check_geometry(tree, options.max_geometry_px, work); !ok) {
     return std::unexpected(ok.error());
   }
+  // 紙面からのはみ出しの記録（A46）。**失敗させない**（警告として api が返す）。
+  // 座標が上限以内であることを確かめたあとに見るので、ここでの引き算は非有限にならない。
+  tree.overflows = collect_overflows(tree);
   return tree;
 }
 

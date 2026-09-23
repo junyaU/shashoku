@@ -9,6 +9,7 @@
 #include "core/diagnostics.hpp"
 #include "core/result.hpp"
 #include "html/dom.hpp"
+#include "shashoku/error.hpp"
 #include "shashoku/limits.hpp"
 #include "style/computed_style.hpp"
 #include "style/resolver.hpp"
@@ -22,14 +23,46 @@
 
 namespace shashoku::style {
 
-// A46 で resolve() は Diagnostics& を取るようになった（src/core/diagnostics.hpp）。
-// いまの style は診断を集めず最初のエラーで unexpected を返すので、診断を見ないテストは
-// 捨てる Diagnostics を渡すこの包みを使う。集めるようになったら（W2）ここを見直す。
+// A46: resolve() は非致命の問題（CssParse / UnsupportedProperty / UnsupportedValue /
+// UnsupportedLayout）を Diagnostics に集めて最後まで解決し、致命（LimitExceeded /
+// Internal）だけを unexpected で返す。診断まで見るテストはこれを使う。
+struct Resolved {
+  Result<StyledNode> tree;          // 致命エラーなら unexpected
+  std::vector<RenderError> errors;  // 集めた診断（足した順）
+  bool truncated = false;
+
+  // 「最初の問題」。集めたものがあればその 1 件目、無ければ致命エラー。
+  [[nodiscard]] const RenderError* first_error() const {
+    if (!errors.empty()) {
+      return &errors.front();
+    }
+    return tree.has_value() ? nullptr : &tree.error();
+  }
+};
+
+inline Resolved resolve_collect(const html::Node& root,
+                                std::size_t max_style_rules = kMaxStyleRules,
+                                float max_length_px = kMaxLengthPx,
+                                std::size_t max_diagnostics = RenderLimits{}.max_diagnostics) {
+  Diagnostics diagnostics{max_diagnostics};
+  Resolved out{.tree = resolve(root, diagnostics, max_style_rules, max_length_px),
+               .errors = {},
+               .truncated = false};
+  out.errors = diagnostics.errors();
+  out.truncated = diagnostics.truncated();
+  return out;
+}
+
+// 集める前から「失敗するはず」を見ていたテスト向けの包み。集めた 1 件目（無ければ致命）を
+// unexpected にして、`Result<StyledNode>` を返していた頃と同じ形で読めるようにする。
 inline Result<StyledNode> resolve_for_test(const html::Node& root,
                                            std::size_t max_style_rules = kMaxStyleRules,
                                            float max_length_px = kMaxLengthPx) {
-  Diagnostics diagnostics{RenderLimits{}.max_diagnostics};
-  return resolve(root, diagnostics, max_style_rules, max_length_px);
+  Resolved resolved = resolve_collect(root, max_style_rules, max_length_px);
+  if (const RenderError* error = resolved.first_error(); error != nullptr) {
+    return std::unexpected(*error);
+  }
+  return std::move(resolved.tree);
 }
 
 inline html::Attribute test_attr(std::string_view name, std::string_view value,

@@ -709,7 +709,8 @@ fail loudly（DESIGN.md §3-6）の目的を果たしていない。旧来の日
   一問「日本語の文章を正しく組むことに寄与するか」に対し `word-wrap` は Yes（旧来の日本語
   ページの標準的な書き方）、`grid-gap` は No（shashoku に grid は無く、flex に `grid-gap` と
   書く動機がない）。代わりに `kPropertyHints` に 3 行足して写し先を案内する
-  （`` `grid-gap` is not a supported property (legacy name: use `gap`) ``）
+  （`` `grid-gap` is not a supported property `` + hint `` legacy name: use `gap` ``。
+  A46 より前は hint を message の末尾に括弧で足していた。A48 で `RenderError::hint` に移した）
 - **出力は 1 ビットも変わらない。** `examples/` とゴールデン 16 枚の入力に `word-wrap` は無く、
   `overflow-wrap` の経路自体は触っていない（`release` の CLI で修正前後の
   `--dump-stage style` / `box` と PNG がバイト一致することを確かめた）
@@ -1335,7 +1336,39 @@ W5 対応範囲と書き方のガイド（`docs/guide/`。どの LLM にもテ�
   「AI 向けガイドは他に無い」は前提にしない（Vercel は AI 向け skill を提供している）。差別化はガイドとエンジンを一緒に設計して
   一連の成功率を検証すること。**設計上の目標（A46）と現在の機能は文書で区別する**
 
-**A-new. ① html の「透過」の細部: 対応外の要素は開始タグ・終了タグを無いものとして読み、
+**A48. style の「集めて続行」は、宣言と規則を読み飛ばす単位で決める。hint は表を引く前に
+ベンダー接頭辞を外す。**（2026-09-23、A46 の実装 W2。仮番号）
+
+A46 の「① html と ② style は見つけた問題を集めてから失敗する」を style に入れるにあたって決めた細部。
+仕様の本体は §3.7 に書いた。ここには**なぜそう決めたか**だけを残す。
+
+- **読み飛ばしは宣言の単位が基本で、セレクタが読めないときだけ規則の単位。** CSS Syntax 3 §5.4 の
+  エラー回復と同じ粒度。宣言 1 つが読めなくても残りの宣言は著者の意図どおりなので効かせる
+  （検証 C で「1 件直すたびに CLI を走らせ直す」原因になっていたのは、1 つの規則の中に対応外が
+  並んでいる場合だった）。セレクタが読めない規則は、宣言をどの要素に当てるか決められないので丸ごと捨てる
+- **捨てた宣言は「書かれなかった」扱いにする**（途中まで展開した longhand も巻き戻す）。
+  「半分だけ効いた宣言」は、あとで診断を読んで直すときにいちばん説明しづらい状態になる。
+  errors が 1 件でもあれば描画しないので、この木が絵になることはない
+- **未終了のコメントだけは回復しない。** どこまでがコメントかを決める手がかりが無く、推測して
+  読み進めると「著者が書いていない宣言」を報告しかねない。記録して残りを捨てる
+- **文書の `writing-mode` を決める先読みでは診断を出さない。** 先読みはトップレベル要素を
+  もう一度カスケードするので、そのまま記録すると同じ診断が 2 件になる。捨てる `Diagnostics` に流し、
+  致命エラーも握り潰して `build_element` の 1 回に任せる（**先に集めた診断を失わないため**でもある。
+  先読みで止めると、文書の前方にあった対応外の報告が消える）
+- **トップレベルの `writing-mode` の食い違いは、最初に出た値を採って続行する。** 続きの要素の診断を
+  出すには文書の値が 1 つ要る。「最初に出た値」は入力だけで決まるので決定的（DESIGN.md §3-5）
+- **hint は表を引く前にベンダー接頭辞を外して引き直す。** `-webkit-background-clip` に
+  `background-clip` と同じ助言を出すために別表を持つと、2 つの表が食い違う。外した名前が対応表に
+  あれば「接頭辞を外す」、対応外でも hint 表にあればその hint、どちらでもなければ**何も言わない**
+  （`-webkit-line-clamp` に `line-clamp` の助言を捏造しない）
+- **`kPropertyHints` は「確かめた代替」に加えて「削ると危険な組」も載せる**（A46 の 2）。
+  代替ではないが、`background-clip: text` を黙って消させると `color: transparent` が残って
+  **文字が消える**（検証 C で実際に起きた）。表のコメントに 2 種類あることを明記した
+- **hint 付きのエラーは `style/style_error.hpp` の `error_with_hint()` で作る。** `core/result.hpp` の
+  `fail()` に hint 引数を足すと全モジュールの共有物が A46 のために太るので、style の中に置いた
+  （`is_recoverable(kind)` も同じ理由でここ）
+
+**A49. ① html の「透過」の細部: 対応外の要素は開始タグ・終了タグを無いものとして読み、
 HTML の空要素はスタックに積まず、入れ子の上限は透過を含むスタックの深さで見る。**
 （2026-09-23、W1 の実装で決めた。A46「集めて続行する」の具体化。仕様は §3.6）
 
@@ -1360,7 +1393,7 @@ HTML の空要素はスタックに積まず、入れ子の上限は透過を含
   `HtmlParse`（致命）になり、そこで解析が止まる（それまでに集めた分は返る）。読み飛ばしを足すかは
   A47 の関門（依頼集の実例）で判断する。検証に使った入力 10 件に `<script>` は無かった
 
-**A-new（W3 / layout。番号はオーケストレーターが振る）. 紙面からのはみ出し（A46 の「結果にも」③）の
+**A50. 紙面からのはみ出し（A46 の「結果にも」③）の
 細部: 単位は CSS px のまま、合成ルートは候補にしない、断片は含むブロックの位置で報告する。**
 （2026-09-23、実装時に決めた。実装は `src/layout/check_overflow.cpp`、仕様は §3.8）
 
@@ -1724,23 +1757,32 @@ std::string dump_json(const StyledNode& root);
   カスケード・継承・計算値・ダンプの名前はすべて `overflow-wrap` と同じ。A35）。
   一覧にないプロパティは `UnsupportedProperty`、値が対応外なら `UnsupportedValue`
   （別名に対応外の値を書いたときの文面は**著者の綴り**のまま。`` `word-wrap: foo` is not supported … ``）
-- **集めて続行するもの（A46）**: `CssParse`（宣言の単位で読み飛ばす。セレクタが読めなければ規則の単位）、
-  `UnsupportedProperty` / `UnsupportedValue`（その宣言を捨てる）、`img` の `width` / `height` 属性の不正、
-  計算値の検査で分かる `UnsupportedLayout`（inline への箱プロパティ、`writing-mode` の途中変更）は
-  `diagnostics.add_error()` に足して続行する。返る木は errors が 1 件でもあれば描画されない。
-  **その場で止めるもの**: `LimitExceeded`（規則数・長さの上限）。今までどおり unexpected
+- **集めて続行するもの（A46 / A48）**: `CssParse`（宣言の単位で読み飛ばす。セレクタが読めなければ規則の単位）、
+  `UnsupportedProperty` / `UnsupportedValue`（その宣言を捨てる）、`img` の `src` の欠落と
+  `width` / `height` 属性の不正、計算値の検査で分かる `UnsupportedLayout`（inline への箱プロパティ、
+  `writing-mode` の途中変更・トップレベルの食い違い）は `diagnostics.add_error()` に足して続行する。
+  返る木は errors が 1 件でもあれば描画されない（判定は api の `Diagnostics::has_errors()`）。
+  **その場で止めるもの**: `LimitExceeded`（規則数・長さの上限）と `Internal`。今までどおり unexpected
+  - **読み飛ばしの単位**（`css_parser.cpp`）: 宣言が読めなければ次の `;` / `}` / 入力の終わりまで捨て、
+    **後ろの宣言は効かせる**。セレクタが読めなければ規則の単位（`{…}` を対応づけて丸ごと、`;` で終わる
+    `@import` はそこまで）。未終了のコメントだけは読み飛ばし先が決められないので、記録して残りを捨てる。
+    捨てた宣言は「**書かれなかった**」扱いで、途中まで展開された longhand も残さない
+  - **順序**: 診断は「足した順」（`<style>` の規則 → トップレベルの `writing-mode` の食い違い → 木を
+    前順に辿った各要素の `style` 属性と計算値の検査）。入力位置での整列は api が `Diagnostics::sort()` で行う
+  - **二重に出さない**: 文書の `writing-mode` を決める先読み（`document_writing_mode`）は同じ要素を
+    もう一度カスケードするので、そこでの診断は捨てる `Diagnostics` に流し、致命エラーも握り潰す
+    （どちらも `build_element` が通るときに正しい順序で出る）
 - **hint は `RenderError::hint` に入れ、`message` には混ぜない**（A46。機械側が分けて読める。以前は message の
   末尾に括弧で足していた）。`kPropertyHints` の規則「shashoku で同じ結果が出せると確かめた代替だけ」は変えない。
   足すもの: (a) ベンダー接頭辞（`-webkit-*` / `-moz-*` / `-ms-*` / `-o-*`）は「接頭辞を外す（対応表にあれば）」
   (b) **削ると危険な組**: `background-clip` / `-webkit-background-clip` は「`color: transparent` も外さないと
   文字が消える」(c) inline への箱プロパティの `UnsupportedLayout` は「宣言を削る（`display: block` にすると
-  文の流れが切れる）」。hint の無いものは空のまま
-  次に何をすればよいか分からない）。`value_parser.cpp` の `kPropertyHints` に
-  **未対応だと分かっているものだけ**を載せ、`` `box-sizing` is not a supported property
-  (content-box only: subtract padding and border from `width` / `height`) `` のように
-  **先頭を変えず後ろに括弧で足す**（前方一致で見ているものがあるかもしれないため）。
+  文の流れが切れる）」。hint の無いものは空のまま。
+  `value_parser.cpp` の `kPropertyHints` に **未対応だと分かっているものだけ**を載せる。
   表に無い名前（綴り間違いなど）には何も足さない。**載せてよいのは shashoku で実際に
-  同じ結果が出せると確かめた代替だけ**で、代替が無いもの（縦中横）は「未実装」とだけ言う
+  同じ結果が出せると確かめた代替**と、**削ると危険な組の警告**だけで、代替が無いもの（縦中横）は
+  「未実装」とだけ言う。接頭辞つきの名前は表を引く前に接頭辞を外して引き直すので、
+  `-webkit-background-clip` は `background-clip` の hint に当たる
 - 単位: `px` `em`、`0`（単位なし）。`%` は `width` と `flex-basis` のみ。`line-height` は
   `normal` / 数値 / px / em。色: `#rgb #rgba #rrggbb #rrggbbaa`、`rgb()` `rgba()`、
   CSS の色名、`transparent`、`currentColor`（border-color のみ）

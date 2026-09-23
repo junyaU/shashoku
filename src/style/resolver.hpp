@@ -40,10 +40,17 @@ inline constexpr float kMaxLengthPx = 16777216.0F;  // 2^24
 // 長さは、`font-size` を除いてすべて有限で、絶対値が max_length_px 以内である
 // （`%` と `auto` は layout が解決するので対象外）。超えたら LimitExceeded（位置つき）。
 //
-// diagnostics（A46）: 「安全に解決を続けられる問題」（CssParse / UnsupportedProperty /
-// UnsupportedValue / UnsupportedLayout など）を集めて続行するための口。上限の超過
-// （LimitExceeded）は今までどおり unexpected で返す。
-// **まだ何も足していない**: 集めて続行するのは W2 の仕事で、いまは最初のエラーで止まる。
+// diagnostics（A46「一度に全部」）: 「安全に解決を続けられる問題」（CssParse /
+// UnsupportedProperty / UnsupportedValue / 計算値で分かる UnsupportedLayout / `<img>` の
+// 寸法属性の不正）は `diagnostics.add_error()` に足して**最後まで解決する**。
+// 壊れた宣言は宣言の単位で、セレクタが読めない規則は規則の単位で読み飛ばし、
+// 捨てた宣言は「書かれなかった」扱いになる（残りの宣言は効く）。
+// その場で止める（unexpected で返す）のは致命だけ: 上限の超過（LimitExceeded）と Internal。
+//
+// **errors が 1 件でもあれば、返った木を描画してはいけない**（診断の網羅のために最後まで
+// 解決しているだけで、捨てた宣言の分だけ絵は入力と違う）。判定は呼び出し側（api）が
+// `Diagnostics::has_errors()` で行う。
+// 診断は「足した順」で入る（整列は api が `Diagnostics::sort()` で行う）。
 Result<StyledNode> resolve(const html::Node& root, Diagnostics& diagnostics,
                            std::size_t max_style_rules = kMaxStyleRules,
                            float max_length_px = kMaxLengthPx);

@@ -19,6 +19,7 @@
 #include "style/css_color.hpp"
 #include "style/css_tokens.hpp"
 #include "style/declaration.hpp"
+#include "style/style_error.hpp"
 
 namespace shashoku::style {
 namespace {
@@ -130,9 +131,13 @@ std::optional<PropertyName> lookup_property(std::string_view name) {
 
 // 未対応と**分かっている**プロパティには、次に何をすればよいかを一言だけ添える（#20）。
 // 「未対応です」だけでは手がかりがゼロで、試用の最初の 1 枚で詰まるため。
+// A46 以降、この一言は `RenderError::hint` に入れる（message には混ぜない）。
 //
-// ここに書いてよいのは、**shashoku で実際に同じ結果が出せると確かめた**代替だけ
-// （tests/style/error_test.cpp の文面の検査と、CLI の `--dump-stage box` で 1 つずつ確認済み）。
+// 載せてよいのは 2 種類だけ:
+//   (1) **shashoku で実際に同じ結果が出せると確かめた**代替
+//       （tests/style/error_test.cpp の検査と、CLI の `--dump-stage box` で 1 つずつ確認済み）
+//   (2) **削ると危険な組**（A46。宣言を消した結果が「文字が消える」になるもの）の警告。
+//       代替ではないが、黙って消させるほうが害が大きい
 // 表に無い名前（綴り間違い・そもそも知らないプロパティ）には何も足さない:
 // 間違った助言をするくらいなら、何も言わないほうがよい。
 // 代替が無いもの（縦中横）は「未実装」とだけ言う。
@@ -142,6 +147,11 @@ struct HintEntry {
 };
 
 constexpr auto kPropertyHints = std::to_array<HintEntry>({
+    // (2) 削ると危険な組（docs/guide/writing-html-for-shashoku.md §5）。
+    // `-webkit-background-clip` も接頭辞を外してこの行に当たる
+    {"background-clip",
+     "no background clipping: if you drop this, also drop `color: transparent` or the text "
+     "disappears"},
     {"box-sizing", "content-box only: subtract padding and border from `width` / `height`"},
     {"flex-wrap", "single-line flex only: use one flex container per row"},
     {"float", "no floats: use `display: flex` to put boxes side by side"},
@@ -159,11 +169,46 @@ constexpr auto kPropertyHints = std::to_array<HintEntry>({
     {"text-combine-upright", "tate-chu-yoko is not implemented"},
 });
 
-std::string_view hint_for(std::string_view name) {
+std::string_view exact_hint_for(std::string_view name) {
   for (const HintEntry& entry : kPropertyHints) {
     if (entry.name == name) {
       return entry.hint;
     }
+  }
+  return {};
+}
+
+// ベンダー接頭辞（CSS Syntax 3 §2 の `-<vendor>-` 記法のうち、実際に出てくる 4 つ）。
+constexpr auto kVendorPrefixes =
+    std::to_array<std::string_view>({"-webkit-", "-moz-", "-ms-", "-o-"});
+
+// 接頭辞を外した名前。接頭辞が無ければ空（A46 の hint (a)）。
+std::string_view strip_vendor_prefix(std::string_view name) {
+  for (const std::string_view prefix : kVendorPrefixes) {
+    if (name.starts_with(prefix)) {
+      return name.substr(prefix.size());
+    }
+  }
+  return {};
+}
+
+// 対応外のプロパティ名に添える hint。無ければ空。
+std::string hint_for(std::string_view name) {
+  if (const std::string_view exact = exact_hint_for(name); !exact.empty()) {
+    return std::string{exact};
+  }
+  const std::string_view base = strip_vendor_prefix(name);
+  if (base.empty()) {
+    return {};
+  }
+  // (a) 接頭辞を外せば通る名前（`-webkit-border-radius` → `border-radius`）
+  if (lookup_property(base).has_value()) {
+    return std::format("drop the vendor prefix: `{}` is supported", base);
+  }
+  // 外しても対応外なら、外した名前の助言をそのまま使う
+  // （`-webkit-background-clip` → `background-clip` の「削ると危険」）
+  if (const std::string_view exact = exact_hint_for(base); !exact.empty()) {
+    return std::string{exact};
   }
   return {};
 }
@@ -1070,13 +1115,11 @@ Result<void> parse_declaration(std::string_view name, std::string_view raw_value
                                std::vector<Declaration>& out) {
   const std::optional<PropertyName> property = lookup_property(name);
   if (!property) {
-    // 文面の**先頭は変えない**（前方一致で見ているスクリプトがあるかもしれないので、
-    // 分かっているものにだけ括弧で代替案を足す）。エラーの種類と位置も変えない。
-    const std::string_view hint = hint_for(name);
-    return fail(ErrorKind::UnsupportedProperty,
-                hint.empty() ? std::format("`{}` is not a supported property", name)
-                             : std::format("`{}` is not a supported property ({})", name, hint),
-                name_location);
+    // 代替案は message ではなく `RenderError::hint` に入れる（A46。機械側が分けて読める）。
+    // message は「どのプロパティが対応外か」だけを言う。
+    return fail_with_hint(ErrorKind::UnsupportedProperty,
+                          std::format("`{}` is not a supported property", name), name_location,
+                          hint_for(name));
   }
 
   const Ctx ctx{.name = name, .raw = trim_css_space(raw_value), .location = value_location};

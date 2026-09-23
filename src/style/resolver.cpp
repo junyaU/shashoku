@@ -25,6 +25,7 @@
 #include "style/css_parser.hpp"
 #include "style/css_tokens.hpp"
 #include "style/declaration.hpp"
+#include "style/style_error.hpp"
 #include "style/ua_stylesheet.hpp"
 
 namespace shashoku::style {
@@ -675,13 +676,17 @@ std::optional<float> parse_attribute_number(std::string_view text) {
   return static_cast<float>(token.number);
 }
 
-Result<void> read_image_attributes(const html::Node& node, StyledNode& styled,
-                                   float max_length_px) {
+// 属性の不正（`src` の欠落・`width` / `height` が数値でない）は集めて続行する（A46）。
+// 上限の超過（LimitExceeded）だけがその場で止まる。
+Result<void> read_image_attributes(const html::Node& node, StyledNode& styled, float max_length_px,
+                                   Diagnostics& diagnostics) {
   const html::Attribute* src = node.find_attr("src");
   if (src == nullptr) {
-    return fail(ErrorKind::UnsupportedValue, "`<img>` requires a `src` attribute", node.location);
+    diagnostics.add_error(error_with_hint(ErrorKind::UnsupportedValue,
+                                          "`<img>` requires a `src` attribute", node.location, {}));
+  } else {
+    styled.image_src = src->value;
   }
-  styled.image_src = src->value;
   for (const std::string_view name : {"width", "height"}) {
     const html::Attribute* attr = node.find_attr(name);
     if (attr == nullptr) {
@@ -689,11 +694,13 @@ Result<void> read_image_attributes(const html::Node& node, StyledNode& styled,
     }
     const std::optional<float> value = parse_attribute_number(attr->value);
     if (!value) {
-      return fail(ErrorKind::UnsupportedValue,
-                  std::format("`<img {}=\"{}\">` is not supported (the attribute must be a "
-                              "non-negative number of px, without a unit)",
-                              name, attr->value),
-                  attr->location);
+      diagnostics.add_error(
+          error_with_hint(ErrorKind::UnsupportedValue,
+                          std::format("`<img {}=\"{}\">` is not supported (the attribute must be a "
+                                      "non-negative number of px, without a unit)",
+                                      name, attr->value),
+                          attr->location, {}));
+      continue;  // 書かれなかった扱い（layout が本来の寸法を使う）
     }
     // 属性も layout に渡る長さなので、CSS の長さと同じ上限で見る（A36）。
     if (!within(*value, max_length_px)) {
@@ -716,21 +723,27 @@ Result<void> read_image_attributes(const html::Node& node, StyledNode& styled,
 
 class Resolver {
  public:
-  Resolver(std::size_t max_style_rules, float max_length_px)
-      : max_style_rules_(max_style_rules), max_length_px_(max_length_px) {}
+  Resolver(Diagnostics& diagnostics, std::size_t max_style_rules, float max_length_px)
+      : diagnostics_(&diagnostics),
+        max_style_rules_(max_style_rules),
+        max_length_px_(max_length_px) {}
 
   Result<void> load(const html::Node& root);
   Result<StyledNode> build(const html::Node& root);
 
  private:
-  [[nodiscard]] Result<StyleState> cascade(const html::Node& node, const StyleState& parent) const;
-  [[nodiscard]] Result<WritingMode> document_writing_mode(const html::Node& root,
-                                                          const StyleState& root_state) const;
+  // `sink` は診断の行き先。文書の writing-mode を決める先読みでは捨てる Diagnostics を渡す
+  // （同じ要素を 2 回カスケードするので、そのままだと同じ診断が 2 件になる）。
+  [[nodiscard]] Result<StyleState> cascade(const html::Node& node, const StyleState& parent,
+                                           Diagnostics& sink) const;
+  [[nodiscard]] WritingMode document_writing_mode(const html::Node& root,
+                                                  const StyleState& root_state) const;
   Result<void> build_children(const html::Node& node, const StyleState& state,
                               std::vector<StyledNode>& out) const;
   [[nodiscard]] Result<std::optional<StyledNode>> build_element(const html::Node& node,
                                                                 const StyleState& parent) const;
 
+  Diagnostics* diagnostics_ = nullptr;
   std::size_t max_style_rules_ = kMaxStyleRules;
   float max_length_px_ = kMaxLengthPx;
   Stylesheet ua_;
@@ -740,13 +753,15 @@ class Resolver {
 // `<style>` 要素は木のどこにあってもよく、文書全体に効く。複数あれば出現順に連結する。
 // NOLINTNEXTLINE(misc-no-recursion): DOM は木なので前順の再帰で辿る
 Result<void> collect_author_css(const html::Node& node, std::uint32_t& order, Stylesheet& out,
-                                std::size_t max_rules) {
+                                std::size_t max_rules, Diagnostics& diagnostics) {
   if (node.type == html::Node::Type::Element && node.tag == "style") {
     for (const html::Node& child : node.children) {
       if (child.type != html::Node::Type::Text) {
         continue;
       }
-      if (Result<void> parsed = parse_stylesheet(child.text, child.location, order, out); !parsed) {
+      if (Result<void> parsed =
+              parse_stylesheet(child.text, child.location, order, out, diagnostics);
+          !parsed) {
         return parsed;
       }
       // セレクタの照合は「規則数 x 要素数」なので、規則の数そのものに上限が要る（A25）。
@@ -761,7 +776,8 @@ Result<void> collect_author_css(const html::Node& node, std::uint32_t& order, St
     return {};
   }
   for (const html::Node& child : node.children) {
-    if (Result<void> collected = collect_author_css(child, order, out, max_rules); !collected) {
+    if (Result<void> collected = collect_author_css(child, order, out, max_rules, diagnostics);
+        !collected) {
       return collected;
     }
   }
@@ -775,13 +791,14 @@ Result<void> Resolver::load(const html::Node& root) {
   }
   ua_ = *std::move(ua);
   std::uint32_t order = 0;
-  return collect_author_css(root, order, author_, max_style_rules_);
+  return collect_author_css(root, order, author_, max_style_rules_, *diagnostics_);
 }
 
-Result<StyleState> Resolver::cascade(const html::Node& node, const StyleState& parent) const {
+Result<StyleState> Resolver::cascade(const html::Node& node, const StyleState& parent,
+                                     Diagnostics& sink) const {
   std::vector<Declaration> inline_declarations;
   if (const html::Attribute* attr = node.find_attr("style"); attr != nullptr) {
-    Result<std::vector<Declaration>> parsed = parse_inline_style(attr->value, attr->location);
+    Result<std::vector<Declaration>> parsed = parse_inline_style(attr->value, attr->location, sink);
     if (!parsed) {
       return std::unexpected(parsed.error());
     }
@@ -909,52 +926,68 @@ Result<void> check_computed_lengths(const ComputedStyle& s, float max_px, Source
   return {};
 }
 
+// 計算値まで見ないと分からない対応外（A46 の「計算値の検査で分かる UnsupportedLayout」）は
+// 集めて続行する。止まるのは長さの上限（LimitExceeded）だけ。
 Result<void> validate(const html::Node& node, const StyleState& state, const StyleState& parent,
-                      float max_length_px) {
+                      float max_length_px, Diagnostics& diagnostics) {
   if (Result<void> lengths = check_computed_lengths(state.computed, max_length_px, node.location);
       !lengths) {
     return lengths;
   }
   if (state.writing_mode_declared && state.computed.writing_mode != parent.computed.writing_mode) {
-    return fail(
+    diagnostics.add_error(error_with_hint(
         ErrorKind::UnsupportedLayout,
         std::format("`writing-mode: {}` differs from the inherited `{}`; the whole "
                     "document uses one writing mode and only top-level elements may set "
                     "it (ARCHITECTURE.md A1)",
                     to_css(state.computed.writing_mode), to_css(parent.computed.writing_mode)),
-        state.writing_mode_location);
+        state.writing_mode_location, {}));
   }
   if (state.computed.display == Display::Inline && node.tag != "img" && state.box_property) {
-    return fail(ErrorKind::UnsupportedLayout,
-                std::format("`{}` is not supported on an inline element (`display: inline`); only "
-                            "`<img>` takes box properties while inline",
-                            to_css(*state.box_property)),
-                state.box_property_location);
+    // A46 の hint (c): `display: block` にすると通るが、文の流れが切れる。
+    // どちらを勧めるかを明記する（検証 C の観察）
+    diagnostics.add_error(error_with_hint(
+        ErrorKind::UnsupportedLayout,
+        std::format("`{}` is not supported on an inline element (`display: inline`); only "
+                    "`<img>` takes box properties while inline",
+                    to_css(*state.box_property)),
+        state.box_property_location,
+        "drop the declaration; `display: block` would accept it but breaks the surrounding "
+        "text flow"));
   }
   return {};
 }
 
 // writing-mode は文書全体で 1 つ（A1）。トップレベル要素の指定だけを見て文書の値を決める。
-Result<WritingMode> Resolver::document_writing_mode(const html::Node& root,
-                                                    const StyleState& root_state) const {
+//
+// ここはカスケードの**先読み**で、同じ要素を build_element がもう一度カスケードする。
+// そのため診断はここでは出さない: カスケードの診断は捨てる Diagnostics に流し、
+// 致命エラーも握り潰す（どちらも build_element がもう一度通るときに、正しい順序で出る）。
+// 食い違いのエラーだけはここでしか分からないので集める。
+WritingMode Resolver::document_writing_mode(const html::Node& root,
+                                            const StyleState& root_state) const {
+  Diagnostics scratch{diagnostics_->max_entries()};
   std::optional<WritingMode> chosen;
   for (const html::Node& child : root.children) {
     if (child.type != html::Node::Type::Element || child.tag == "style" || child.tag == "rp") {
       continue;
     }
-    Result<StyleState> state = cascade(child, root_state);
+    Result<StyleState> state = cascade(child, root_state, scratch);
     if (!state) {
-      return std::unexpected(state.error());
+      continue;  // 致命エラー。報告は build_element に任せる（先に集めた診断を失わない）
     }
     if (!state->writing_mode_declared) {
       continue;
     }
     if (chosen && *chosen != state->computed.writing_mode) {
-      return fail(ErrorKind::UnsupportedLayout,
-                  std::format("top-level elements disagree about `writing-mode` (`{}` and `{}`); "
-                              "the whole document must use one writing mode (ARCHITECTURE.md A1)",
-                              to_css(*chosen), to_css(state->computed.writing_mode)),
-                  state->writing_mode_location);
+      // 最初に出た値を文書の writing-mode として続行する（決定的で、続きの診断が出せる）
+      diagnostics_->add_error(error_with_hint(
+          ErrorKind::UnsupportedLayout,
+          std::format("top-level elements disagree about `writing-mode` (`{}` and `{}`); "
+                      "the whole document must use one writing mode (ARCHITECTURE.md A1)",
+                      to_css(*chosen), to_css(state->computed.writing_mode)),
+          state->writing_mode_location, {}));
+      continue;
     }
     chosen = state->computed.writing_mode;
   }
@@ -998,11 +1031,12 @@ Result<void> Resolver::build_children(const html::Node& node, const StyleState& 
 // NOLINTNEXTLINE(misc-no-recursion): build_children との相互再帰
 Result<std::optional<StyledNode>> Resolver::build_element(const html::Node& node,
                                                           const StyleState& parent) const {
-  Result<StyleState> state = cascade(node, parent);
+  Result<StyleState> state = cascade(node, parent, *diagnostics_);
   if (!state) {
     return std::unexpected(state.error());
   }
-  if (Result<void> checked = validate(node, *state, parent, max_length_px_); !checked) {
+  if (Result<void> checked = validate(node, *state, parent, max_length_px_, *diagnostics_);
+      !checked) {
     return std::unexpected(checked.error());
   }
 
@@ -1012,7 +1046,8 @@ Result<std::optional<StyledNode>> Resolver::build_element(const html::Node& node
   styled.style = state->computed;
   styled.location = node.location;
   if (node.tag == "img") {
-    if (Result<void> attrs = read_image_attributes(node, styled, max_length_px_); !attrs) {
+    if (Result<void> attrs = read_image_attributes(node, styled, max_length_px_, *diagnostics_);
+        !attrs) {
       return std::unexpected(attrs.error());
     }
   }
@@ -1032,11 +1067,7 @@ Result<StyledNode> Resolver::build(const html::Node& root) {
   root_state.computed.display = Display::Block;
   root_state.computed.border_color = root_state.computed.color;
 
-  Result<WritingMode> writing_mode = document_writing_mode(root, root_state);
-  if (!writing_mode) {
-    return std::unexpected(writing_mode.error());
-  }
-  root_state.computed.writing_mode = *writing_mode;
+  root_state.computed.writing_mode = document_writing_mode(root, root_state);
 
   StyledNode styled;
   styled.type = StyledNode::Type::Element;
@@ -1051,14 +1082,13 @@ Result<StyledNode> Resolver::build(const html::Node& root) {
 
 }  // namespace
 
-Result<StyledNode> resolve(const html::Node& root, [[maybe_unused]] Diagnostics& diagnostics,
+Result<StyledNode> resolve(const html::Node& root, Diagnostics& diagnostics,
                            std::size_t max_style_rules, float max_length_px) {
-  // diagnostics はまだ使わない（A46 の「集めて続行」は W2 で入れる）。
   if (root.type != html::Node::Type::Element) {
     return fail(ErrorKind::Internal, "style::resolve() expects the synthetic root element",
                 root.location);
   }
-  Resolver resolver(max_style_rules, max_length_px);
+  Resolver resolver(diagnostics, max_style_rules, max_length_px);
   if (Result<void> loaded = resolver.load(root); !loaded) {
     return std::unexpected(loaded.error());
   }

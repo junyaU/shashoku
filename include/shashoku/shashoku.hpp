@@ -8,8 +8,9 @@
 //   shashoku::FontSet fonts;
 //   fonts.add(noto_sans_jp_bytes);              // 追加順がフォールバック順
 //   const auto result = shashoku::render("<p>こんにちは、世界。</p>", fonts);
-//   if (!result) { std::cerr << shashoku::to_string(result.error()) << '\n'; return 1; }  //
-//   全診断が 1 行 1 件で出る write_file("out.png", result->png);
+//   if (!result) { std::cerr << shashoku::to_string(result.error()) << '\n'; return 1; }
+//   // 失敗は RenderFailure。to_string() で全診断が 1 行 1 件で出る（ARCHITECTURE.md A46）
+//   write_file("out.png", result->png);
 //
 // 連続生成では、バイト列の解釈と画像のデコードを 1 回だけ済ませて使い回せる（A34）:
 //

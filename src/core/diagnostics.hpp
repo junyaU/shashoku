@@ -33,8 +33,10 @@ class Diagnostics {
   [[nodiscard]] std::size_t max_entries() const noexcept { return max_entries_; }
   [[nodiscard]] bool has_errors() const noexcept { return !errors_.empty(); }
 
-  // 集めたものを RenderFailure に移す（sort() 済みであること）。`extra` があれば先に足す
-  // （致命エラーを集めたものと合わせて 1 つの失敗にするための口）。
+  // 集めたものを RenderFailure に移す。`extra`（致命エラーなど、集めた列の外で見つかったもの）が
+  // あれば合わせ、**結合したあとで sort() と同じ順序に整列する**（RenderFailure::errors の契約
+  // 「入力位置の昇順」を保つ。致命エラーが先頭に来るとは限らない）。呼び出し後、この Diagnostics
+  // は空。
   RenderFailure into_failure(std::vector<RenderError> extra = {}) &&;
 
  private:

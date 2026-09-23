@@ -193,6 +193,10 @@ def render_with_retry(
                 timeout=timeout,
             )
             if diagnostics.get("ok"):
+                # mkstemp が作るファイルは 0600 なので、配信するなら読めるようにしておく
+                # （本番では自分の方針に合わせてください）。rename は同じディレクトリ内なので
+                # 必ず不可分に入れ替わります。
+                os.chmod(tmp_png, 0o644)
                 os.replace(tmp_png, out_path)  # 成功したときだけ目的の名前にする
                 tmp_png = ""
                 _log(

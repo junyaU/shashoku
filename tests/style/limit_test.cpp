@@ -26,7 +26,7 @@ namespace {
 // `<div style="...">` を、長さの上限を指定して解決する。
 Result<ComputedStyle> resolve_with_limit(std::string_view declarations, float max_length_px) {
   const html::Node tree = test_root(test_element("div", {test_attr("style", declarations)}));
-  Result<StyledNode> styled = resolve(tree, kMaxStyleRules, max_length_px);
+  Result<StyledNode> styled = resolve_for_test(tree, kMaxStyleRules, max_length_px);
   if (!styled) {
     return std::unexpected(styled.error());
   }
@@ -89,7 +89,7 @@ TEST(StyleLengthLimit, EmOverflowIsRejected) {
 TEST(StyleLengthLimit, LocationPointsAtTheDeclaration) {
   constexpr std::string_view kCss = "div { color: red; padding-left: 1e38em }";
   const html::Node tree = test_root(test_style_element(kCss), test_element("div"));
-  const Result<StyledNode> styled = resolve(tree);
+  const Result<StyledNode> styled = resolve_for_test(tree);
   ASSERT_FALSE(styled.has_value()) << "エラーになるはず";
   EXPECT_EQ(styled.error().kind, ErrorKind::LimitExceeded) << styled.error().message;
   ASSERT_TRUE(styled.error().location.has_value());
@@ -105,7 +105,7 @@ TEST(StyleLengthLimit, InlineStyleLocationIsTheAttribute) {
   constexpr SourceLocation kAttr{.offset = 40, .line = 3, .column = 6};
   const html::Node tree =
       test_root(test_element("div", {test_attr("style", "padding-left: 1e38em", kAttr)}));
-  const Result<StyledNode> styled = resolve(tree);
+  const Result<StyledNode> styled = resolve_for_test(tree);
   ASSERT_FALSE(styled.has_value()) << "エラーになるはず";
   EXPECT_EQ(styled.error().location.value_or(SourceLocation{}), kAttr) << styled.error().message;
 }
@@ -129,7 +129,7 @@ TEST(StyleLengthLimit, InheritedLineHeightNumberIsRecheckedOnTheChild) {
   const html::Node tree =
       test_root(test_parent("div", {test_attr("style", "line-height: 1e6")},
                             test_element("div", {test_attr("style", "font-size: 100px")})));
-  const Result<StyledNode> styled = resolve(tree);
+  const Result<StyledNode> styled = resolve_for_test(tree);
   ASSERT_FALSE(styled.has_value()) << "1e6 x 100px = 1e8 px は上限を超える";
   EXPECT_EQ(styled.error().kind, ErrorKind::LimitExceeded) << styled.error().message;
 }
@@ -187,7 +187,7 @@ TEST(StyleLengthLimit, LargeButFiniteFontSizeIsLeftToTheApi) {
 TEST(StyleLengthLimit, ImageAttributesAreBounded) {
   const html::Node tree =
       test_root(test_element("img", {test_attr("src", "icon"), test_attr("width", "300000000")}));
-  const Result<StyledNode> styled = resolve(tree);
+  const Result<StyledNode> styled = resolve_for_test(tree);
   ASSERT_FALSE(styled.has_value()) << "3e8 px は length_px を超える";
   EXPECT_EQ(styled.error().kind, ErrorKind::LimitExceeded) << styled.error().message;
 }

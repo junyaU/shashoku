@@ -14,6 +14,7 @@
 #include <variant>
 #include <vector>
 
+#include "core/diagnostics.hpp"
 #include "core/number_text.hpp"
 #include "core/result.hpp"
 #include "html/dom.hpp"
@@ -1050,8 +1051,9 @@ Result<StyledNode> Resolver::build(const html::Node& root) {
 
 }  // namespace
 
-Result<StyledNode> resolve(const html::Node& root, std::size_t max_style_rules,
-                           float max_length_px) {
+Result<StyledNode> resolve(const html::Node& root, [[maybe_unused]] Diagnostics& diagnostics,
+                           std::size_t max_style_rules, float max_length_px) {
+  // diagnostics はまだ使わない（A46 の「集めて続行」は W2 で入れる）。
   if (root.type != html::Node::Type::Element) {
     return fail(ErrorKind::Internal, "style::resolve() expects the synthetic root element",
                 root.location);

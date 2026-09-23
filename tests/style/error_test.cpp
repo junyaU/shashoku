@@ -130,7 +130,7 @@ TEST(StyleError, WordWrapValueErrorsKeepTheAuthorSpellingAndLocation) {
   const SourceLocation attribute{.offset = 12, .line = 1, .column = 6};
   const html::Node tree =
       test_root(test_element("div", {test_attr("style", "word-wrap: foo", attribute)}));
-  const Result<StyledNode> styled = resolve(tree);
+  const Result<StyledNode> styled = resolve_for_test(tree);
   ASSERT_FALSE(styled.has_value());
   EXPECT_EQ(styled.error().kind, ErrorKind::UnsupportedValue);
   EXPECT_EQ(styled.error().location.value_or(SourceLocation{}), attribute);
@@ -239,7 +239,7 @@ void expect_rejected_with_location(const std::vector<ValueCase>& cases) {
     SCOPED_TRACE(test.css);
     const html::Node tree =
         test_root(test_element("div", {test_attr("style", test.css, kStyleAttribute)}));
-    const Result<StyledNode> styled = resolve(tree);
+    const Result<StyledNode> styled = resolve_for_test(tree);
     ASSERT_FALSE(styled.has_value()) << "should have failed";
     EXPECT_EQ(styled.error().kind, ErrorKind::UnsupportedValue) << styled.error().message;
     EXPECT_EQ(styled.error().location.value_or(SourceLocation{}), kStyleAttribute)
@@ -288,7 +288,7 @@ TEST(StyleError, NegativeImgSizeAttributesAreRejectedWithTheAttributeLocation) {
     const SourceLocation attribute{.offset = 17, .line = 2, .column = 11};
     const html::Node tree =
         test_root(test_element("img", {test_attr("src", "x"), test_attr(name, "-5", attribute)}));
-    const Result<StyledNode> styled = resolve(tree);
+    const Result<StyledNode> styled = resolve_for_test(tree);
     ASSERT_FALSE(styled.has_value()) << "should have failed";
     EXPECT_EQ(styled.error().kind, ErrorKind::UnsupportedValue) << styled.error().message;
     EXPECT_EQ(styled.error().location.value_or(SourceLocation{}), attribute);
@@ -342,7 +342,7 @@ TEST(StyleError, NegativeZeroIsAcceptedAndNeverPrintedAsMinusZero) {
         "font-size: 0; padding: 2em; line-height: 1.5; letter-spacing: -0.05em"}) {
     SCOPED_TRACE(css);
     const html::Node tree = test_root(test_element("div", {test_attr("style", css)}));
-    const Result<StyledNode> styled = resolve(tree);
+    const Result<StyledNode> styled = resolve_for_test(tree);
     ASSERT_TRUE(styled.has_value()) << (styled ? "" : styled.error().message);
     // プロパティ名の `-` の後ろは必ず英字なので、`-0` が出るのは数値だけ
     EXPECT_EQ(dump_json(*styled).find("-0"), std::string::npos) << dump_json(*styled);
@@ -438,7 +438,7 @@ TEST(StyleError, InlineStyleErrorsPointAtTheAttribute) {
   const SourceLocation attribute{.offset = 42, .line = 3, .column = 6};
   const html::Node tree =
       test_root(test_element("div", {test_attr("style", "float: left", attribute)}));
-  const Result<StyledNode> styled = resolve(tree);
+  const Result<StyledNode> styled = resolve_for_test(tree);
   ASSERT_FALSE(styled.has_value());
   EXPECT_EQ(styled.error().location.value_or(SourceLocation{}), attribute);
 }
@@ -447,7 +447,7 @@ TEST(StyleError, StyleElementErrorsAddTheCssLineAndColumn) {
   // <style> のテキストは 5 行目 8 桁目から始まる、という想定
   const SourceLocation base{.offset = 100, .line = 5, .column = 8};
   const html::Node tree = test_root(test_style_element("div {\n  float: left;\n}", base));
-  const Result<StyledNode> styled = resolve(tree);
+  const Result<StyledNode> styled = resolve_for_test(tree);
   ASSERT_FALSE(styled.has_value());
   EXPECT_EQ(styled.error().kind, ErrorKind::UnsupportedProperty);
   // CSS の 2 行目 3 桁目 → 入力の 6 行目 3 桁目（2 行目以降は桁がそのまま）
@@ -460,7 +460,7 @@ TEST(StyleError, StyleElementErrorsAddTheCssLineAndColumn) {
 TEST(StyleError, FirstLineOfCssKeepsTheAttributeColumnOffset) {
   const SourceLocation base{.offset = 10, .line = 2, .column = 4};
   const html::Node tree = test_root(test_style_element("div { float: left }", base));
-  const Result<StyledNode> styled = resolve(tree);
+  const Result<StyledNode> styled = resolve_for_test(tree);
   ASSERT_FALSE(styled.has_value());
   const SourceLocation location = styled.error().location.value_or(SourceLocation{});
   EXPECT_EQ(location.line, 2U);
@@ -477,7 +477,7 @@ TEST(StyleError, BoxPropertiesOnInlineElements) {
   for (const std::string_view property : properties) {
     SCOPED_TRACE(property);
     const html::Node tree = test_root(test_element("span", {test_attr("style", property)}));
-    const Result<StyledNode> styled = resolve(tree);
+    const Result<StyledNode> styled = resolve_for_test(tree);
     ASSERT_FALSE(styled.has_value()) << "should have failed";
     EXPECT_EQ(styled.error().kind, ErrorKind::UnsupportedLayout) << styled.error().message;
   }
@@ -486,25 +486,25 @@ TEST(StyleError, BoxPropertiesOnInlineElements) {
 TEST(StyleError, InlineBoxCheckOnlyLooksAtAuthorDeclarations) {
   // UA が p に付ける margin は作者の宣言ではないので、display: inline にしても通る
   const html::Node tree = test_root(test_element("p", {test_attr("style", "display: inline")}));
-  const Result<StyledNode> styled = resolve(tree);
+  const Result<StyledNode> styled = resolve_for_test(tree);
   ASSERT_TRUE(styled.has_value()) << (styled ? "" : styled.error().message);
   EXPECT_EQ(styled->children.front().style.display, Display::Inline);
   // 継承も作者の宣言ではない
   const html::Node inherited = test_root(test_parent(
       "div", {test_attr("style", "color: red; border: 1px solid blue")}, test_element("span")));
-  EXPECT_TRUE(resolve(inherited).has_value());
+  EXPECT_TRUE(resolve_for_test(inherited).has_value());
 }
 
 TEST(StyleError, ImgIsExemptFromTheInlineBoxCheck) {
   const html::Node tree = test_root(test_element(
       "img", {test_attr("src", "logo"), test_attr("style", "width: 10px; margin: 2px")}));
-  EXPECT_TRUE(resolve(tree).has_value());
+  EXPECT_TRUE(resolve_for_test(tree).has_value());
 }
 
 TEST(StyleError, BoxPropertyOnInlineIsFineWhenDisplayIsChanged) {
   const html::Node tree =
       test_root(test_element("span", {test_attr("style", "display: block; width: 10px")}));
-  EXPECT_TRUE(resolve(tree).has_value());
+  EXPECT_TRUE(resolve_for_test(tree).has_value());
 }
 
 // ---- writing-mode の規則（A1）----------------------------------------------------
@@ -512,7 +512,7 @@ TEST(StyleError, BoxPropertyOnInlineIsFineWhenDisplayIsChanged) {
 TEST(StyleError, WritingModeOnTopLevelElementIsAdoptedByTheRoot) {
   const html::Node tree = test_root(
       test_parent("div", {test_attr("style", "writing-mode: vertical-rl")}, test_element("div")));
-  const Result<StyledNode> styled = resolve(tree);
+  const Result<StyledNode> styled = resolve_for_test(tree);
   ASSERT_TRUE(styled.has_value()) << (styled ? "" : styled.error().message);
   EXPECT_EQ(styled->style.writing_mode, WritingMode::VerticalRl);
   EXPECT_EQ(styled->children.at(0).style.writing_mode, WritingMode::VerticalRl);
@@ -523,7 +523,7 @@ TEST(StyleError, TopLevelElementsMustAgreeOnWritingMode) {
   const html::Node tree =
       test_root(test_element("div", {test_attr("style", "writing-mode: vertical-rl")}),
                 test_element("div", {test_attr("style", "writing-mode: horizontal-tb")}));
-  const Result<StyledNode> styled = resolve(tree);
+  const Result<StyledNode> styled = resolve_for_test(tree);
   ASSERT_FALSE(styled.has_value());
   EXPECT_EQ(styled.error().kind, ErrorKind::UnsupportedLayout);
 }
@@ -532,7 +532,7 @@ TEST(StyleError, WritingModeCannotChangeDeeperInTheTree) {
   const html::Node tree = test_root(
       test_parent("div", {test_attr("style", "writing-mode: vertical-rl")},
                   test_element("div", {test_attr("style", "writing-mode: horizontal-tb")})));
-  const Result<StyledNode> styled = resolve(tree);
+  const Result<StyledNode> styled = resolve_for_test(tree);
   ASSERT_FALSE(styled.has_value());
   EXPECT_EQ(styled.error().kind, ErrorKind::UnsupportedLayout);
 }
@@ -542,13 +542,13 @@ TEST(StyleError, RepeatingTheDocumentWritingModeDeeperIsAllowed) {
   const html::Node tree = test_root(
       test_parent("div", {test_attr("style", "writing-mode: vertical-rl")},
                   test_element("div", {test_attr("style", "writing-mode: vertical-rl")})));
-  EXPECT_TRUE(resolve(tree).has_value());
+  EXPECT_TRUE(resolve_for_test(tree).has_value());
 }
 
 TEST(StyleError, WritingModeDeeperThanTopLevelIsRejected) {
   const html::Node tree = test_root(test_parent(
       "div", {}, test_element("div", {test_attr("style", "writing-mode: vertical-rl")})));
-  const Result<StyledNode> styled = resolve(tree);
+  const Result<StyledNode> styled = resolve_for_test(tree);
   ASSERT_FALSE(styled.has_value());
   EXPECT_EQ(styled.error().kind, ErrorKind::UnsupportedLayout);
 }
@@ -557,7 +557,7 @@ TEST(StyleError, WritingModeDeeperThanTopLevelIsRejected) {
 
 TEST(StyleError, ImgRequiresSrc) {
   const html::Node tree = test_root(test_element("img"));
-  const Result<StyledNode> styled = resolve(tree);
+  const Result<StyledNode> styled = resolve_for_test(tree);
   ASSERT_FALSE(styled.has_value());
   EXPECT_EQ(styled.error().kind, ErrorKind::UnsupportedValue);
   EXPECT_EQ(styled.error().message, "`<img>` requires a `src` attribute");
@@ -569,7 +569,7 @@ TEST(StyleError, ImgSizeAttributesMustBeNonNegativeNumbers) {
     SCOPED_TRACE(value);
     const html::Node tree =
         test_root(test_element("img", {test_attr("src", "x"), test_attr("width", value)}));
-    const Result<StyledNode> styled = resolve(tree);
+    const Result<StyledNode> styled = resolve_for_test(tree);
     ASSERT_FALSE(styled.has_value()) << "should have failed";
     EXPECT_EQ(styled.error().kind, ErrorKind::UnsupportedValue) << styled.error().message;
   }
@@ -581,7 +581,7 @@ TEST(StyleError, DeclarationsInsideDisplayNoneSubtreesAreStillChecked) {
   const html::Node tree =
       test_root(test_parent("div", {test_attr("style", "display: none")},
                             test_element("div", {test_attr("style", "float: left")})));
-  const Result<StyledNode> styled = resolve(tree);
+  const Result<StyledNode> styled = resolve_for_test(tree);
   ASSERT_FALSE(styled.has_value());
   EXPECT_EQ(styled.error().kind, ErrorKind::UnsupportedProperty);
 }

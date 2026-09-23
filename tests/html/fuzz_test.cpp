@@ -16,11 +16,13 @@
 
 #include <gtest/gtest.h>
 
+#include "core/diagnostics.hpp"
 #include "core/result.hpp"
 #include "core/utf8.hpp"
 #include "html/dom.hpp"
 #include "html/parser.hpp"
 #include "shashoku/error.hpp"
+#include "shashoku/limits.hpp"
 
 namespace shashoku::html {
 namespace {
@@ -277,7 +279,8 @@ Generated HtmlGenerator::generate() {
 
 // 落ちないこと・契約（エラーには必ず位置とメッセージが付く）を守ることだけを見る。
 void expect_no_crash(std::string_view source) {
-  Result<Node> result = parse(source);
+  Diagnostics diagnostics{RenderLimits{}.max_diagnostics};
+  Result<Node> result = parse(source, diagnostics);
   if (result) {
     EXPECT_FALSE(dump_json(*result).empty());
     return;
@@ -311,7 +314,8 @@ TEST(HtmlFuzz, GeneratedHtmlRoundTrips) {
   for (int i = 0; i < 300; ++i) {
     const Generated sample = generator.generate();
     SCOPED_TRACE(sample.html);
-    Result<Node> result = parse(sample.html);
+    Diagnostics diagnostics{RenderLimits{}.max_diagnostics};
+    Result<Node> result = parse(sample.html, diagnostics);
     ASSERT_TRUE(result.has_value()) << to_string(result.error());
     Node actual = std::move(*result);
     clear_locations(actual);

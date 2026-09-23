@@ -10,9 +10,11 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include "core/diagnostics.hpp"
 #include "core/result.hpp"
 #include "html/dom.hpp"
 #include "shashoku/error.hpp"
+#include "shashoku/limits.hpp"
 
 namespace shashoku::html {
 namespace {
@@ -20,7 +22,8 @@ namespace {
 using ::testing::HasSubstr;
 
 Node parsed(std::string_view source) {
-  Result<Node> result = parse(source);
+  Diagnostics diagnostics{RenderLimits{}.max_diagnostics};
+  Result<Node> result = parse(source, diagnostics);
   if (!result) {
     ADD_FAILURE() << "parse failed: " << to_string(result.error());
     return Node{};
@@ -29,7 +32,8 @@ Node parsed(std::string_view source) {
 }
 
 Error parse_failure(std::string_view source) {
-  Result<Node> result = parse(source);
+  Diagnostics diagnostics{RenderLimits{}.max_diagnostics};
+  Result<Node> result = parse(source, diagnostics);
   if (result) {
     ADD_FAILURE() << "parse unexpectedly succeeded: " << dump_json(*result);
     return Error{};
@@ -559,10 +563,11 @@ TEST(HtmlParseError, NestingDepthIsAParameter) {
     return source;
   };
 
-  const Result<Node> exact = parse(nested(4), 4);
+  Diagnostics diagnostics{RenderLimits{}.max_diagnostics};
+  const Result<Node> exact = parse(nested(4), diagnostics, 4);
   ASSERT_TRUE(exact.has_value()) << to_string(exact.error());
 
-  Result<Node> over = parse(nested(5), 4);
+  Result<Node> over = parse(nested(5), diagnostics, 4);
   ASSERT_FALSE(over.has_value());
   const Error error = std::move(over).error();
   EXPECT_EQ(error.kind, ErrorKind::LimitExceeded);

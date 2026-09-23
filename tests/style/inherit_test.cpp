@@ -19,7 +19,7 @@ Result<ComputedStyle> nested(std::string_view outer, std::string_view inner,
                              std::string_view inner_tag = "span") {
   const html::Node tree = test_root(test_parent(
       "div", {test_attr("style", outer)}, test_element(inner_tag, {test_attr("style", inner)})));
-  Result<StyledNode> styled = resolve(tree);
+  Result<StyledNode> styled = resolve_for_test(tree);
   if (!styled) {
     return std::unexpected(styled.error());
   }
@@ -124,7 +124,7 @@ TEST(StyleInherit, OtherEmValuesResolveAgainstTheOwnFontSize) {
 
 TEST(StyleInherit, EmInsideHeadingUsesTheHeadingFontSize) {
   const html::Node tree = test_root(test_style_element("h2 { padding: 1em }"), test_element("h2"));
-  const Result<StyledNode> styled = resolve(tree);
+  const Result<StyledNode> styled = resolve_for_test(tree);
   ASSERT_TRUE(styled.has_value()) << (styled ? "" : styled.error().message);
   EXPECT_FLOAT_EQ(styled->children.front().style.padding.top, 24.0F);  // 1.5em → 24px
 }
@@ -150,7 +150,7 @@ TEST(StyleInherit, InheritanceFlowsThroughSeveralLevels) {
   const html::Node tree = test_root(test_parent(
       "div", {test_attr("style", "color: red; font-size: 2em")},
       test_parent("div", {}, test_element("span", {test_attr("style", "font-size: 0.5em")}))));
-  const Result<StyledNode> styled = resolve(tree);
+  const Result<StyledNode> styled = resolve_for_test(tree);
   ASSERT_TRUE(styled.has_value()) << (styled ? "" : styled.error().message);
   const StyledNode& span = styled->children.at(0).children.at(0).children.at(0);
   EXPECT_EQ(span.tag, "span");

@@ -19,7 +19,13 @@ using Result = std::expected<T, Error>;
 // return fail(ErrorKind::UnsupportedTag, "...", node.location);
 inline std::unexpected<Error> fail(ErrorKind kind, std::string message,
                                    std::optional<SourceLocation> location = std::nullopt) {
-  return std::unexpected(Error{kind, std::move(message), location});
+  // A46 で RenderError に hint / warning が増えたので、指示付き初期化で書く
+  // （位置指定のままだと -Wmissing-field-initializers に掛かる）。
+  return std::unexpected(Error{.kind = kind,
+                               .message = std::move(message),
+                               .location = location,
+                               .hint = {},
+                               .warning = std::nullopt});
 }
 
 }  // namespace shashoku

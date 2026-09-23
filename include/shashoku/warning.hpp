@@ -13,7 +13,7 @@ namespace shashoku {
 // 返して描画は続行するもの。利用者は `RenderOptions::warnings_as_errors` でエラーに格上げできる
 // （ARCHITECTURE.md A46）。
 enum class WarningKind : std::uint8_t {
-  MissingGlyph,     // どのフォントにもグリフがないコードポイントがあった（豆腐。A31 / A43）
+  MissingGlyph,  // どのフォントにもグリフがないコードポイントがあった（豆腐。A31 / A43）
   ContentOverflow,  // 箱（行・置換要素・ブロック）が出力の紙面の外に出ていて、その部分が切れる（A46）
 };
 

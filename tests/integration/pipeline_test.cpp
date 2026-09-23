@@ -13,6 +13,7 @@
 #include "integration/integration_support.hpp"
 #include "png/png.hpp"
 #include "shashoku/shashoku.hpp"
+#include "support/failure.hpp"
 
 // パイプライン全体の性質: 決定性・出力サイズ・各段のダンプ・豆腐の警告。
 namespace shashoku::test {
@@ -153,8 +154,9 @@ TEST(Images, BrokenPngIsRejected) {
 
   const auto result = render(kImageHtml, japanese_fonts(), images, options_for(200));
   ASSERT_FALSE(result.has_value());
-  EXPECT_EQ(result.error().kind, ErrorKind::ImageDecode) << to_string(result.error());
-  EXPECT_NE(result.error().message.find("icon"), std::string::npos) << result.error().message;
+  EXPECT_EQ(first_error(result.error()).kind, ErrorKind::ImageDecode) << to_string(result.error());
+  EXPECT_NE(first_error(result.error()).message.find("icon"), std::string::npos)
+      << first_error(result.error()).message;
 }
 
 TEST(Images, DuplicateNameIsRejected) {
@@ -163,7 +165,7 @@ TEST(Images, DuplicateNameIsRejected) {
   images.add("icon", test_icon_bytes());
   const auto result = render(kImageHtml, japanese_fonts(), images, options_for(200));
   ASSERT_FALSE(result.has_value());
-  EXPECT_EQ(result.error().kind, ErrorKind::InvalidOption);
+  EXPECT_EQ(first_error(result.error()).kind, ErrorKind::InvalidOption);
 }
 
 // ---------------------------------------------------------------------------
@@ -287,8 +289,8 @@ TEST(OutputSize, ScaleMultipliesDevicePixels) {
 TEST(OutputSize, NothingToRender) {
   const auto result = render("", japanese_fonts(), options_for(320));
   ASSERT_FALSE(result.has_value());
-  EXPECT_EQ(result.error().kind, ErrorKind::InvalidOption);
-  EXPECT_NE(result.error().message.find("nothing to render"), std::string::npos);
+  EXPECT_EQ(first_error(result.error()).kind, ErrorKind::InvalidOption);
+  EXPECT_NE(first_error(result.error()).message.find("nothing to render"), std::string::npos);
 }
 
 // 縦書きでは内容が伸びる向きが横なので、高さを推定できない（ARCHITECTURE.md §3.8 / A1）。
@@ -296,7 +298,8 @@ TEST(OutputSize, VerticalNeedsExplicitHeight) {
   constexpr std::string_view kVertical = R"(<div style="writing-mode: vertical-rl">縦書き</div>)";
   const auto without = render(kVertical, japanese_fonts(), options_for(320));
   ASSERT_FALSE(without.has_value());
-  EXPECT_EQ(without.error().kind, ErrorKind::InvalidOption) << to_string(without.error());
+  EXPECT_EQ(first_error(without.error()).kind, ErrorKind::InvalidOption)
+      << to_string(without.error());
 
   RenderOptions options = options_for(320);
   options.viewport_height = 240;

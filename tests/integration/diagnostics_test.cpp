@@ -23,6 +23,33 @@ constexpr std::string_view kMixedHtml =
     "<table><span style=\"box-sizing: border-box\">い</span></table>\n"
     "<div onclick=\"x\" style=\"position: absolute\">う</div>\n";
 
+// 位置の取り出しはここに 1 か所だけ置く。①② の診断は必ず位置を持つ（持たなければ契約違反）が、
+// テストの中で毎回 `location->` と書くと「確かめずに optional を開けている」ことになる。
+SourceLocation location_of(const RenderError& error) {
+  if (!error.location) {
+    ADD_FAILURE() << "位置の無いエラー: " << to_string(error);
+    return SourceLocation{};
+  }
+  return *error.location;
+}
+
+SourceLocation location_of(const Warning& warning) {
+  if (!warning.location) {
+    ADD_FAILURE() << "位置の無い警告: " << warning.detail;
+    return SourceLocation{};
+  }
+  return *warning.location;
+}
+
+// 格上げされたエラーが保っている元の警告の種類（WarningAsError のときだけ入っている）。
+WarningKind promoted_kind(const RenderError& error) {
+  if (!error.warning) {
+    ADD_FAILURE() << "格上げしたエラーに元の警告の種類がない: " << to_string(error);
+    return WarningKind::MissingGlyph;
+  }
+  return *error.warning;
+}
+
 std::vector<ErrorKind> kinds_of(const RenderFailure& failure) {
   std::vector<ErrorKind> kinds;
   kinds.reserve(failure.errors.size());
@@ -53,14 +80,12 @@ TEST(Diagnostics, CollectsHtmlAndStyleProblemsAtOnce) {
 
   // 入力位置の昇順（同じ入力からは同じ並び。DESIGN.md §3-5）
   for (std::size_t i = 1; i < failure.errors.size(); ++i) {
-    ASSERT_TRUE(failure.errors[i - 1].location.has_value());
-    ASSERT_TRUE(failure.errors[i].location.has_value());
-    EXPECT_LT(failure.errors[i - 1].location->offset, failure.errors[i].location->offset)
+    EXPECT_LT(location_of(failure.errors[i - 1]).offset, location_of(failure.errors[i]).offset)
         << to_string(failure);
   }
   // 行も入力どおり（1 行目 → 2 行目 → 3 行目）
-  EXPECT_EQ(failure.errors.front().location->line, 1U);
-  EXPECT_EQ(failure.errors.back().location->line, 3U);
+  EXPECT_EQ(location_of(failure.errors.front()).line, 1U);
+  EXPECT_EQ(location_of(failure.errors.back()).line, 3U);
 }
 
 // 直し方は `RenderError::hint` に分けて入る（message には混ぜない。A46 の 6 / A48）。
@@ -106,8 +131,8 @@ TEST(Diagnostics, StopsRecordingAtMaxDiagnostics) {
   EXPECT_EQ(kinds_of(result.error()),
             (std::vector<ErrorKind>{ErrorKind::UnsupportedTag, ErrorKind::UnsupportedAttribute}))
       << to_string(result.error());
-  EXPECT_EQ(result.error().errors[0].location->line, 2U) << to_string(result.error());
-  EXPECT_EQ(result.error().errors[1].location->line, 3U) << to_string(result.error());
+  EXPECT_EQ(location_of(result.error().errors[0]).line, 2U) << to_string(result.error());
+  EXPECT_EQ(location_of(result.error().errors[1]).line, 3U) << to_string(result.error());
 }
 
 // 警告にも同じ上限が掛かり、打ち切ったことは RenderResult にも出る。
@@ -149,9 +174,8 @@ TEST(Diagnostics, ContentOverflowIsWarnedWithPixelsAndEdge) {
   EXPECT_FLOAT_EQ(warning.overflow_px, 300.0F);
   EXPECT_EQ(warning.overflow_edge, OverflowEdge::Bottom);
   EXPECT_EQ(to_string(warning.overflow_edge), "bottom");
-  ASSERT_TRUE(warning.location.has_value());
-  EXPECT_EQ(warning.location->line, 1U);
-  EXPECT_EQ(warning.location->column, 1U);
+  EXPECT_EQ(location_of(warning).line, 1U);
+  EXPECT_EQ(location_of(warning).column, 1U);
   EXPECT_FALSE(result->png.empty());  // 警告であって失敗ではない
   EXPECT_EQ(result->height, 100);
 }
@@ -188,7 +212,7 @@ TEST(Diagnostics, TofuAndOverflowAreSortedByPosition) {
   ASSERT_EQ(result->warnings.size(), 2U);
   EXPECT_EQ(result->warnings[0].kind, WarningKind::MissingGlyph);
   EXPECT_EQ(result->warnings[1].kind, WarningKind::ContentOverflow);
-  EXPECT_LT(result->warnings[0].location->offset, result->warnings[1].location->offset);
+  EXPECT_LT(location_of(result->warnings[0]).offset, location_of(result->warnings[1]).offset);
 }
 
 // ---------------------------------------------------------------------------
@@ -214,8 +238,7 @@ TEST(Diagnostics, StrictPromotesMissingGlyph) {
   EXPECT_EQ(failure.errors[0].kind, ErrorKind::WarningAsError);
   EXPECT_EQ(to_string(failure.errors[0].kind), "warning-as-error");
   // 元の警告の種類・位置・詳細をそのまま持つ
-  ASSERT_TRUE(failure.errors[0].warning.has_value());
-  EXPECT_EQ(*failure.errors[0].warning, WarningKind::MissingGlyph);
+  EXPECT_EQ(promoted_kind(failure.errors[0]), WarningKind::MissingGlyph);
   EXPECT_EQ(failure.errors[0].message, lenient->warnings[0].detail);
   EXPECT_EQ(failure.errors[0].location, lenient->warnings[0].location);
   // 格上げしたものは errors 側にだけ残す
@@ -232,8 +255,7 @@ TEST(Diagnostics, StrictPromotesContentOverflow) {
   ASSERT_FALSE(result.has_value()) << "strict なのに成功した";
   ASSERT_EQ(result.error().errors.size(), 1U) << to_string(result.error());
   EXPECT_EQ(result.error().errors[0].kind, ErrorKind::WarningAsError);
-  ASSERT_TRUE(result.error().errors[0].warning.has_value());
-  EXPECT_EQ(*result.error().errors[0].warning, WarningKind::ContentOverflow);
+  EXPECT_EQ(promoted_kind(result.error().errors[0]), WarningKind::ContentOverflow);
   EXPECT_TRUE(result.error().errors[0].hint.empty());
 }
 

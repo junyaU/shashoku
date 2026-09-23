@@ -46,10 +46,23 @@ inline constexpr std::size_t kMaxSourceBytes = 0xFFFFFFFFU;
 //
 // max_nesting_depth を超える入れ子と、kMaxSourceBytes を超える入力は LimitExceeded。
 //
-// diagnostics（A46）: 「安全に解析を続けられる問題」（UnsupportedTag / UnsupportedAttribute）を
-// ここに足して続行するための口。致命的な問題（InvalidUtf8 / HtmlParse / LimitExceeded）は
-// 今までどおり unexpected で返す。
-// **まだ何も足していない**: 集めて続行するのは W1 の仕事で、いまは最初のエラーで止まる。
+// diagnostics（A46）: 「安全に解析を続けられる問題」（UnsupportedTag / UnsupportedAttribute）は
+// ここに**文書順で**足して解析を続ける。致命的な問題（InvalidUtf8 / HtmlParse / LimitExceeded）は
+// 今までどおり unexpected で返す（集めた分は diagnostics に残るので、api が合わせて
+// 1 つの RenderFailure にする）。整列するのは api で、ここでは並べ替えない。
+//
+//   - 対応外の**要素は透過**: 開始タグ・終了タグを無いものとし、子は親の子として読む。
+//     終了タグの対応は取る（`<section>…</section>` の `</section>` は HtmlParse にしない）。
+//     HTML の空要素（`<meta>` `<link>` `<hr>` `<input>` など）は終了タグを待たない。
+//     `/>` で閉じた対応外の要素もその場で終わる。対応する開始タグの無い終了タグ
+//     （`</table>` 単独）は UnsupportedTag として読み飛ばす
+//   - 対応外の**属性は捨てて要素は残す**（値は読み切ってから捨てる）
+//   - 透過した要素も開いている要素のスタックには積むので、max_nesting_depth の判定は
+//     透過を含むスタックの深さで行う（木の深さより厳しい。ARCHITECTURE.md A-new）
+//
+// 返る木は、errors があっても ② が診断を続けられる形（`<style>` とその中身、
+// `style` / `class` / `id` 属性はそのまま残る）。errors が 1 件でもあれば api が
+// 描画せずに失敗させるので、透過の意味論は診断を網羅するためだけにある。
 Result<Node> parse(std::string_view source, Diagnostics& diagnostics,
                    std::size_t max_nesting_depth = kMaxNestingDepth);
 

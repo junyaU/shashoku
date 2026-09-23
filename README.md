@@ -200,6 +200,8 @@ wrote out.png (1200x200)
 （元の種類は `warning`）。`truncated` は `RenderLimits::max_diagnostics`（既定 100 件）に達して
 記録を打ち切ったことを表します。
 
+サーバーから呼ぶ側の書き方（AI に HTML を書かせ、診断 JSON を読んで直し、上限つきで再試行する）は [examples/server/](examples/server/) にあります。
+
 ## 速さ
 
 `render()` 1 回の時間（release ビルド、i9-14900KF、41 回の中央値。フォントの読み込みも含みます）:

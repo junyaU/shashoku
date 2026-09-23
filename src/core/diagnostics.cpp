@@ -42,6 +42,15 @@ bool warning_less(const Warning& lhs, const Warning& rhs) {
   return key(lhs) < key(rhs);
 }
 
+// sort() と into_failure() が同じ規則で並べるための 1 か所。
+void sort_errors(std::vector<RenderError>& errors) {
+  std::stable_sort(errors.begin(), errors.end(), error_less);
+}
+
+void sort_warnings(std::vector<Warning>& warnings) {
+  std::stable_sort(warnings.begin(), warnings.end(), warning_less);
+}
+
 }  // namespace
 
 bool Diagnostics::add_error(RenderError error) {
@@ -65,19 +74,24 @@ bool Diagnostics::add_warning(Warning warning) {
 // 安定整列にする（同じキーのものは足した順のまま）。同じ入力からは同じ並びになる
 // （DESIGN.md §3-5）。
 void Diagnostics::sort() {
-  std::stable_sort(errors_.begin(), errors_.end(), error_less);
-  std::stable_sort(warnings_.begin(), warnings_.end(), warning_less);
+  sort_errors(errors_);
+  sort_warnings(warnings_);
 }
 
 RenderFailure Diagnostics::into_failure(std::vector<RenderError> extra) && {
   RenderFailure failure;
-  // extra（致命エラー。解析を止めた 1 件）を先に置き、そのあとに整列済みの列を移す。
+  // extra（致命エラーなど、集めた列の外で見つかったもの）を合わせてから、結合した列全体を
+  // sort() と同じ規則で整列する。`RenderFailure::errors` は「入力位置の昇順」が契約なので、
+  // 致命エラーが先頭に来るとは限らない。extra を先に置いてあるので、同じキーのものは
+  // extra が先になる（安定整列）。
   failure.errors = std::move(extra);
   failure.errors.insert(failure.errors.end(), std::make_move_iterator(errors_.begin()),
                         std::make_move_iterator(errors_.end()));
   errors_.clear();
   failure.warnings = std::move(warnings_);
   warnings_.clear();
+  sort_errors(failure.errors);
+  sort_warnings(failure.warnings);
   failure.truncated = truncated_;
   return failure;
 }

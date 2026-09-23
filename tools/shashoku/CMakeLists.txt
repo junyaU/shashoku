@@ -53,7 +53,8 @@ if(SHASHOKU_BUILD_TESTS)
   include(TestAssets)
   # スモークテスト（ARCHITECTURE.md §4）。引数の組み立てと終了コードの検査を
   # シェルに頼らず CMake スクリプトで行う。
-  set(cli_cases png_ok image_ok trim_flags compression unsupported_css dump_box version license)
+  set(cli_cases png_ok image_ok trim_flags compression unsupported_css strict content_overflow
+                diagnostics_json dump_box version license)
   if(SHASHOKU_EMBED_DEFAULT_FONT)
     # 既定フォント（#20）。埋め込みが無いビルドでは成り立たないので足さない。
     list(APPEND cli_cases default_font examples)

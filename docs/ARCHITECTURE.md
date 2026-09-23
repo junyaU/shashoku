@@ -1466,6 +1466,38 @@ HTML の空要素はスタックに積まず、入れ子の上限は透過を含
   縦書き（`examples/vertical.html`）も、`--width 200` で行送り方向の 320 px、`--height 120` で
   字送り方向のはみ出しを段落ごとに出す
 
+**A51. strict の判定は ⑥ の直後に置き、警告は ③ の直後に診断へ通す。診断 JSON のライタは
+CLI の中に持つ。**（2026-09-23、A46 の実装 W4。仮番号）
+
+A46 の仕上げ（api + CLI）で決めた細部。仕様は §3.10。
+
+- **strict（`warnings_as_errors`）の判定は PNG を作り終えてから**。警告は ③ で出そろっているので
+  もっと早く返せるが、早く返すと `warnings_as_errors` を立てたときだけ ⑤b / ⑥ の失敗
+  （`device_pixels` の `LimitExceeded` など）が消える。**strict は診断を増やすだけで減らさない**という
+  性質を選んだ。代償は「strict で失敗する入力の PNG を 1 回無駄に符号化する」こと（`render()` の費用の
+  9 割は PNG 符号化。A-perf）だが、失敗する入力にしか掛からないので受け入れる
+- **警告は ③ の直後に `Diagnostics` へ通す**（返す直前ではなく）。こうすると (1) `max_diagnostics` が
+  エラーと警告の合計に掛かるという契約が 1 か所で満たされ (2) ④以降で失敗したときも
+  `RenderFailure::warnings` に集まっていた警告が載る
+- **格上げしたエラーの並べ替えは `into_failure(extra)` に任せる**。`RenderFailure::errors` の契約は
+  (位置, kind, message)、警告の並びは (位置, kind, コードポイント, detail) で規則が違う。
+  すべて `WarningAsError` になると kind で差が付かないので、並べ直さないと同じ位置の 2 件の順が
+  errors の契約からずれる
+- **`layout::OverflowEdge` と公開の `OverflowEdge` は別の型のまま**にし、api で写す。③ は
+  「はみ出していない」状態を持たないので `None` が無く、公開 API は `Warning` の既定値のために
+  `None` が要る。型を片方に寄せると layout が公開ヘッダの都合を背負う（`linebreak` と同じ理由で、
+  段は公開 API を知らないでいられるほうがよい）
+- **診断 JSON は CLI が自前で書く**。`src/core/json_writer.hpp` を使うには CLI に `src/` の include パスを
+  通すことになり、「CLI は公開ヘッダだけを見る」（`tests/api/public_header_check.cpp` が守っている境界）が
+  崩れる。要るのは `"` `\` と制御文字のエスケープだけなので、20 行ほどで済む
+- **`--diagnostics` は `human` | `json`** の 2 値にした。`json` だけだと誤った値のときの文面が
+  「json のいずれかです」になる
+- **確かめたこと**: `docs/benchmark/2026-09-23/inputs/a_plain/case01.html`（普段どおりに AI が書いた HTML）
+  を 1 回通すと **61 件**（① `unsupported-tag` 42 件 / ② `css-parse` 11 件・`unsupported-property` 8 件）が
+  入力位置の昇順で出る。A46 より前はこれが 1 件ずつで、同じ 1 枚に CLI が何十回も要った。
+  `examples/*.html` 5 本の PNG は main（c157766）の配布バイナリとバイト単位で一致する
+  （増えたのは成功時の `wrote` の行だけ）
+
 ---
 
 ## 2. モジュールと依存
@@ -2031,15 +2063,28 @@ api は並べ替えない（順序を決めるのは ③ の仕事）。CLI は 
 stderr に出す。
 
 **診断の組み立て（A46）**: api は `Diagnostics diag{opts.limits.max_diagnostics}` を作り、`html::parse` と
-`style::resolve` に渡す。② の終わりで `diag.sort()` し、`diag.has_errors()` なら layout に進まず
-`RenderFailure`（`std::move(diag).into_failure()`）を返す。①② が unexpected（致命）を返したときは、その 1 件を
-`into_failure(extra)` で集めたものと合わせて返す（整列後）。③ 以降の失敗は今までどおり 1 件で、
-`RenderFailure{errors = {その 1 件}}`。警告は `BoxTree::missing_glyphs`（A31）と `BoxTree::overflows`（A46）から作り、
-`diag.add_warning()` で上限を掛けてから (offset, kind, codepoint, detail) で安定に整列する（豆腐だけの列では
-A31 の順序と同じ）。`ContentOverflow` の `detail` は `content overflows the canvas by <px>px (<side>) at L:C`。
+`style::resolve` に渡す。**②の出口のゲートは 1 か所**（`check_computed_limits` のあと）で、`diag.has_errors()` なら
+layout に進まず `RenderFailure`（`std::move(diag).into_failure()`。整列は `into_failure` の中）を返す。
+①② が unexpected（致命）を返したときは、その 1 件を `into_failure(extra)` で集めたものと合わせて返す
+（`to_failure(diag, error)`。`LimitExceeded` などもこの経路なので、集めた対応外と一緒に出る）。
+③ 以降の失敗は今までどおり 1 件で、`RenderFailure{errors = {その 1 件}} + 集まっていた警告`。
+
+警告は ③ が成功した直後に `BoxTree::missing_glyphs`（A31）と `BoxTree::overflows`（A46 / A50）から作り、
+`diag.add_warning()` に通してから（= 上限が掛かる）(offset, kind, codepoint, detail) で安定に整列する
+（豆腐だけの列では A31 の順序と同じ）。一度上限に達したらその段の残りは作らない。ここで診断に入れておくので、
+④以降で失敗したときも `RenderFailure::warnings` に載る。`ContentOverflow` の `detail` は
+`content overflows the canvas by <px>px (<edge>) at L:C`（`<px>` は小数 1 桁、`<edge>` は
+`to_string(OverflowEdge)`）。`overflow_px` は ③ が CSS px で出しているのでそのまま写し（A50。api は割らない）、
+辺は `layout::OverflowEdge` → 公開 API の `OverflowEdge` に写す（③ は「はみ出していない」状態を持たないので
+`None` にはならない）。
+
 `opts.warnings_as_errors` が true で警告が 1 件以上あれば、PNG を作らず `RenderFailure` を返す: errors は警告 1 件に
 つき `RenderError{kind = WarningAsError, message = warning.detail, location = warning.location, warning = warning.kind}`
-（`RenderFailure::warnings` は空）。`RenderResult::diagnostics_truncated` / `RenderFailure::truncated` は
+（`RenderFailure::warnings` は空）。並べ替えは `into_failure(extra)` に任せる（errors の契約は
+位置 → kind → message で、警告の並びとは規則が違う）。**判定は ⑥ の直後**に置く: strict は診断を増やすだけで
+減らさない（`warnings_as_errors` を立てても ⑤b / ⑥ の `LimitExceeded` が隠れない）。
+`dump()` も Box 以降の段で同じ組み立てをする（Dom / Style は layout に入らないので警告は出ない）。
+`RenderResult::diagnostics_truncated` / `RenderFailure::truncated` は
 `diag.truncated()` を写す。**検査の順序はどの経路でも同じ**なので、同じ入力からは同じ診断が同じ順で出る。
 
 `validate(options)` は寸法・`scale`・`compression_level`（0〜9。A33）を見る。**オプションの誤りは
@@ -2077,6 +2122,25 @@ CLI は `tools/shashoku/`: `shashoku input.html [--font A.otf [--font B.ttf …]
 JSON を選んだときは `-o` が必須で、`--dump-stage` と併用できない（`InvalidOption` 相当の使い方の誤りとして
 stderr に出し終了コード 2）。人向けの出力（既定）は、成功時に `wrote out.png (1200x630)` を stderr に 1 行出す
 （`--height` 省略時の実際の高さが分かる。検証 B の指摘）。
+
+実装した細部:
+
+- `--diagnostics` の値は `human`（既定）と `json`。値を取るオプションなので、片方しか綴りが無いと
+  誤りの文面が不自然になる（「`--diagnostics` は json のいずれかです」）。`human` を明示して書けるのは
+  スクリプトで既定に戻したいときにも要る
+- JSON は**改行を含まない 1 行 + 末尾の改行**（キーの順は上の例のまま）。`float` は元の値に戻せる最短表現
+  （`430` / `42.5` / `0`）で、`codepoint` は 10 進数
+- **JSON ライタは CLI の中に置く**（`src/core/json_writer.hpp` は使わない）。CLI は公開ヘッダだけを見る
+  約束（`shashoku::shashoku` の PUBLIC な include は `include/` だけ）で、内部ヘッダを見に行くと
+  `tests/api/public_header_check.cpp` が守っている境界が崩れる。必要なのは `"` `\` と制御文字の
+  エスケープだけ（非 ASCII は UTF-8 のバイト列のまま出す）
+- **入出力の失敗（入力を読めない・出力を書けない）は診断ではない**ので、`--diagnostics json` でも
+  `error: …` を stderr に出し、JSON は出さない。PNG の書き出しは JSON を出す前に行う
+  （書けなかったのに `"ok": true` を出さないため）
+- **失敗時に出力ファイルを触らない**のは、`render()` が成功してから `-o` を開くことで満たす
+  （`--strict` で失敗したときも既存のファイルはそのまま）。`tools/shashoku/cli_test.cmake` の
+  `strict` / `content_overflow` ケースが、既存ファイルの中身が変わらないことと新しいファイルが
+  作られないことの両方を見る
 
 **CLI 層だけの機能**（A38 / A39。ライブラリには一切漏らさない）:
 

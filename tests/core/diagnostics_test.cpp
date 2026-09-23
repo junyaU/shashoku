@@ -136,28 +136,43 @@ TEST(Diagnostics, WarningsSortByOffsetThenKindThenCodepoint) {
 // into_failure
 // ---------------------------------------------------------------------------
 
-TEST(Diagnostics, IntoFailureMovesTheSortedDiagnostics) {
+TEST(Diagnostics, IntoFailureSortsAndMovesTheDiagnostics) {
   Diagnostics diagnostics{100};
   diagnostics.add_error(error_at(ErrorKind::CssParse, "second", at(20)));
   diagnostics.add_error(error_at(ErrorKind::CssParse, "first", at(10)));
   diagnostics.add_warning(warning_at(WarningKind::MissingGlyph, "tofu", U'A', at(30)));
-  diagnostics.sort();
 
+  // sort() を呼んでいなくても、into_failure() が同じ規則で整列する。
   const RenderFailure failure = std::move(diagnostics).into_failure();
   EXPECT_EQ(messages(failure.errors), (std::vector<std::string>{"first", "second"}));
   EXPECT_EQ(details(failure.warnings), (std::vector<std::string>{"tofu"}));
   EXPECT_FALSE(failure.truncated);
 }
 
-// extra（解析を止めた致命エラー）は先に置く。
-TEST(Diagnostics, IntoFailurePutsExtraFirst) {
+// extra（解析を止めた致命エラーなど）は、集めた列と合わせてから位置の昇順に並べ直す。
+// 致命エラーは普通いちばん後ろの位置にあるので、先頭には来ない。
+TEST(Diagnostics, IntoFailureSortsExtraTogetherWithTheCollectedOnes) {
   Diagnostics diagnostics{100};
-  diagnostics.add_error(error_at(ErrorKind::CssParse, "collected", at(10)));
+  diagnostics.add_error(error_at(ErrorKind::CssParse, "collected-20", at(20)));
+  diagnostics.add_error(error_at(ErrorKind::CssParse, "collected-10", at(10)));
   diagnostics.sort();
 
   const RenderFailure failure =
-      std::move(diagnostics).into_failure({error_at(ErrorKind::HtmlParse, "fatal", at(99))});
-  EXPECT_EQ(messages(failure.errors), (std::vector<std::string>{"fatal", "collected"}));
+      std::move(diagnostics).into_failure({error_at(ErrorKind::HtmlParse, "fatal-15", at(15))});
+  EXPECT_EQ(messages(failure.errors),
+            (std::vector<std::string>{"collected-10", "fatal-15", "collected-20"}));
+}
+
+// 位置を持たない extra（NoFonts など）は末尾に来る。
+TEST(Diagnostics, IntoFailurePutsAnExtraWithoutLocationLast) {
+  Diagnostics diagnostics{100};
+  diagnostics.add_error(error_at(ErrorKind::CssParse, "collected-10", at(10)));
+  diagnostics.sort();
+
+  const RenderFailure failure =
+      std::move(diagnostics).into_failure({error_at(ErrorKind::NoFonts, "FontSet is empty")});
+  EXPECT_EQ(messages(failure.errors),
+            (std::vector<std::string>{"collected-10", "FontSet is empty"}));
 }
 
 // 何も集めていないときは「その 1 件だけ」の失敗になる（いまの api の経路）。

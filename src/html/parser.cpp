@@ -38,6 +38,12 @@ constexpr std::array<std::string_view, 15> kSupportedTags{"br", "div", "h1",   "
                                                           "h4", "h5",  "h6",   "img",  "p",
                                                           "rp", "rt",  "ruby", "span", "style"};
 constexpr std::array<std::string_view, 2> kVoidTags{"br", "img"};
+// HTML の空要素のうち shashoku が対応していないもの（A-new）。対応外の要素は透過にするが、
+// 空要素には終了タグが無いので、開いている要素のスタックに積むと直後の `</head>` が
+// 入れ子の誤りになってしまう。辞書順（contains は線形探索なので順序は速度に効かない）。
+constexpr std::array<std::string_view, 12> kUnsupportedVoidTags{"area",  "base",   "col",   "embed",
+                                                                "hr",    "input",  "link",  "meta",
+                                                                "param", "source", "track", "wbr"};
 constexpr std::array<std::string_view, 3> kCommonAttributes{"class", "id", "style"};
 constexpr std::array<std::string_view, 7> kImgAttributes{"alt", "class", "height", "id",
                                                          "src", "style", "width"};
@@ -75,6 +81,8 @@ bool contains(std::span<const std::string_view> items, std::string_view value) {
 bool is_supported_tag(std::string_view tag) { return contains(kSupportedTags, tag); }
 
 bool is_void_tag(std::string_view tag) { return contains(kVoidTags, tag); }
+
+bool is_unsupported_void_tag(std::string_view tag) { return contains(kUnsupportedVoidTags, tag); }
 
 std::span<const std::string_view> allowed_attributes(std::string_view tag) {
   if (tag == "img") {
@@ -164,6 +172,22 @@ Node make_text(std::string value, const SourceLocation& location) {
   return node;
 }
 
+// 集めて続行する診断（A46）。fail() と同じ形の RenderError を作る。
+Error make_error(ErrorKind kind, std::string message, const SourceLocation& location) {
+  return Error{.kind = kind,
+               .message = std::move(message),
+               .location = location,
+               .hint = {},
+               .warning = std::nullopt};
+}
+
+// 開いている要素 1 つ。対応外のタグは**透過**（transparent）として積む: 終了タグの対応は
+// 取るが、木には残さず、子は親の子になる（A46 / A-new）。
+struct OpenElement {
+  Node node;
+  bool transparent = false;
+};
+
 // 開始タグの `>` までを読んだ結果。
 struct StartTagTail {
   std::vector<Attribute> attrs;
@@ -174,8 +198,8 @@ struct StartTagTail {
 // ASCII の区切り文字だけを見て進む（多バイト列のバイトはすべて 0x80 以上なので衝突しない）。
 class Parser {
  public:
-  Parser(std::string_view source, std::size_t max_nesting_depth)
-      : src_(source), max_nesting_depth_(max_nesting_depth) {}
+  Parser(std::string_view source, Diagnostics& diagnostics, std::size_t max_nesting_depth)
+      : src_(source), diagnostics_(&diagnostics), max_nesting_depth_(max_nesting_depth) {}
 
   Result<Node> run();
 
@@ -215,7 +239,9 @@ class Parser {
   Result<void> skip_comment();
   Result<void> skip_doctype();
   Result<void> parse_start_tag();
-  Result<void> open_element(Node element, const SourceLocation& start);
+  Result<void> open_element(Node element, const SourceLocation& start, bool transparent);
+  void close_top();
+  [[nodiscard]] bool has_open_element(std::string_view tag) const;
   Result<StartTagTail> parse_attributes(std::string_view tag, const SourceLocation& start);
   Result<void> parse_attribute(std::string_view tag, std::vector<Attribute>& attrs);
   Result<std::string> read_attribute_value(std::string_view tag, std::string_view name);
@@ -226,6 +252,9 @@ class Parser {
   [[nodiscard]] bool matches_raw_text_end(std::size_t index) const;
 
   std::string_view src_;
+  // 参照メンバにすると cppcoreguidelines-avoid-const-or-ref-data-members に掛かるので生ポインタ。
+  // 構築時に必ず非 null で、Parser は呼び出しの間だけ生きる。
+  Diagnostics* diagnostics_ = nullptr;
   std::size_t max_nesting_depth_ = kMaxNestingDepth;
   std::size_t pos_ = 0;
   std::uint32_t line_ = 1;
@@ -234,7 +263,7 @@ class Parser {
 
   std::string text_;  // 未確定のテキスト（文字参照は解決済み）
   std::optional<SourceLocation> text_start_;  // テキスト実行の先頭
-  std::vector<Node> open_;                    // open_[0] は合成ルート
+  std::vector<OpenElement> open_;             // open_[0] は合成ルート
 };
 
 void Parser::advance() {
@@ -457,7 +486,7 @@ void Parser::flush_text() {
   Node node = make_text(std::move(text_), *text_start_);
   text_.clear();
   text_start_.reset();
-  open_.back().children.push_back(std::move(node));
+  open_.back().node.children.push_back(std::move(node));
 }
 
 Result<void> Parser::parse_markup() {
@@ -513,18 +542,20 @@ Result<void> Parser::parse_start_tag() {
   const SourceLocation start = here();
   advance();  // `<`
   const std::string tag = read_name();
-  if (!is_supported_tag(tag)) {
-    return fail(
+  const bool supported = is_supported_tag(tag);
+  if (!supported) {
+    // A46: 集めて続行する。要素は透過にして、中身の問題も同じ 1 回で報告する
+    diagnostics_->add_error(make_error(
         ErrorKind::UnsupportedTag,
         std::format("`<{}>` is not supported (supported tags: {})", tag, join(kSupportedTags)),
-        start);
+        start));
   }
 
   Result<StartTagTail> tail = parse_attributes(tag, start);
   if (!tail) {
     return std::unexpected(std::move(tail).error());
   }
-  if (tail->self_closing && !is_void_tag(tag)) {
+  if (supported && tail->self_closing && !is_void_tag(tag)) {
     return fail(ErrorKind::HtmlParse,
                 std::format("`<{}/>` is not allowed: only {} are void elements; close `<{}>` with "
                             "`</{}>`",
@@ -532,28 +563,65 @@ Result<void> Parser::parse_start_tag() {
                 start);
   }
 
-  Node element = make_element(tag, std::move(tail->attrs), start);
   flush_text();
+  if (!supported) {
+    // 透過（A46）: 開始タグを無いものとして読む。空要素（`<meta>` など）と `/>` はその場で
+    // 終わり、それ以外は終了タグの対応を取るためにスタックへ積む（木には残さない）。
+    if (is_unsupported_void_tag(tag) || tail->self_closing) {
+      return {};
+    }
+    return open_element(make_element(tag, {}, start), start, /*transparent=*/true);
+  }
+
+  Node element = make_element(tag, std::move(tail->attrs), start);
   if (is_void_tag(tag)) {
-    open_.back().children.push_back(std::move(element));
+    open_.back().node.children.push_back(std::move(element));
     return {};
   }
   if (tag == kRawTextTag) {
     return parse_raw_text(std::move(element), start);
   }
-  return open_element(std::move(element), start);
+  return open_element(std::move(element), start, /*transparent=*/false);
 }
 
-Result<void> Parser::open_element(Node element, const SourceLocation& start) {
+Result<void> Parser::open_element(Node element, const SourceLocation& start, bool transparent) {
   // open_ は合成ルートを含むので、push 後の入れ子の深さは open_.size() になる。
+  // 透過した要素も数える（木の深さより厳しくなるが、対応外のタグを並べただけの入力で
+  // 解析器のメモリが伸びないようにするため。A-new）。
   if (open_.size() > max_nesting_depth_) {
     return fail(ErrorKind::LimitExceeded,
                 std::format("elements are nested too deeply (the maximum is {}): `<{}>`",
                             max_nesting_depth_, element.tag),
                 start);
   }
-  open_.push_back(std::move(element));
+  open_.push_back(OpenElement{.node = std::move(element), .transparent = transparent});
   return {};
+}
+
+// 開いている要素を 1 つ閉じる。透過した要素は木に残さず、その子を親の子として引き取る。
+void Parser::close_top() {
+  flush_text();
+  OpenElement closed = std::move(open_.back());
+  open_.pop_back();
+  std::vector<Node>& siblings = open_.back().node.children;
+  if (!closed.transparent) {
+    siblings.push_back(std::move(closed.node));
+    return;
+  }
+  for (Node& child : closed.node.children) {
+    siblings.push_back(std::move(child));
+  }
+}
+
+// 合成ルートを除いて、その名前の要素が開いているか（終了タグが「入れ子の誤り」か
+// 「対応する開始タグが無い」かを分けるため）。
+bool Parser::has_open_element(std::string_view tag) const {
+  for (std::size_t i = 1; i < open_.size(); ++i) {
+    if (open_[i].node.tag == tag) {
+      return true;
+    }
+  }
+  return false;
 }
 
 Result<StartTagTail> Parser::parse_attributes(std::string_view tag, const SourceLocation& start) {
@@ -607,18 +675,23 @@ Result<void> Parser::parse_attribute(std::string_view tag, std::vector<Attribute
                             describe_char_at(pos_), tag),
                 start);
   }
-  if (!contains(allowed_attributes(tag), name)) {
-    return fail(ErrorKind::UnsupportedAttribute,
-                std::format("`{}` is not supported on `<{}>` (supported attributes: {})", name, tag,
-                            join(allowed_attributes(tag))),
-                start);
-  }
-  for (const Attribute& existing : attrs) {
-    if (existing.name == name) {
-      return fail(ErrorKind::HtmlParse,
-                  std::format("duplicate attribute `{}` on `<{}>` (first given at {}:{})", name,
-                              tag, existing.location.line, existing.location.column),
-                  start);
+  const bool supported = contains(allowed_attributes(tag), name);
+  if (!supported) {
+    // A46: 集めて続行する。属性は捨てて要素は残す（値は読み切ってから捨てる。読まないと
+    // `=` の右側を構文として読み違える）
+    diagnostics_->add_error(
+        make_error(ErrorKind::UnsupportedAttribute,
+                   std::format("`{}` is not supported on `<{}>` (supported attributes: {})", name,
+                               tag, join(allowed_attributes(tag))),
+                   start));
+  } else {
+    for (const Attribute& existing : attrs) {
+      if (existing.name == name) {
+        return fail(ErrorKind::HtmlParse,
+                    std::format("duplicate attribute `{}` on `<{}>` (first given at {}:{})", name,
+                                tag, existing.location.line, existing.location.column),
+                    start);
+      }
     }
   }
 
@@ -633,6 +706,9 @@ Result<void> Parser::parse_attribute(std::string_view tag, std::vector<Attribute
       return std::unexpected(std::move(parsed).error());
     }
     value = std::move(*parsed);
+  }
+  if (!supported) {
+    return {};
   }
   attrs.push_back(Attribute{.name = std::move(name), .value = std::move(value), .location = start});
   return {};
@@ -712,13 +788,8 @@ Result<void> Parser::parse_end_tag() {
                 std::format("`</` must be followed by a tag name, got {}", describe_char_at(pos_)),
                 start);
   }
-  if (!is_supported_tag(tag)) {
-    return fail(
-        ErrorKind::UnsupportedTag,
-        std::format("`</{}>` is not supported (supported tags: {})", tag, join(kSupportedTags)),
-        start);
-  }
-  if (is_void_tag(tag)) {
+  const bool supported = is_supported_tag(tag);
+  if (supported && is_void_tag(tag)) {
     return fail(
         ErrorKind::HtmlParse,
         std::format("`</{}>` is not allowed: `{}` is a void element and has no end tag", tag, tag),
@@ -739,21 +810,40 @@ Result<void> Parser::parse_end_tag() {
   }
   advance();
 
+  const auto mismatch = [&]() {
+    const SourceLocation opened = open_.back().node.location;
+    return fail(ErrorKind::HtmlParse,
+                std::format("`</{}>` does not match the open element `<{}>` (opened at {}:{})", tag,
+                            open_.back().node.tag, opened.line, opened.column),
+                start);
+  };
+
+  if (!supported) {
+    // 透過した要素の終了（A46）。開始タグで報告済みなので、ここでは何も足さずに消費する
+    if (open_.size() > 1 && open_.back().transparent && open_.back().node.tag == tag) {
+      close_top();
+      return {};
+    }
+    // 対応する開始タグはあるのに合わない = 入れ子が壊れている。安全に読み続けられない
+    if (has_open_element(tag)) {
+      return mismatch();
+    }
+    // 対応する開始タグの無い終了タグ（`</table>` 単独）。対応外なので集めて読み飛ばす
+    diagnostics_->add_error(make_error(
+        ErrorKind::UnsupportedTag,
+        std::format("`</{}>` is not supported (supported tags: {})", tag, join(kSupportedTags)),
+        start));
+    return {};
+  }
+
   if (open_.size() <= 1) {
     return fail(ErrorKind::HtmlParse,
                 std::format("unexpected end tag `</{}>`: no element is open", tag), start);
   }
-  if (open_.back().tag != tag) {
-    const SourceLocation opened = open_.back().location;
-    return fail(ErrorKind::HtmlParse,
-                std::format("`</{}>` does not match the open element `<{}>` (opened at {}:{})", tag,
-                            open_.back().tag, opened.line, opened.column),
-                start);
+  if (open_.back().node.tag != tag) {
+    return mismatch();
   }
-  flush_text();
-  Node closed = std::move(open_.back());
-  open_.pop_back();
-  open_.back().children.push_back(std::move(closed));
+  close_top();
   return {};
 }
 
@@ -797,7 +887,7 @@ Result<void> Parser::parse_raw_text(Node element, const SourceLocation& start) {
   if (!raw.empty()) {
     element.children.push_back(make_text(std::string{raw}, text_start));
   }
-  open_.back().children.push_back(std::move(element));
+  open_.back().node.children.push_back(std::move(element));
   return {};
 }
 
@@ -805,7 +895,8 @@ Result<Node> Parser::run() {
   if (Result<void> checked = check_input(); !checked) {
     return std::unexpected(std::move(checked).error());
   }
-  open_.push_back(make_element(std::string{kRootTag}, {}, SourceLocation{}));
+  open_.push_back(OpenElement{.node = make_element(std::string{kRootTag}, {}, SourceLocation{}),
+                              .transparent = false});
 
   while (!eof()) {
     if (peek() == '<') {
@@ -829,14 +920,14 @@ Result<Node> Parser::run() {
   }
 
   if (open_.size() > 1) {
-    const Node& unclosed = open_.back();
+    const Node& unclosed = open_.back().node;
     return fail(ErrorKind::HtmlParse,
                 std::format("unclosed element `<{}>`: expected `</{}>` before the end of the input",
                             unclosed.tag, unclosed.tag),
                 unclosed.location);
   }
   flush_text();
-  return std::move(open_.front());
+  return std::move(open_.front().node);
 }
 
 void write_location(JsonWriter& writer, const SourceLocation& location) {
@@ -875,10 +966,8 @@ void begin_node(JsonWriter& writer, const Node& node) {
 
 }  // namespace
 
-Result<Node> parse(std::string_view source, [[maybe_unused]] Diagnostics& diagnostics,
+Result<Node> parse(std::string_view source, Diagnostics& diagnostics,
                    std::size_t max_nesting_depth) {
-  // diagnostics はまだ使わない（A46 の「集めて続行」は W1 で入れる）。引数だけ先に通して、
-  // 呼び出し側の契約を確定させてある。
   // SourceLocation::offset は 32 bit。黙って切り詰めて誤った位置を報告しない。
   // これは実装の都合による絶対上限で、RenderLimits では緩められない。
   if (source.size() > kMaxSourceBytes) {
@@ -887,7 +976,7 @@ Result<Node> parse(std::string_view source, [[maybe_unused]] Diagnostics& diagno
                             "{} bytes (4 GiB; source positions are 32-bit)",
                             source.size(), kMaxSourceBytes));
   }
-  Parser parser{source, max_nesting_depth};
+  Parser parser{source, diagnostics, max_nesting_depth};
   return parser.run();
 }
 

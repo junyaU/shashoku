@@ -416,11 +416,15 @@ class ResourceSource {
 // ---------------------------------------------------------------------------
 
 // 段が返した 1 件の失敗を、①② で集めた診断と合わせて RenderFailure にする。
-// いまは html / style が診断に何も足さない（集めて続行するのは W1 / W2）ので、
-// 結果は必ず errors が 1 件・warnings が空・truncated が false の失敗になる。
 std::unexpected<RenderFailure> to_failure(Diagnostics& diagnostics, RenderError error) {
   diagnostics.sort();
   return std::unexpected(std::move(diagnostics).into_failure({std::move(error)}));
+}
+
+// ①② が集めた診断だけで失敗にする（致命的な失敗は無いが、対応外のものが 1 件以上ある）。
+std::unexpected<RenderFailure> to_failure(Diagnostics& diagnostics) {
+  diagnostics.sort();
+  return std::unexpected(std::move(diagnostics).into_failure());
 }
 
 // ---------------------------------------------------------------------------
@@ -532,6 +536,11 @@ std::expected<RenderResult, RenderFailure> render_impl(std::string_view html,
   if (const Result<void> ok = check_computed_limits(*styled, options.scale, options.limits); !ok) {
     return to_failure(diagnostics, ok.error());
   }
+  // ①② が集めた問題が 1 件でもあれば、layout に進まずまとめて返す（A46 / §3.10）。
+  // ② が集め始めるまでは、ここに来るのは html の UnsupportedTag / UnsupportedAttribute だけ。
+  if (diagnostics.has_errors()) {
+    return to_failure(diagnostics);
+  }
   OwnedResources owned;
   const Result<ResourceRefs> resources = source.acquire(owned, options.limits);
   if (!resources) {
@@ -612,6 +621,11 @@ std::expected<std::string, RenderFailure> dump_impl(std::string_view html,
   }
   if (const Result<void> ok = check_computed_limits(*styled, options.scale, options.limits); !ok) {
     return to_failure(diagnostics, ok.error());
+  }
+  // ①② が集めた問題が 1 件でもあれば、layout に進まずまとめて返す（A46 / §3.10）。
+  // ② が集め始めるまでは、ここに来るのは html の UnsupportedTag / UnsupportedAttribute だけ。
+  if (diagnostics.has_errors()) {
+    return to_failure(diagnostics);
   }
   if (stage == DumpStage::Style) {
     return style::dump_json(*styled);

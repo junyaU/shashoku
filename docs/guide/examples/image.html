@@ -1,0 +1,17 @@
+<!-- 画像。PNG だけ。src には --image で渡した「名前」をそのまま書く（パスでも URL でもない）。
+     <img> は inline のまま width / height / border-radius を取れる唯一の要素で、
+     border-radius は中身をクリップする（真円のアイコンになる）。
+     shashoku docs/guide/examples/image.html --image icon=examples/icon.png -o image.png --width 560 -->
+<style>
+  .head { display: flex; align-items: center; gap: 16px; padding: 20px; background: #ffffff; }
+  .icon { width: 72px; height: 72px; border-radius: 36px; }
+  .name { font-size: 20px; font-weight: bold; color: #1b2733; }
+  .sub  { font-size: 14px; color: #6b7a90; }
+</style>
+<div class="head">
+  <img class="icon" src="icon" alt="アイコン">
+  <div>
+    <div class="name">shashoku（写植）</div>
+    <div class="sub">ブラウザ不要の HTML→PNG エンジン</div>
+  </div>
+</div>

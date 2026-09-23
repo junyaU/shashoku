@@ -1,0 +1,13 @@
+<!-- ルビ。<ruby> の中に親文字と <rt> を並べる。<rt> ごとに 1 組になるので、
+     モノルビにしたければ 1 文字ずつ <rt> を置く。
+     ルビのある行は行ボックスが自動で広がるので上の行と重ならないが、詰まって見える。
+     行送りは line-height: 1.8 前後を目安にする（rt の大きさは親の 0.5em）。
+     shashoku docs/guide/examples/ruby.html -o ruby.png --width 560 -->
+<style>
+  .doc  { padding: 24px; background: #ffffff; font-size: 20px; line-height: 1.8; color: #1b2733; }
+  .mono { margin: 12px 0 0 0; font-size: 20px; line-height: 1.8; }
+</style>
+<div class="doc">
+  <ruby>冪等性<rt>べきとうせい</rt></ruby>とは、同じ操作を何回行っても結果が変わらない性質のことをいいます。
+  <p class="mono">モノルビ: <ruby>東<rt>とう</rt>京<rt>きょう</rt></ruby></p>
+</div>

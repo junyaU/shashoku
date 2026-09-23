@@ -1,0 +1,19 @@
+<!-- 表（flex の行）。<table> は対応外。罫は 1px の div で引く（border-top が無いため）。
+     外枠に border-radius は付けない: 角丸は中身をクリップしないので、
+     見出し行の背景が角からはみ出して見える。
+     shashoku docs/guide/examples/table.html -o table.png --width 640 -->
+<style>
+  .tbl  { border: 1px solid #ccd3dd; background: #ffffff; font-size: 15px; }
+  .tr   { display: flex; }
+  .th   { background: #2f3b52; color: #ffffff; font-weight: bold; }
+  .odd  { background: #f5f7fb; }
+  .td   { flex: 1 1 0; padding: 10px 12px; color: #1b2733; line-height: 1.7; }
+  .rule { height: 1px; background: #e3e8ef; }
+</style>
+<div class="tbl">
+  <div class="tr th"><div class="td">項目</div><div class="td">既定</div><div class="td">備考</div></div>
+  <div class="rule"></div>
+  <div class="tr"><div class="td">幅</div><div class="td">1200px</div><div class="td">--width で変える</div></div>
+  <div class="rule"></div>
+  <div class="tr odd"><div class="td">高さ</div><div class="td">内容に追従</div><div class="td">--height で固定</div></div>
+</div>

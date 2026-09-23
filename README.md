@@ -211,6 +211,8 @@ OOM killer にプロセスごと殺されることがあります。**メモリ�
 
 対応表にないタグ・属性・プロパティ・値は、**黙って無視せずエラーになります**（fail loudly）。
 
+**HTML を書く（AI に書かせる）ときは [docs/guide/writing-html-for-shashoku.md](docs/guide/writing-html-for-shashoku.md)（[English](docs/guide/writing-html-for-shashoku.en.md) / [skill](docs/guide/SKILL.md)）を見てください** — 対応範囲に加えて、定石の最小例・代替表・エラーの直し方があります。
+
 ### タグ
 
 | | |

@@ -48,12 +48,12 @@ struct RenderResult {
 // 信頼できない HTML を受けるときは `opts.limits` で予算を決める（limits.hpp）。既定値でも
 // 事故は止まるが、無制限ではない。OutOfMemory は保証ではなく最後の網であることに注意。
 std::expected<RenderResult, RenderFailure> render(std::string_view html, const FontSet& fonts,
-                                                const RenderOptions& opts = {});
+                                                  const RenderOptions& opts = {});
 
 // 画像つき（ARCHITECTURE.md A12）。`<img src="名前">` は images から引く。
 std::expected<RenderResult, RenderFailure> render(std::string_view html, const FontSet& fonts,
-                                                const ImageSet& images,
-                                                const RenderOptions& opts = {});
+                                                  const ImageSet& images,
+                                                  const RenderOptions& opts = {});
 
 // 用意済みの共有資源を使う（ARCHITECTURE.md A34）。連続生成では `FontSet` / `ImageSet` を
 // 毎回解釈し直す代わりに、`LoadedFonts::prepare()` / `LoadedImages::prepare()` の結果を
@@ -64,11 +64,11 @@ std::expected<RenderResult, RenderFailure> render(std::string_view html, const F
 // ここの `opts.limits` が違っても、両方の検査を通ったものだけが描かれる。
 // ムーブ済みの `LoadedFonts` / `LoadedImages` を渡すと `InvalidOption`。
 std::expected<RenderResult, RenderFailure> render(std::string_view html, const LoadedFonts& fonts,
-                                                const RenderOptions& opts = {});
+                                                  const RenderOptions& opts = {});
 
 std::expected<RenderResult, RenderFailure> render(std::string_view html, const LoadedFonts& fonts,
-                                                const LoadedImages& images,
-                                                const RenderOptions& opts = {});
+                                                  const LoadedImages& images,
+                                                  const RenderOptions& opts = {});
 
 // 中間表現のダンプ（DESIGN.md §3-3）。CLI の --dump-stage に対応する。
 enum class DumpStage : std::uint8_t {
@@ -82,13 +82,13 @@ enum class DumpStage : std::uint8_t {
 // 指定した段までしか実行しない。Dom / Style はフォントを見ないので、
 // 空の FontSet でも成功する（HTML と CSS だけを確かめたいとき用）。
 std::expected<std::string, RenderFailure> dump(std::string_view html, const FontSet& fonts,
-                                             const ImageSet& images, const RenderOptions& opts,
-                                             DumpStage stage);
+                                               const ImageSet& images, const RenderOptions& opts,
+                                               DumpStage stage);
 
 // 用意済みの共有資源を使う dump（A34）。出力は上の dump() と文字単位で同じ。
 std::expected<std::string, RenderFailure> dump(std::string_view html, const LoadedFonts& fonts,
-                                             const LoadedImages& images, const RenderOptions& opts,
-                                             DumpStage stage);
+                                               const LoadedImages& images,
+                                               const RenderOptions& opts, DumpStage stage);
 
 // "box" のようなケバブケースの識別子（CLI の --dump-stage の値と同じ綴り）
 std::string_view to_string(DumpStage stage) noexcept;

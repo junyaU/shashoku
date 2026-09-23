@@ -34,9 +34,9 @@ struct Case {
 
 const std::vector<Case>& cases() {
   static const std::vector<Case> kCases = {
-      {"case01", 900, 0, false},     {"case02", 1000, 0, false},   {"case03", 720, 0, false},
+      {"case01", 900, 0, false},     {"case02", 1000, 0, false},    {"case03", 720, 0, false},
       {"case04", 800, 0, false},     {"case05", 1080, 1080, false}, {"case06", 1200, 630, true},
-      {"case07", 1080, 1080, false}, {"case08", 800, 0, false},    {"case09", 800, 0, false},
+      {"case07", 1080, 1080, false}, {"case08", 800, 0, false},     {"case09", 800, 0, false},
       {"case10", 800, 1200, false},
   };
   return kCases;
@@ -267,8 +267,8 @@ void run_concurrent(int n_threads, int rounds, const std::string& out_path) {
 
   std::ostringstream js;
   js << "{\n  \"mode\": \"concurrent\",\n  \"threads\": " << n_threads
-     << ",\n  \"rounds\": " << rounds << ",\n  \"pages\": " << pages
-     << ",\n  \"wall_s\": " << secs << ",\n  \"pages_per_sec\": " << (pages / secs)
+     << ",\n  \"rounds\": " << rounds << ",\n  \"pages\": " << pages << ",\n  \"wall_s\": " << secs
+     << ",\n  \"pages_per_sec\": " << (pages / secs)
      << ",\n  \"rss_after_prepare_bytes\": " << rss_after_prepare
      << ",\n  \"rss_end_bytes\": " << proc_status_kb("VmRSS")
      << ",\n  \"vmhwm_bytes\": " << proc_status_kb("VmHWM") << "\n}\n";

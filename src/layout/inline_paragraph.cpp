@@ -30,7 +30,7 @@ class ParagraphBuilder {
   void build_atomic_item(std::size_t at);
   // (c'') ルビの掛け（JLREQ 3.3.8）。隣のアイテムを見るので、アイテムを全部作ってから決める。
   void resolve_ruby_overhang();
-  // (c') 空のインラインボックスを行に割り当てる（#23）。行の幅に依らないのでここで決める。
+  // (c') 空のインラインボックスを行に割り当てる（#23 / #30）。行の幅に依らないのでここで決める。
   void resolve_empty_boxes();
   [[nodiscard]] Result<std::size_t> build_text_items(std::size_t begin);
   // [begin, end) を 1 回でシェーピングする。返すのは runs の添字。
@@ -300,26 +300,53 @@ void ParagraphBuilder::resolve_ruby_overhang() {
 }
 
 // (c') 空のインラインボックス（文字を 1 つも持たない <span> など）が参加する行を決める。
-// 規則は 1 つだけ（issue #23。CSS 2.1 §10.8 / §10.8.1 と Chrome の実測に一致する）:
-//   * `char_pos` 以降の最初のアイテムの行
-//   * 無ければ直前（= 最後）のアイテムの行
+// 規則（issue #23 / #30。CSS 2.1 §10.8 / §10.8.1 と Chrome の実測に一致する）:
+//   * `char_pos` を**範囲に含む**アイテムがあれば、そのアイテムの行（#30）。
+//     範囲は [char_begin, char_end) で、**ルビ組だけは両端を含む**（下の注）
+//   * 無ければ `char_pos` 以降の最初のアイテムの行
+//   * それも無ければ直前（= 最後）のアイテムの行
 //   * ただし最後のアイテムが強制改行なら**どの行にも参加しない**
 //     （`A<br><span></span>` の空 span は次の行を作らないので、参加する行が無い）
+//
+// 1 つ目が要るのは、ルビ組が**複数の文字を 1 アイテム**にまとめるから（A28）。
+// #23 の規則（`char_pos` 以降の最初のアイテム）だけだと、組の内部の位置は組を飛び越えて
+// 次のアイテムに付き、ルビの行ではなく**後続の行**が高くなっていた（issue #30）。
+// 通常のテキストは 1 クラスタ = 1 アイテムなので、範囲で探しても #23 と同じ行になる。
+//
+// 注: ルビ組の末尾（`char_pos == char_end`）を組の側に入れるのは、`<ruby>AB<span></span><rt>`
+// （組の内部）と `</ruby><span></span>`（組の直後）が (a) の出力では同じ `char_pos` になり、
+// 区別できないため。組の内部の指定が黙って次の行に効く方が壊れ方として悪いので、
+// 組に寄せた（A42 の追記）。
+//
 // ここで決めるのは、**行の幅に依らない**から（= メモした準備済み段落で使い回せる。A29）。
-// アイテムの char_begin は狭義単調増加なので二分探索できる。
+// アイテムの char_begin は狭義単調増加なので二分探索でき、`char_pos` を範囲に含みうるのは
+// 「char_begin が char_pos 以下の最後の 2 つ」だけなので、後退は定数回で済む。
 void ParagraphBuilder::resolve_empty_boxes() {
+  const std::vector<ItemSource>& sources = out_->sources;
   for (EmptyInlineBox& box : out_->empty_boxes) {
-    const auto found =
-        std::ranges::lower_bound(out_->sources, box.char_pos, {}, &ItemSource::char_begin);
-    if (found != out_->sources.end()) {
-      box.item = static_cast<std::size_t>(found - out_->sources.begin());
-      continue;
+    // char_begin が char_pos より大きい最初のアイテム（= 範囲の候補の 1 つ後ろ）
+    const auto above = std::ranges::upper_bound(sources, box.char_pos, {}, &ItemSource::char_begin);
+    const std::size_t at = static_cast<std::size_t>(above - sources.begin());
+    box.item = kNone;
+    // ルビ組は両端を含む範囲で先に見る（組の末尾は次のアイテムの先頭と同じ位置になる）
+    for (std::size_t back = 1; back <= 2 && back <= at; ++back) {
+      const ItemSource& source = sources[at - back];
+      if (source.ruby != kNone && box.char_pos >= source.char_begin &&
+          box.char_pos <= source.char_end) {
+        box.item = at - back;
+        break;
+      }
     }
-    if (out_->items.empty() || out_->items.back().kind == linebreak::ItemKind::ForcedBreak) {
-      box.item = kNone;
-      continue;
+    if (box.item == kNone && at > 0 && box.char_pos < sources[at - 1].char_end) {
+      box.item = at - 1;  // ルビ組でないアイテムは [char_begin, char_end)
     }
-    box.item = out_->items.size() - 1;
+    if (box.item == kNone && above != sources.end()) {
+      box.item = at;  // char_pos 以降の最初のアイテム（#23）
+    }
+    if (box.item == kNone && !out_->items.empty() &&
+        out_->items.back().kind != linebreak::ItemKind::ForcedBreak) {
+      box.item = out_->items.size() - 1;  // 直前（= 最後）のアイテム
+    }
   }
 }
 

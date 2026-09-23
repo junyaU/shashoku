@@ -96,6 +96,40 @@ TEST(IntegrationEmptyInline, VerticalEmptyInlineBoxContributesToLineHeight) {
       std::vector<std::string>{"115.84375"});
 }
 
+// ---- issue #30: ルビ組の周りの空 span ---------------------------------------------------
+// ルビ組は行分割器から見て Atomic 1 個（A28）で、複数の文字を 1 アイテムにまとめる。
+// #23 の「char_pos 以降の最初のアイテム」だけで探すと、組の**内部**の箱が組を飛び越えて
+// 後続の行に付いていた（修正前: 組の行 34.75 / C の行 115.84375）。
+// 幅 22px: 組（親文字 AB の送り 20.25）で 1 行、C で 1 行になる。
+TEST(IntegrationEmptyInline, EmptyInlineBoxAroundRubyJoinsTheRubyLine) {
+  const std::vector<std::string> expected = {"115.84375", "23.171875"};
+  constexpr std::string_view kBefore =
+      R"(<div style="font-size:16px;width:22px"><ruby><span style="font-size:80px"></span>AB<rt>ab</rt></ruby>C</div>)";
+  constexpr std::string_view kMiddle =
+      R"(<div style="font-size:16px;width:22px"><ruby>A<span style="font-size:80px"></span>B<rt>ab</rt></ruby>C</div>)";
+  constexpr std::string_view kAfterBase =
+      R"(<div style="font-size:16px;width:22px"><ruby>AB<span style="font-size:80px"></span><rt>ab</rt></ruby>C</div>)";
+  constexpr std::string_view kAfterRuby =
+      R"(<div style="font-size:16px;width:22px"><ruby>AB<rt>ab</rt></ruby><span style="font-size:80px"></span>C</div>)";
+  EXPECT_EQ(line_heights_of(kBefore), expected);  // 親文字の直前（もともと正しかった）
+  EXPECT_EQ(line_heights_of(kMiddle), expected);     // 親文字の間（issue #30 の再現）
+  EXPECT_EQ(line_heights_of(kAfterBase), expected);  // 親文字の直後（<rt> の直前）
+  // 組の直後（</ruby> の外）。(a) の出力では「組の内部の末尾」と char_pos が同じで
+  // 区別できないので、組の側に寄せてある（A42 の追記）
+  EXPECT_EQ(line_heights_of(kAfterRuby), expected);
+}
+
+TEST(IntegrationEmptyInline, VerticalEmptyInlineBoxInsideRubyJoinsTheRubyLine) {
+  RenderOptions options = options_for(400);
+  options.viewport_height = 400;
+  // 縦書きは行の長さ（インライン軸）が高さ。修正前は 27.585938 / 115.84375
+  EXPECT_EQ(
+      line_heights_of(
+          R"(<div style="writing-mode:vertical-rl;font-size:16px;height:22px"><ruby>あ<span style="font-size:80px"></span>い<rt>ab</rt></ruby>う</div>)",
+          options),
+      (std::vector<std::string>{"115.84375", "23.171875"}));
+}
+
 // 下 3 つは CSS 2.1 §10.8.1 と Chrome に一致していて、**直したあとも変わってはいけない**。
 TEST(IntegrationEmptyInline, CasesThatMustNotChange) {
   // 空 span だけの段落は行ボックスを作らない（高さ 0）

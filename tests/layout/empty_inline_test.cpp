@@ -262,6 +262,123 @@ TEST(LayoutEmptyInline, EmptyBoxInsideRubyBase) {
   }
 }
 
+// issue #30: 組のうしろにアイテムがあると、組の**内部**の空 span が組を飛び越えて
+// 後続の行に付いていた（組は Atomic 1 個なので「char_pos 以降の最初のアイテム」が
+// 組の次のアイテムになる）。組の行が高くなり、次の行は元の高さのままであること。
+TEST(LayoutEmptyInline, EmptyBoxInsideRubyBaseDoesNotRaiseTheFollowingLine) {
+  FakeMeasurer measurer;
+  // 幅 32 = 全角 2 文字。組（送り 32）で 1 行、「う」で 1 行になる
+  const auto root = build({block(
+      {ruby({text("あ"), inline_box({}, font_size(80)), text("い"), rt("かな")}), text("う")})});
+  const auto tree = run_layout(root, 32, measurer);
+  ASSERT_TRUE(tree.has_value());
+  expect_line_heights(*tree, {fake_line_height(80), fake_line_height(16)});
+}
+
+// 組み合わせ（issue #30 の受け入れ条件）:
+// {横書き, 縦書き} × {空 span の位置: 親文字の直前 / 間 / 直後 / 組の直後} ×
+// {組が行頭 / 行中 / 改行の直後}。どこに置いても高くなるのは**組の行だけ**。
+// 「<rt> の内部」は (a) が `<rt> may only contain text` で止めるので、ここには来ない
+// （下の EmptyBoxInsideRtIsRejected。LayoutRuby.ElementInsideRtIsRejected と同じ規則）。
+TEST(LayoutEmptyInline, EmptyBoxAroundRubyJoinsTheRubyLine) {
+  // <ruby> とその直後を作る（空 span を置く場所ごと）。親文字は「あい」で送り 32。
+  struct Spot {
+    std::string name;
+    std::function<std::vector<Tree>(const StyleFn&)> children;
+  };
+  const std::vector<Spot> spots = {
+      {"親文字の直前",
+       [](const StyleFn& style) {
+         return std::vector<Tree>{ruby({inline_box({}, style), text("あい"), rt("かな")})};
+       }},
+      {"親文字の間",
+       [](const StyleFn& style) {
+         return std::vector<Tree>{
+             ruby({text("あ"), inline_box({}, style), text("い"), rt("かな")})};
+       }},
+      {"親文字の直後（<rt> の直前）",
+       [](const StyleFn& style) {
+         return std::vector<Tree>{ruby({text("あい"), inline_box({}, style), rt("かな")})};
+       }},
+      {"組の直後（</ruby> の外）",
+       [](const StyleFn& style) {
+         return std::vector<Tree>{ruby({text("あい"), rt("かな")}), inline_box({}, style)};
+       }},
+  };
+  // 段落の中での組の位置。ruby_line は組が乗る行の添字。
+  struct Position {
+    std::string name;
+    std::function<std::vector<Tree>(std::vector<Tree>)> children;
+    float inline_size;
+    std::size_t line_count;
+    std::size_t ruby_line;
+  };
+  const std::vector<Position> positions = {
+      // 幅 32 = 組の送りちょうど。「う」は次の行に落ちる
+      {"行頭",
+       [](std::vector<Tree> group) {
+         group.push_back(text("う"));
+         return group;
+       },
+       32, 2, 0},
+      {"行中",
+       [](std::vector<Tree> group) {
+         std::vector<Tree> out = {text("あ")};
+         for (Tree& node : group) {
+           out.push_back(std::move(node));
+         }
+         out.push_back(text("う"));
+         return out;
+       },
+       400, 1, 0},
+      {"改行の直後",
+       [](std::vector<Tree> group) {
+         std::vector<Tree> out = {text("あ"), br()};
+         for (Tree& node : group) {
+           out.push_back(std::move(node));
+         }
+         out.push_back(text("う"));
+         return out;
+       },
+       400, 2, 1},
+  };
+
+  for (const bool vertical : {false, true}) {
+    for (const Spot& spot : spots) {
+      for (const Position& position : positions) {
+        SCOPED_TRACE(std::string(vertical ? "縦書き" : "横書き") + " / " + spot.name + " / " +
+                     position.name);
+        FakeMeasurer measurer;
+        std::vector<Tree> children = position.children(spot.children(font_size(80)));
+        const auto root = vertical ? build_vertical({block(std::move(children))})
+                                   : build({block(std::move(children))});
+        // 縦書きでは行の長さ（インライン軸）はビューポートの高さ
+        const auto tree =
+            vertical ? run_layout(root, vertical_options(400, position.inline_size), measurer)
+                     : run_layout(root, position.inline_size, measurer);
+        ASSERT_TRUE(tree.has_value());
+        std::vector<float> expected(position.line_count, fake_line_height(16));
+        expected[position.ruby_line] = fake_line_height(80);
+        expect_line_heights(*tree, expected);
+      }
+    }
+  }
+}
+
+// <rt> の内部の空 span は**エラー**（`<rt>` はテキストしか持てない。DESIGN.md §3-6 の
+// fail loudly）。空でも例外にしない = 行に参加する余地はない（issue #30 の受け入れ条件の
+// 「<rt> の内部」はここで止まる）。
+TEST(LayoutEmptyInline, EmptyBoxInsideRtIsRejected) {
+  FakeMeasurer measurer;
+  Tree annotation =
+      element("rt", style::Display::Inline, {text("かん"), inline_box({}, font_size(80))});
+  const auto root = build({block({ruby({text("漢"), std::move(annotation)}), text("字")})});
+  const auto tree = run_layout(root, 400, measurer);
+  ASSERT_FALSE(tree.has_value());
+  EXPECT_EQ(tree.error().kind, ErrorKind::UnsupportedLayout);
+  EXPECT_NE(tree.error().message.find("<rt> may only contain text"), std::string::npos);
+}
+
 // 中身が空の <ruby></ruby> は空の span と同じ扱い（issue #23 の「方針」）。
 TEST(LayoutEmptyInline, EmptyRubyElementIsAnEmptyInlineBox) {
   FakeMeasurer measurer;

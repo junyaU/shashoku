@@ -1,0 +1,12 @@
+<!-- 横並び（flex）。子はかならず div にする（span は flex 項目でも inline のまま）。
+     shashoku docs/guide/examples/row.html -o row.png --width 640 -->
+<style>
+  .row  { display: flex; gap: 16px; background: #ffffff; padding: 16px; }
+  .cell { flex: 1 1 0; padding: 12px; background: #f1f4f9; border-radius: 8px;
+          font-size: 15px; line-height: 1.7; color: #1b2733; }
+</style>
+<div class="row">
+  <div class="cell">受け取る<br>HTML とフォント</div>
+  <div class="cell">組む<br>行分割・約物・ルビ</div>
+  <div class="cell">出す<br>PNG のバイト列</div>
+</div>

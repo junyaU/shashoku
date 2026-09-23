@@ -179,6 +179,10 @@ elseif(CASE STREQUAL "strict")
   if(NOT stderr_text MATCHES "warning-as-error")
     message(FATAL_ERROR "stderr に warning-as-error がありません: ${stderr_text}")
   endif()
+  # 位置は 1 行に 1 回だけ（格上げした message から末尾の " at L:C" を落としてある。error.hpp）
+  if(stderr_text MATCHES " at [0-9]+:[0-9]+[^\n]* at [0-9]+:[0-9]+")
+    message(FATAL_ERROR "格上げした診断に位置が二重に出ています: ${stderr_text}")
+  endif()
   # **失敗時は出力ファイルを作らない・上書きしない**（A46）。既存のファイルは無傷。
   file(READ "${output}" after)
   expect_equal("${after}" "${before}" "--strict の失敗で既存の出力が壊れた")

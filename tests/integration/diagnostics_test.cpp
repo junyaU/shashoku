@@ -50,6 +50,16 @@ WarningKind promoted_kind(const RenderError& error) {
   return *error.warning;
 }
 
+// text の中に needle が何回出るか（格上げした診断で位置が二重に出ていないことの検査）。
+std::size_t count_occurrences(std::string_view text, std::string_view needle) {
+  std::size_t count = 0;
+  for (std::size_t pos = text.find(needle); pos != std::string_view::npos;
+       pos = text.find(needle, pos + needle.size())) {
+    ++count;
+  }
+  return count;
+}
+
 std::vector<ErrorKind> kinds_of(const RenderFailure& failure) {
   std::vector<ErrorKind> kinds;
   kinds.reserve(failure.errors.size());
@@ -145,6 +155,18 @@ TEST(Diagnostics, WarningsShareTheSameBudget) {
   EXPECT_TRUE(result->diagnostics_truncated);
 }
 
+// 上限 0 でも**最初の 1 件は必ず記録する**（実効の下限は 1。limits.hpp）。
+// 0 件だと対応外の入力が診断なしで「成功」してしまう（fail loudly の穴）。
+TEST(Diagnostics, ZeroMaxDiagnosticsStillFails) {
+  RenderOptions options = options_for(320);
+  options.limits.max_diagnostics = 0;
+  const auto result = render(kMixedHtml, japanese_fonts(), options);
+  ASSERT_FALSE(result.has_value()) << "対応外の入力なのに成功した（診断が 0 件で握り潰された）";
+  ASSERT_EQ(result.error().errors.size(), 1U) << to_string(result.error());
+  EXPECT_EQ(result.error().errors[0].kind, ErrorKind::UnsupportedTag) << to_string(result.error());
+  EXPECT_TRUE(result.error().truncated);
+}
+
 // 上限に達していなければ立たない（既定の 100 件では普通の入力で立たない）。
 TEST(Diagnostics, NotTruncatedByDefault) {
   const auto result = render(R"(<div>😀</div>)", japanese_fonts(), options_for(320));
@@ -237,10 +259,12 @@ TEST(Diagnostics, StrictPromotesMissingGlyph) {
   ASSERT_EQ(failure.errors.size(), 1U) << to_string(failure);
   EXPECT_EQ(failure.errors[0].kind, ErrorKind::WarningAsError);
   EXPECT_EQ(to_string(failure.errors[0].kind), "warning-as-error");
-  // 元の警告の種類・位置・詳細をそのまま持つ
+  // 元の警告の種類・位置をそのまま持つ。message は警告の detail から末尾の位置を除いたもの
+  // （位置は location にあり、to_string が付け直す。error.hpp の契約）。
   EXPECT_EQ(promoted_kind(failure.errors[0]), WarningKind::MissingGlyph);
-  EXPECT_EQ(failure.errors[0].message, lenient->warnings[0].detail);
   EXPECT_EQ(failure.errors[0].location, lenient->warnings[0].location);
+  EXPECT_TRUE(lenient->warnings[0].detail.starts_with(failure.errors[0].message))
+      << lenient->warnings[0].detail << " / " << failure.errors[0].message;
   // 格上げしたものは errors 側にだけ残す
   EXPECT_TRUE(failure.warnings.empty());
   EXPECT_FALSE(failure.truncated);
@@ -257,6 +281,31 @@ TEST(Diagnostics, StrictPromotesContentOverflow) {
   EXPECT_EQ(result.error().errors[0].kind, ErrorKind::WarningAsError);
   EXPECT_EQ(promoted_kind(result.error().errors[0]), WarningKind::ContentOverflow);
   EXPECT_TRUE(result.error().errors[0].hint.empty());
+}
+
+// 格上げした message に位置を書かない（error.hpp の契約）。位置は `location` にあり、
+// `to_string(RenderError)` が " at L:C" を 1 回だけ付ける。
+// 直す前は "error[warning-as-error] at 1:4: no font has a glyph for U+1F525 at 1:4" と
+// 位置が二重に出ていた（--diagnostics json の message も同じ）。
+TEST(Diagnostics, PromotedMessageDoesNotRepeatTheLocation) {
+  const auto tofu = render(R"(<div>ABC😀</div>)", latin_then_japanese(), strict_options(320));
+  ASSERT_FALSE(tofu.has_value()) << "strict なのに成功した";
+  ASSERT_EQ(tofu.error().errors.size(), 1U) << to_string(tofu.error());
+  EXPECT_EQ(count_occurrences(tofu.error().errors[0].message, " at "), 0U)
+      << tofu.error().errors[0].message;
+  EXPECT_EQ(count_occurrences(to_string(tofu.error().errors[0]), " at "), 1U)
+      << to_string(tofu.error().errors[0]);
+
+  RenderOptions options = strict_options(200);
+  options.viewport_height = 100;
+  const auto overflow =
+      render(R"(<div style="width: 100px; height: 400px">あ</div>)", japanese_fonts(), options);
+  ASSERT_FALSE(overflow.has_value()) << "strict なのに成功した";
+  ASSERT_EQ(overflow.error().errors.size(), 1U) << to_string(overflow.error());
+  EXPECT_EQ(count_occurrences(overflow.error().errors[0].message, " at "), 0U)
+      << overflow.error().errors[0].message;
+  EXPECT_EQ(count_occurrences(to_string(overflow.error().errors[0]), " at "), 1U)
+      << to_string(overflow.error().errors[0]);
 }
 
 // 警告が無ければ strict でも今までどおり成功する（既定と同じ PNG が出る）。

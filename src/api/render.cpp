@@ -432,12 +432,28 @@ std::unexpected<RenderFailure> to_failure(Diagnostics& diagnostics) {
 // 格上げしたものは errors 側にだけ残す（`RenderFailure::warnings` は空）。
 // 並べ替えは into_failure() に任せる: errors の契約（位置 → kind → message）は
 // 警告の並び（位置 → kind → コードポイント → detail）と同じとは限らない。
+// 格上げした `RenderError::message`: 警告の detail から末尾の " at L:C" を落としたもの。
+// 位置は `RenderError::location` にあり、`to_string(RenderError)` が同じ書式で付け直すので、
+// detail をそのまま使うと 1 行に位置が二重に出る（error.hpp の契約）。付けたのは
+// `to_warning()`（位置があるときだけ）なので、同じ書式を組み立てて末尾から外す。
+std::string message_of(const Warning& warning) {
+  if (!warning.location) {
+    return warning.detail;  // 位置が無ければ detail にも付いていない
+  }
+  const std::string suffix =
+      std::format(" at {}:{}", warning.location->line, warning.location->column);
+  if (warning.detail.size() > suffix.size() && warning.detail.ends_with(suffix)) {
+    return warning.detail.substr(0, warning.detail.size() - suffix.size());
+  }
+  return warning.detail;  // 別の書式で作られた detail は触らない
+}
+
 RenderFailure promote_warnings(Diagnostics&& diagnostics) {
   std::vector<RenderError> errors;
   errors.reserve(diagnostics.warnings().size());
   for (const Warning& warning : diagnostics.warnings()) {
     errors.push_back(RenderError{.kind = ErrorKind::WarningAsError,
-                                 .message = warning.detail,
+                                 .message = message_of(warning),
                                  .location = warning.location,
                                  .hint = {},
                                  .warning = warning.kind});

@@ -79,12 +79,32 @@ TEST(Diagnostics, RecordsUpToTheLimitAndThenTruncates) {
   EXPECT_EQ(diagnostics.warnings().size(), 1U);
 }
 
-// 上限 0 は「1 件も記録しない」（無制限ではない。limits.hpp）。
-TEST(Diagnostics, ZeroLimitRecordsNothing) {
+// 上限 0 でも**最初の 1 件は記録する**（実効の下限は 1。limits.hpp / diagnostics.hpp）。
+// 1 件も記録しないと、対応外の入力なのに `has_errors()` が false になり、api が「成功」として
+// PNG を返してしまう（fail loudly の穴。DESIGN.md §3-6）。
+TEST(Diagnostics, ZeroLimitStillRecordsTheFirstEntry) {
   Diagnostics diagnostics{0};
+  EXPECT_TRUE(diagnostics.add_error(error_at(ErrorKind::CssParse, "a")));
+  EXPECT_TRUE(diagnostics.has_errors());
+  EXPECT_FALSE(diagnostics.truncated());
+
+  // 2 件目からは捨てて truncated（上限 1 を渡したときと同じ振る舞い）。
+  EXPECT_FALSE(diagnostics.add_error(error_at(ErrorKind::CssParse, "b")));
+  EXPECT_FALSE(diagnostics.add_warning(warning_at(WarningKind::MissingGlyph, "c")));
+  EXPECT_TRUE(diagnostics.truncated());
+  EXPECT_EQ(diagnostics.errors().size(), 1U);
+  EXPECT_TRUE(diagnostics.warnings().empty());
+}
+
+// 予算は errors と warnings で共通なので、最初の 1 件が警告のこともある。
+TEST(Diagnostics, ZeroLimitFirstEntryCanBeAWarning) {
+  Diagnostics diagnostics{0};
+  EXPECT_TRUE(diagnostics.add_warning(warning_at(WarningKind::MissingGlyph, "tofu", U'A')));
+  EXPECT_FALSE(diagnostics.truncated());
   EXPECT_FALSE(diagnostics.add_error(error_at(ErrorKind::CssParse, "a")));
   EXPECT_TRUE(diagnostics.truncated());
-  EXPECT_TRUE(diagnostics.errors().empty());
+  EXPECT_EQ(diagnostics.warnings().size(), 1U);
+  EXPECT_FALSE(diagnostics.has_errors());
 }
 
 // ---------------------------------------------------------------------------

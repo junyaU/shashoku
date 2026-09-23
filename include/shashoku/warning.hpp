@@ -17,6 +17,10 @@ enum class WarningKind : std::uint8_t {
   ContentOverflow,  // 箱（行・置換要素・ブロック）が出力の紙面の外に出ていて、その部分が切れる（A46）
 };
 
+// ContentOverflow で、最大の超過量を出した紙面の辺（物理。縦書きでも Bottom は物理の下）。
+// 「下に出た（背が高すぎる）」と「右に出た（幅が広すぎる）」は直し方が違うので、機械が分けて読めるように持つ。
+enum class OverflowEdge : std::uint8_t { None, Top, Right, Bottom, Left };
+
 struct Warning {
   WarningKind kind = WarningKind::MissingGlyph;
   // 人が読むための説明。位置が分かっていれば末尾に付く（RenderError と同じ " at L:C"）。
@@ -32,11 +36,16 @@ struct Warning {
   std::optional<SourceLocation> location;
   // ContentOverflow のとき、紙面の外に出た量の最大（CSS px、正の値）。他の種類では 0
   float overflow_px = 0.0F;
+  // ContentOverflow のとき、その超過量を出した辺。他の種類では None
+  OverflowEdge overflow_edge = OverflowEdge::None;
 
   bool operator==(const Warning&) const = default;
 };
 
 // "missing-glyph" / "content-overflow" のようなケバブケースの識別子
 std::string_view to_string(WarningKind kind) noexcept;
+
+// "top" / "right" / "bottom" / "left"。None は ""
+std::string_view to_string(OverflowEdge edge) noexcept;
 
 }  // namespace shashoku

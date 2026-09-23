@@ -1224,6 +1224,7 @@ struct Warning {
   WarningKind kind; std::string detail; char32_t codepoint = 0;   // 既存
   std::optional<SourceLocation> location;                          // 既存
   float overflow_px = 0.0F;   // ContentOverflow: 紙面の外に出た量の最大（CSS px）。他の種類では 0
+  OverflowEdge overflow_edge = OverflowEdge::None;   // ContentOverflow: 最大の超過量を出した物理の辺（W3 の実装で追加）
 };
 // error.hpp
 enum class ErrorKind : std::uint8_t { /* 既存 16 種 + */ WarningAsError /* strict で警告を格上げしたもの */ };
@@ -1716,7 +1717,7 @@ std::string dump_json(const Node& root);
   中の `<style>` と本体の全問題が 1 回で出る。対応外の属性は捨てて要素は残す（値は読み切ってから捨てる）。
   **返る木は errors が 1 件でもあれば描画されない**（api が失敗にする）ので、透過の意味論は
   診断の網羅のためだけにある。診断は**文書順**（足した順）で足し、ここでは並べ替えない（整列は api）。
-  透過の細部は **A-new**:
+  透過の細部は **A49**:
   - HTML の空要素（`area base col embed hr input link meta param source track wbr`）は終了タグを待たず、
     開いている要素のスタックにも積まない（`<meta charset="utf-8">` の直後の `</head>` を壊さないため）
   - `/>` で閉じた対応外の要素はその場で終わる。対応する開始タグの無い終了タグ（`</table>` 単独）は
@@ -1849,17 +1850,17 @@ std::string dump_json(const BoxTree&);
     inline 方向の終端、「左」は block 方向の終端）。読み替えは paint と同じ式（A1。`vertical-rl` は
     `x = viewport_width - block_end`、`y = inline_start`）
   - **`overflow_px` の単位は CSS px**（scale を掛ける前）。レイアウトの座標が CSS px なので、api は
-    割らずにそのまま `Warning::overflow_px` へ入れる（A-new）
+    割らずにそのまま `Warning::overflow_px` へ入れる（A50）
   - **辺を一緒に返す**: `ContentOverflow::edge`（`OverflowEdge{Right, Bottom, Left, Top}`。**物理**の 4 辺で、
     縦書きでも「下」は物理の下）。直し方が辺で変わる（下 = 背が高すぎる、右 = 幅が広すぎる）ので、
     `warning.hpp` が例に書いている文面（`"content overflows the canvas by 42.5px (bottom) at 12:3"`）を
-    api が作れるようにする。同点なら 右 → 下 → 左 → 上 の順で先のものを採る（A-new）
-  - **合成ルート `#root` は候補にしない**（A-new）。高さが `auto` のルートは中身に追随するので、候補にすると
+    api が作れるようにする。同点なら 右 → 下 → 左 → 上 の順で先のものを採る（A50）
+  - **合成ルート `#root` は候補にしない**（A50）。高さが `auto` のルートは中身に追随するので、候補にすると
     「最も外側の 1 件」が毎回ルートになり、位置が入力の先頭に化けて実際に突き出した要素を隠す
-  - **画像断片（`ImageFragment`）も、行ボックスと同じく含むブロック要素の位置で報告する**（A-new）。
+  - **画像断片（`ImageFragment`）も、行ボックスと同じく含むブロック要素の位置で報告する**（A50）。
     断片は `SourceLocation` を持たないため。行が収まっていても画像は行の外に出られる（行の inline 範囲は
     ブロックの content 幅で固定）ので、行が収まっている行の中だけ断片を見る
-  - **同じ位置の複数件は 1 件にまとめ、`overflow_px` は最大を採る**（A-new）。並べ替えは (offset, line, column)
+  - **同じ位置の複数件は 1 件にまとめ、`overflow_px` は最大を採る**（A50）。並べ替えは (offset, line, column)
     の昇順で安定ソート（`MissingGlyph::operator<` と同じ比べ方）
 - **block**: 幅は親から降り、高さは子から戻る。`width: auto` は利用可能幅いっぱい。
   `margin: 0 auto` の中央寄せ。兄弟間のマージン相殺（A10）。子が inline と block の混在なら
@@ -2016,10 +2017,12 @@ CLI は `tools/shashoku/`: `shashoku input.html [--font A.otf [--font B.ttf …]
 ```json
 {"ok": true, "width": 1200, "height": 630, "truncated": false,
  "errors": [{"kind": "unsupported-property", "message": "…", "hint": "…", "line": 3, "column": 14, "offset": 120, "warning": null}],
- "warnings": [{"kind": "missing-glyph", "detail": "…", "codepoint": 128512, "line": 3, "column": 1, "offset": 88, "overflow_px": 0}]}
+ "warnings": [{"kind": "missing-glyph", "detail": "…", "codepoint": 128512, "line": 3, "column": 1, "offset": 88, "overflow_px": 0, "edge": null},
+              {"kind": "content-overflow", "detail": "…", "codepoint": 0, "line": 19, "column": 1, "offset": 700, "overflow_px": 430, "edge": "bottom"}]}
 ```
 `line` / `column` / `offset` は位置が無ければ `null`、`hint` が無ければ `""`、`warning` は `WarningAsError` のとき
-`"missing-glyph"` のような識別子、それ以外は `null`。成功時は `width` / `height` に出力の寸法、失敗時は `null`。
+`"missing-glyph"` のような識別子、それ以外は `null`。`edge` は `content-overflow` のとき `"top"` / `"right"` / `"bottom"` / `"left"`
+（最大の超過量を出した物理の辺。`Warning::overflow_edge`）、それ以外は `null`。成功時は `width` / `height` に出力の寸法、失敗時は `null`。
 JSON を選んだときは `-o` が必須で、`--dump-stage` と併用できない（`InvalidOption` 相当の使い方の誤りとして
 stderr に出し終了コード 2）。人向けの出力（既定）は、成功時に `wrote out.png (1200x630)` を stderr に 1 行出す
 （`--height` 省略時の実際の高さが分かる。検証 B の指摘）。

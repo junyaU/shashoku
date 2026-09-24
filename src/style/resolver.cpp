@@ -41,9 +41,13 @@ struct StyleState {
   float border_width_length = 3;  // border-width の初期値 medium
   bool border_color_is_current = true;
 
-  // `display: inline` への箱の指定を弾くための記録（ARCHITECTURE.md §3.7 の最後）
-  std::optional<PropertyId> box_property;
-  SourceLocation box_property_location;
+  // `display: inline` への箱の指定を弾くための記録（ARCHITECTURE.md §3.7 の最後）。
+  // 作者が書いた宣言 1 つにつき 1 件（A55。以前は最初の 1 件しか覚えていなかった）
+  struct BoxDeclaration {
+    PropertyId property = PropertyId::Width;
+    SourceLocation location;
+  };
+  std::vector<BoxDeclaration> box_declarations;
 
   // writing-mode の規則（A1）を検査するための記録
   bool writing_mode_declared = false;
@@ -615,9 +619,12 @@ void record_author_declaration(const Declaration& declaration, Origin origin, St
     state.writing_mode_location = declaration.location;
     return;
   }
-  if (is_box_property(declaration.property) && !state.box_property) {
-    state.box_property = declaration.property;
-    state.box_property_location = declaration.location;
+  // A55: 作者が書いた箱プロパティは**全部**覚える。数えるのは「作者が書いた宣言」の単位なので、
+  // ショートハンドを展開した longhand 列は先頭（`border` なら border-width）だけを数える
+  // （`style` 属性の中では宣言の位置が全部同じなので、位置では宣言を区別できない）。
+  if (is_box_property(declaration.property) && declaration.source_head) {
+    state.box_declarations.push_back(StyleState::BoxDeclaration{.property = declaration.property,
+                                                                .location = declaration.location});
   }
 }
 
@@ -1030,19 +1037,23 @@ Result<void> Resolver::validate(const html::Node& node, const StyleState& state,
                     to_css(state.computed.writing_mode), to_css(parent.computed.writing_mode)),
         state.writing_mode_location, {}));
   }
-  if (state.computed.display == Display::Inline && node.tag != "img" && state.box_property) {
+  if (state.computed.display == Display::Inline && node.tag != "img") {
     // A46 の hint (c): `display: block` にすると通るが、文の流れが切れる。
     // A53 のあと、ここに来るのは**文中の inline 要素だけ**（flex の子は block 化される）なので、
-    // 「独立した箱なら flex アイテムにする」という成立条件つきの代替も添える
-    add_computed_error(error_with_hint(
-        ErrorKind::UnsupportedLayout,
-        std::format("`{}` is not supported on an inline element (`display: inline`); only "
-                    "`<img>` takes box properties while inline",
-                    to_css(*state.box_property)),
-        state.box_property_location,
-        "drop the declaration; `display: block` would accept it but breaks the surrounding "
-        "text flow. If the box is a standalone part (tag / pill / badge), make it a flex item: "
-        "a `div` inside a `display: flex` parent (guide §3-(4))"));
+    // 「独立した箱なら flex アイテムにする」という成立条件つきの代替も添える。
+    // A55: 作者が書いた箱の宣言を**全部**報告する（1 宣言 = 1 件）。1 件ずつしか出さないと、
+    // 直すたびに次の 1 件が出て往復が増える（`results_a53_2026-09-24.md` §2 の case04）
+    for (const StyleState::BoxDeclaration& box : state.box_declarations) {
+      add_computed_error(error_with_hint(
+          ErrorKind::UnsupportedLayout,
+          std::format("`{}` is not supported on an inline element (`display: inline`); only "
+                      "`<img>` takes box properties while inline",
+                      to_css(box.property)),
+          box.location,
+          "drop the declaration; `display: block` would accept it but breaks the surrounding "
+          "text flow. If the box is a standalone part (tag / pill / badge), make it a flex item: "
+          "a `div` inside a `display: flex` parent (guide §3-(4))"));
+    }
   }
   return {};
 }

@@ -1,5 +1,6 @@
 #include "shashoku/error.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <string>
@@ -1014,8 +1015,12 @@ TEST(StyleError, ComputedDiagnosticsFromOneRuleAreReportedOnce) {
                 test_parent("p", {}, test_element("span", {test_attr("class", "tag")}),
                             test_element("span", {test_attr("class", "tag")})));
   const Outcome outcome = collect(tree);
-  ASSERT_EQ(outcome.errors.size(), 1U) << "同じ (kind, 位置, 文面) は 1 件だけ";
-  EXPECT_EQ(outcome.errors.front().kind, ErrorKind::UnsupportedLayout);
+  // 宣言ごとに 1 件（A55）で、**要素ごとには増えない**（重複除去が無ければ 2 要素 x 2 宣言 = 4 件）
+  ASSERT_EQ(outcome.errors.size(), 2U) << "同じ (kind, 位置, 文面) は 1 件だけ";
+  EXPECT_EQ(outcome.errors.at(0).kind, ErrorKind::UnsupportedLayout);
+  EXPECT_EQ(outcome.errors.at(1).kind, ErrorKind::UnsupportedLayout);
+  EXPECT_NE(outcome.errors.at(0).location.value_or(SourceLocation{}),
+            outcome.errors.at(1).location.value_or(SourceLocation{}));
 }
 
 TEST(StyleError, ComputedDiagnosticsFromDifferentRulesAreBothReported) {
@@ -1155,10 +1160,243 @@ TEST(StyleError, DeclarationsInsideDisplayNoneSubtreesAreStillChecked) {
   EXPECT_EQ(outcome.errors.front().kind, ErrorKind::UnsupportedProperty);
 }
 
+// 一致しなかったクラス / ID は「正常な選択の結果」なので報告しない（A55）。
+// それでも中の宣言は読むので、対応外のプロパティは出る。
 TEST(StyleError, RulesThatMatchNothingAreStillChecked) {
-  const Outcome outcome = collect_sheet("nosuchtag { float: left }");
+  for (const std::string_view css :
+       {".nosuchclass { float: left }", "#nosuchid { float: left }", "* { float: left }"}) {
+    SCOPED_TRACE(css);
+    const Outcome outcome = collect_sheet(css);
+    ASSERT_EQ(outcome.errors.size(), 1U);
+    EXPECT_EQ(outcome.errors.front().kind, ErrorKind::UnsupportedProperty);
+  }
+}
+
+// ---- A55 (a): inline への箱プロパティは、作者が書いた宣言を全部報告する ----------------
+//
+// 再現（`docs/benchmark/results_a53_2026-09-24.md` §2 の case04 / case08）:
+// `record_author_declaration()` が最初の 1 つしか覚えないので、border を直すと次は
+// border-radius、その次は padding と 1 往復ずつ増えていた。
+
+// 箱プロパティの診断が名指ししたプロパティ名（message の最初の `…` から拾う）。
+std::vector<std::string> box_property_names(const Outcome& outcome) {
+  std::vector<std::string> out;
+  for (const RenderError& error : outcome.errors) {
+    if (error.kind != ErrorKind::UnsupportedLayout) {
+      continue;
+    }
+    const std::size_t open = error.message.find('`');
+    if (open == std::string::npos) {
+      continue;
+    }
+    const std::size_t close = error.message.find('`', open + 1);
+    if (close == std::string::npos) {
+      continue;
+    }
+    out.push_back(error.message.substr(open + 1, close - open - 1));
+  }
+  std::ranges::sort(out);
+  return out;
+}
+
+// 1 宣言 = 1 件。ショートハンドは先頭の longhand の名前で 1 件だけ出す。
+TEST(StyleError, EveryBoxDeclarationOnAnInlineElementIsReported) {
+  constexpr SourceLocation kAttribute{.offset = 30, .line = 2, .column = 9};
+  const html::Node tree = test_root(test_parent(
+      "p", {}, test_text("文中の "),
+      test_parent("span",
+                  {test_attr("style",
+                             "border: 1px solid #999; border-radius: 4px; padding: 2px 6px; "
+                             "margin: 0 2px",
+                             kAttribute)},
+                  test_text("語"))));
+  const Outcome outcome = collect(tree);
+  EXPECT_EQ(box_property_names(outcome), (std::vector<std::string>{"border-radius", "border-width",
+                                                                   "margin-top", "padding-top"}));
+  ASSERT_EQ(outcome.errors.size(), 4U) << "4 つの宣言が 1 度に全部出る";
+  for (const RenderError& error : outcome.errors) {
+    EXPECT_EQ(error.kind, ErrorKind::UnsupportedLayout) << error.message;
+    EXPECT_EQ(error.location.value_or(SourceLocation{}), kAttribute) << error.message;
+    EXPECT_FALSE(error.hint.empty()) << error.message;
+  }
+}
+
+// longhand を別々に書いたときも 1 つずつ出る（同じ組でもまとめない）。
+TEST(StyleError, SeparateLonghandBoxDeclarationsAreAllReported) {
+  const Outcome outcome = collect(
+      test_root(test_element("span", {test_attr("style", "padding-top: 1px; padding-left: 2px")})));
+  EXPECT_EQ(box_property_names(outcome), (std::vector<std::string>{"padding-left", "padding-top"}));
+}
+
+// `<style>` の規則でも全部出る。位置はそれぞれの宣言を指す。
+TEST(StyleError, EveryBoxDeclarationFromAStylesheetIsReported) {
+  const html::Node tree =
+      test_root(test_style_element(".tag { border: 1px solid #999; padding: 2px 6px }"),
+                test_parent("p", {}, test_element("span", {test_attr("class", "tag")})));
+  const Outcome outcome = collect(tree);
+  EXPECT_EQ(box_property_names(outcome), (std::vector<std::string>{"border-width", "padding-top"}));
+  ASSERT_EQ(outcome.errors.size(), 2U);
+  EXPECT_NE(outcome.errors.at(0).location.value_or(SourceLocation{}),
+            outcome.errors.at(1).location.value_or(SourceLocation{}));
+}
+
+// flex の直接の子は block 化されるので、何件書いても診断は 0（A53）。
+TEST(StyleError, BoxDeclarationsOnFlexChildrenStayQuiet) {
+  const html::Node tree =
+      test_root(test_parent("div", {test_attr("style", "display: flex")},
+                            test_parent("span",
+                                        {test_attr("style",
+                                                   "border: 1px solid #999; border-radius: 4px; "
+                                                   "padding: 2px 6px; margin: 0 2px")},
+                                        test_text("政策"))));
+  const Outcome outcome = collect(tree);
+  EXPECT_TRUE(outcome.errors.empty())
+      << (outcome.errors.empty() ? "" : outcome.errors.front().message);
+}
+
+// UA 由来は数えないまま（`<p>` の margin を inline にしても黙っている）。
+TEST(StyleError, UserAgentBoxDeclarationsAreStillNotCounted) {
+  const Outcome outcome =
+      collect(test_root(test_element("p", {test_attr("style", "display: inline")})));
+  EXPECT_TRUE(outcome.errors.empty())
+      << (outcome.errors.empty() ? "" : outcome.errors.front().message);
+}
+
+// ---- A55 (b): 捨てる規則の宣言も、構文の診断だけは出す -------------------------------
+//
+// 再現（同 §2 の case01 / 03 / 06 / 09）: セレクタが読めない規則を丸ごと捨てていたので、
+// 中の対応外プロパティ・値はセレクタを直した次の往復で初めて出ていた。
+
+TEST(StyleError, DeclarationsOfARuleWithAnUnreadableSelectorAreReported) {
+  const Outcome outcome = collect_sheet(".card > p { float: left; color: #000 }");
+  EXPECT_EQ(outcome.kinds(),
+            (std::vector<ErrorKind>{ErrorKind::CssParse, ErrorKind::UnsupportedProperty}));
+  ASSERT_EQ(outcome.errors.size(), 2U);
+  EXPECT_FALSE(outcome.errors.at(1).hint.empty()) << "hint は通常どおり付く";
+  // 読めた宣言（color）は診断も出ないし、適用もされない
+  EXPECT_EQ(outcome.style.color, ComputedStyle{}.color);
+}
+
+// 「報告だけ」なので、その規則を適用した前提の計算値の検査は出さない。
+TEST(StyleError, DroppedRulesDoNotProduceComputedValueDiagnostics) {
+  const html::Node tree = test_root(test_style_element("p > span { padding: 4px }"),
+                                    test_parent("p", {}, test_element("span")));
+  const Outcome outcome = collect(tree);
+  ASSERT_EQ(outcome.errors.size(), 1U) << "セレクタの 1 件だけ（unsupported-layout は出さない）";
+  EXPECT_EQ(outcome.errors.front().kind, ErrorKind::CssParse);
+}
+
+// ブロックが安全に読めないときは今までどおり規則ごと捨てる（推測して報告しない）。
+TEST(StyleError, BrokenBlocksOfDroppedRulesAreStillSkippedWhole) {
+  for (const std::string_view css : {
+           "div > p { float: left",                 // 閉じていない
+           "div > p { @media x { float: left } }",  // 入れ子のブロック
+           "div > p { /* 閉じていないコメント float: left }",
+       }) {
+    SCOPED_TRACE(css);
+    const Outcome outcome = collect_sheet(css);
+    ASSERT_EQ(outcome.errors.size(), 1U) << "セレクタの 1 件だけ";
+    EXPECT_EQ(outcome.errors.front().kind, ErrorKind::CssParse);
+  }
+}
+
+// 宣言ブロックの無い規則（`;` で終わる）は今までどおり。
+TEST(StyleError, DroppedRulesWithoutABlockAreUnchanged) {
+  const Outcome outcome = collect_sheet("div > p;\ndiv { color: blue }");
   ASSERT_EQ(outcome.errors.size(), 1U);
-  EXPECT_EQ(outcome.errors.front().kind, ErrorKind::UnsupportedProperty);
+  EXPECT_EQ(outcome.errors.front().kind, ErrorKind::CssParse);
+  EXPECT_EQ(outcome.style.color, (Color{0, 0, 255, 255}));  // 次の規則は効く
+}
+
+// 捨てた規則の宣言を報告しても、後ろの規則は今までどおり効く。
+TEST(StyleError, RulesAfterADroppedRuleStillApply) {
+  const Outcome outcome = collect_sheet(".card > p { float: left } div { color: blue }");
+  EXPECT_EQ(outcome.kinds(),
+            (std::vector<ErrorKind>{ErrorKind::CssParse, ErrorKind::UnsupportedProperty}));
+  EXPECT_EQ(outcome.style.color, (Color{0, 0, 255, 255}));
+}
+
+// ---- A55 (c): 対応外のタグを名指しするセレクタは決して一致しない ----------------------
+//
+// 再現（同 §3）: `<body>` を外すよう言われて外すと、`body { … }` が誰にも当たらず
+// 背景・余白・本文色が黙って消えていた（a_plain 10 件中 7 件に同型の HTML）。
+
+TEST(StyleError, SelectorsNamingUnsupportedTagsAreReported) {
+  const Outcome outcome = collect_sheet("body { background: #fff }");
+  ASSERT_EQ(outcome.errors.size(), 1U);
+  const RenderError& error = outcome.errors.front();
+  EXPECT_EQ(error.kind, ErrorKind::UnsupportedTag);
+  EXPECT_EQ(to_string(error.kind), "unsupported-tag");
+  EXPECT_NE(error.message.find("body"), std::string::npos) << error.message;
+  EXPECT_FALSE(error.hint.empty()) << "外側の div に移す案を添える";
+  EXPECT_NE(error.hint.find("div"), std::string::npos) << error.hint;
+}
+
+// 位置はセレクタそのもの（規則ごとに 1 件）。
+TEST(StyleError, UnsupportedTagSelectorPointsAtTheSelector) {
+  constexpr SourceLocation kBase{.offset = 100, .line = 5, .column = 1};
+  const Outcome outcome =
+      collect(test_root(test_style_element("div { color: red }\nbody { color: blue }", kBase)));
+  ASSERT_EQ(outcome.errors.size(), 1U);
+  const SourceLocation location = outcome.errors.front().location.value_or(SourceLocation{});
+  EXPECT_EQ(location.line, 6U);
+  EXPECT_EQ(location.column, 1U);
+  EXPECT_EQ(location.offset, 100U + 19U);
+}
+
+// その規則の宣言は (b) と同じく構文の診断だけ出し、適用しない。
+TEST(StyleError, UnsupportedTagRulesReportTheirDeclarationsButDoNotApply) {
+  const Outcome outcome = collect_sheet("body { color: blue; float: left }");
+  EXPECT_EQ(outcome.kinds(),
+            (std::vector<ErrorKind>{ErrorKind::UnsupportedTag, ErrorKind::UnsupportedProperty}));
+  EXPECT_EQ(outcome.style.color, ComputedStyle{}.color);
+}
+
+// 複合セレクタの中のタグ名も見る。
+TEST(StyleError, CompoundSelectorsWithAnUnsupportedTagAreReported) {
+  for (const std::string_view css : {"body.dark { color: blue }", "section#top { color: blue }"}) {
+    SCOPED_TRACE(css);
+    const Outcome outcome = collect_sheet(css);
+    ASSERT_EQ(outcome.errors.size(), 1U);
+    EXPECT_EQ(outcome.errors.front().kind, ErrorKind::UnsupportedTag);
+  }
+}
+
+// カンマ区切りは対応外の部分だけ報告し、残りは通常どおり適用する。
+TEST(StyleError, CommaSeparatedSelectorsReportOnlyTheUnsupportedPart) {
+  const Outcome outcome = collect_sheet("body, div { color: blue }");
+  ASSERT_EQ(outcome.errors.size(), 1U);
+  EXPECT_EQ(outcome.errors.front().kind, ErrorKind::UnsupportedTag);
+  EXPECT_EQ(outcome.style.color, (Color{0, 0, 255, 255})) << "div の分は効く";
+}
+
+// 対応タグのセレクタは今までどおり黙って当たる。
+TEST(StyleError, SupportedTagSelectorsAreNotReported) {
+  for (const std::string_view css : {"div { color: blue }", "p { color: blue }",
+                                     "span, ruby, rt, rp, img, br, style, h1 { color: blue }"}) {
+    SCOPED_TRACE(css);
+    const Outcome outcome = collect_sheet(css);
+    EXPECT_TRUE(outcome.errors.empty())
+        << (outcome.errors.empty() ? "" : outcome.errors.front().message);
+  }
+}
+
+// タグ名を書かなかった規則（`*` / クラス / ID）は対象外（一致しなくても正常）。
+TEST(StyleError, TaglessSelectorsAreNeverReportedAsUnsupportedTags) {
+  for (const std::string_view css :
+       {"* { color: blue }", ".x { color: blue }", "#y { color: blue }", ".x#y { color: blue }"}) {
+    SCOPED_TRACE(css);
+    const Outcome outcome = collect_sheet(css);
+    EXPECT_TRUE(outcome.errors.empty())
+        << (outcome.errors.empty() ? "" : outcome.errors.front().message);
+  }
+}
+
+// 対応外のタグ名 + 対応外のプロパティは 1 度に全部出る（A46 の「一度に全部」）。
+TEST(StyleError, UnsupportedTagAndDeclarationDiagnosticsComeTogether) {
+  const Outcome outcome = collect_sheet("nosuchtag { float: left }");
+  EXPECT_EQ(outcome.kinds(),
+            (std::vector<ErrorKind>{ErrorKind::UnsupportedTag, ErrorKind::UnsupportedProperty}));
 }
 
 }  // namespace

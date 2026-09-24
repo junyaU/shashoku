@@ -1370,6 +1370,18 @@ TEST(StyleError, CommaSeparatedSelectorsReportOnlyTheUnsupportedPart) {
   EXPECT_EQ(outcome.style.color, (Color{0, 0, 255, 255})) << "div の分は効く";
 }
 
+// 対応外のタグが 2 つあれば 2 件（位置はそれぞれのセレクタ）。要素の数では増えない。
+TEST(StyleError, EachUnsupportedTagInACommaListIsReportedOnce) {
+  const html::Node tree = test_root(test_style_element("body, html, div { color: blue }"),
+                                    test_element("div"), test_element("div"));
+  const Outcome outcome = collect(tree);
+  EXPECT_EQ(outcome.kinds(),
+            (std::vector<ErrorKind>{ErrorKind::UnsupportedTag, ErrorKind::UnsupportedTag}));
+  ASSERT_EQ(outcome.errors.size(), 2U);
+  EXPECT_NE(outcome.errors.at(0).location.value_or(SourceLocation{}),
+            outcome.errors.at(1).location.value_or(SourceLocation{}));
+}
+
 // 対応タグのセレクタは今までどおり黙って当たる。
 TEST(StyleError, SupportedTagSelectorsAreNotReported) {
   for (const std::string_view css : {"div { color: blue }", "p { color: blue }",

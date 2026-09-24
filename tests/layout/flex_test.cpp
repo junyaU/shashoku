@@ -1,5 +1,7 @@
 #include <cstddef>
+#include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -291,6 +293,138 @@ TEST(LayoutFlex, FlexOneWrapsLongJapaneseText) {
   EXPECT_EQ(line_texts(*tree),
             (std::vector<std::string>{"あいうえおかきくけこさしすせそたちつてとなにぬねの",
                                       "はひふへほ"}));
+}
+
+// ---- 自動最小サイズ（CSS Flexbox §4.5 / A52） ----------------------------------------
+// `min-width: auto` / `min-height: auto` の flex アイテムの content-based minimum size は
+// **min(specified size suggestion, content size suggestion)**（CSS Flexbox Level 1 §4.5
+// "Automatic Minimum Size of Flex Items"）。
+//   * specified size suggestion = **主軸のサイズプロパティ**（row なら width、column なら
+//     height）が definite なら、その値
+//   * content size suggestion = 主軸の min-content サイズ
+// **flex-basis は specified size suggestion ではない**（A52）。したがって `flex: 1 1 0` でも
+// 下限は内容で決まり、0 には潰れない。下限が効くのは §9.7-4d「最小サイズ違反」の段。
+
+// `flex: 1` の展開（style の parse_flex は `1 1 0px` にする）。width も一緒に指定できる。
+StyleFn flex_one(std::optional<float> width = std::nullopt) {
+  return [width](ComputedStyle& style) {
+    style.flex_grow = 1;
+    style.flex_shrink = 1;
+    style.flex_basis = Dimension::px(0);
+    if (width) {
+      style.width = Dimension::px(*width);
+    }
+  };
+}
+
+struct AutoMinSizeCase {
+  std::string_view name;
+  FlexDirection direction = FlexDirection::Row;
+  float viewport = 400;                   // コンテナの inline サイズ
+  std::optional<float> container_height;  // column の主軸が定まるかどうか
+  std::vector<Tree> children;
+  std::vector<float> expected_main;   // アイテムの主軸サイズ（border-box）
+  float expected_container_main = 0;  // コンテナの主軸サイズ
+};
+
+std::vector<AutoMinSizeCase> auto_min_size_cases() {
+  const float line = fake_line_height(16);  // 和文 1 行の高さ
+  // 偽 TextMeasurer: 全角 = 1em（16）、ASCII = 0.5em（8）。
+  // "あいうえお" の min-content は 1 文字 = 16、max-content は 80。
+  // "abcdefgh" は空白がないので min-content = max-content = 64。
+  return {
+      {.name = "(a) 高さ auto の column + flex: 1 1 0 → 子は内容の高さ（§4.5）",
+       .direction = FlexDirection::Column,
+       .viewport = 400,
+       .container_height = std::nullopt,
+       .children = {block({text("あいうえお")}, flex_one()), block({}, sized(100, 20))},
+       .expected_main = {line, 20},
+       .expected_container_main = line + 20},
+      {.name = "(b) 定まった column + flex: 1 1 0 → 内容の高さを下回らず、あふれる（§9.7-4d）",
+       .direction = FlexDirection::Column,
+       .viewport = 400,
+       .container_height = 10,
+       .children = {block({text("あいうえお")}, flex_one())},
+       .expected_main = {line},
+       .expected_container_main = 10},
+      {.name = "(b') 定まった column + flex: 1 1 0 → 余りがあれば従来どおり伸びる（§9.7）",
+       .direction = FlexDirection::Column,
+       .viewport = 400,
+       .container_height = 100,
+       .children = {block({text("あいうえお")}, flex_one()), block({}, sized(100, 20))},
+       .expected_main = {80, 20},
+       .expected_container_main = 100},
+      {.name = "(c) row + flex: 1 1 0 → min-content を下回らない（余りは残りのアイテムへ）",
+       .direction = FlexDirection::Row,
+       .viewport = 100,
+       .container_height = std::nullopt,
+       .children = {block({text("あい")}, flex_one()), block({text("abcdefgh")}, flex_one())},
+       .expected_main = {36, 64},
+       .expected_container_main = 100},
+      {.name = "(c') row + flex: 1 1 0 → 合計がコンテナを超えるならあふれる（§4.5 の下限が優先）",
+       .direction = FlexDirection::Row,
+       .viewport = 60,
+       .container_height = std::nullopt,
+       .children = {block({text("あい")}, flex_one()), block({text("abcdefgh")}, flex_one())},
+       .expected_main = {16, 64},
+       .expected_container_main = 60},
+      {.name = "(d) row + flex: 1 1 0 + width < min-content → min(width, min-content)（§4.5）",
+       .direction = FlexDirection::Row,
+       .viewport = 60,
+       .container_height = std::nullopt,
+       .children = {block({text("abcdefgh")}, flex_one(20)), block({text("abcdefgh")}, flex_one())},
+       .expected_main = {20, 64},
+       .expected_container_main = 60},
+      {.name = "(e) row + flex-basis auto + width 指定 → 下限は min(width, min-content) のまま",
+       .direction = FlexDirection::Row,
+       .viewport = 60,
+       .container_height = std::nullopt,
+       .children = {block({text("abcdefgh")},
+                          [](ComputedStyle& style) { style.width = Dimension::px(100); }),
+                    block({text("abcdefgh")},
+                          [](ComputedStyle& style) { style.width = Dimension::px(100); })},
+       .expected_main = {64, 64},
+       .expected_container_main = 60},
+      {.name = "(f) 高さ auto の column + flex-basis: 50% → 内容の高さ（% は definite でない）",
+       .direction = FlexDirection::Column,
+       .viewport = 400,
+       .container_height = std::nullopt,
+       .children = {block({text("あいうえお")},
+                          [](ComputedStyle& style) {
+                            style.flex_grow = 1;
+                            style.flex_basis = Dimension::percent(50);
+                          }),
+                    block({}, sized(100, 20))},
+       .expected_main = {line, 20},
+       .expected_container_main = line + 20},
+  };
+}
+
+TEST(LayoutFlex, AutomaticMinimumSizeComesFromTheMainSizePropertyNotFlexBasis) {
+  for (const AutoMinSizeCase& test_case : auto_min_size_cases()) {
+    FakeMeasurer measurer;
+    const bool row = test_case.direction == FlexDirection::Row;
+    const FlexDirection direction = test_case.direction;
+    const std::optional<float> height = test_case.container_height;
+    const auto root = build({flex(test_case.children, [direction, height](ComputedStyle& style) {
+      style.flex_direction = direction;
+      if (height) {
+        style.height = Dimension::px(*height);
+      }
+    })});
+    const auto tree = run_layout(root, test_case.viewport, measurer);
+    ASSERT_TRUE(tree.has_value()) << test_case.name;
+    const std::vector<LogicalRect> rects = item_rects(*tree);
+    ASSERT_EQ(rects.size(), test_case.expected_main.size()) << test_case.name;
+    for (std::size_t i = 0; i < rects.size(); ++i) {
+      const float main = row ? rects[i].inline_size : rects[i].block_size;
+      EXPECT_FLOAT_EQ(main, test_case.expected_main[i]) << test_case.name << " / アイテム " << i;
+    }
+    const LogicalRect& container = container_of(*tree).rect;
+    EXPECT_FLOAT_EQ(row ? container.inline_size : container.block_size,
+                    test_case.expected_container_main)
+        << test_case.name;
+  }
 }
 
 // ---- auto マージン ----------------------------------------------------------------

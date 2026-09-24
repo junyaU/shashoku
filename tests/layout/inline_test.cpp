@@ -823,5 +823,115 @@ TEST(LayoutMissingGlyph, RubyBaseAndRubyTextAreBothRecorded) {
   EXPECT_EQ(tree->missing_glyphs[1].location.offset, 20U);
 }
 
+// ---- font-family の要求を満たせなかった記録（A57）--------------------------------------
+
+// 満たせた（偽の計測器が family_request_unmet を立てない）なら 1 件も記録しない。
+TEST(LayoutFontFallback, MetRequestsAreNotRecorded) {
+  FakeMeasurer measurer;  // unmet_families は空
+  const auto root = build({block({at(text("あ"), 10)}, [](ComputedStyle& style) {
+    style.font_family = {"Noto Sans JP", "sans-serif"};
+  })});
+  const auto tree = run_layout(root, 400, measurer);
+  ASSERT_TRUE(tree.has_value());
+  EXPECT_TRUE(tree->font_fallbacks.empty());
+  EXPECT_EQ(dump_json(*tree).find("font_fallbacks"), std::string::npos);
+}
+
+// 記録は **font-family の並びごとに 1 件**。同じ並びなら入力順で最初のテキストノードの
+// 先頭の位置を採り、並びは位置の昇順。
+TEST(LayoutFontFallback, OneRecordPerFamilyStackSortedByPosition) {
+  FakeMeasurer measurer;
+  measurer.unmet_families = {"Mincho", "Kaisho"};
+  const auto mincho = [](ComputedStyle& style) { style.font_family = {"Mincho", "serif"}; };
+  const auto kaisho = [](ComputedStyle& style) { style.font_family = {"Kaisho"}; };
+  const auto root = build({
+      at(block({at(text("うしろ"), 60)}, mincho), 50),  // 同じ並び。位置は後ろなので採らない
+      at(block({at(text("ふで"), 30)}, kaisho), 20),  // 別の並び → 別件
+      at(block({at(text("まえ"), 10)}, mincho), 5),  // 同じ並びの最初のテキストノード
+  });
+  const auto tree = run_layout(root, 400, measurer);
+  ASSERT_TRUE(tree.has_value());
+  ASSERT_EQ(tree->font_fallbacks.size(), 2U);
+  // 位置はテキストノードの先頭（ブロックの位置ではない）。昇順に並ぶ
+  EXPECT_EQ(tree->font_fallbacks[0].location.offset, 10U);
+  EXPECT_EQ(tree->font_fallbacks[0].families, (std::vector<std::string>{"Mincho", "serif"}));
+  EXPECT_EQ(tree->font_fallbacks[1].location.offset, 30U);
+  EXPECT_EQ(tree->font_fallbacks[1].families, (std::vector<std::string>{"Kaisho"}));
+}
+
+// <img> を含む段落は計測と配置で何度も組まれる（A29）。それでも記録は重複しない。
+TEST(LayoutFontFallback, ParagraphsPreparedSeveralTimesDoNotDuplicateRecords) {
+  FakeMeasurer measurer;
+  measurer.unmet_families = {"Mincho"};
+  const ImageLookup images = image_table({{.src = "p", .id = 0, .width = 24, .height = 12}});
+  const auto root =
+      build({flex({block({at(text("あ"), 5), at(img("p"), 20)},
+                         [](ComputedStyle& style) { style.font_family = {"Mincho"}; })})});
+  const auto tree = run_layout(root, make_options(400), measurer, images);
+  ASSERT_TRUE(tree.has_value());
+  EXPECT_GT(measurer.shape_calls, 1) << "この入力では段落が何度も組まれる前提";
+  ASSERT_EQ(tree->font_fallbacks.size(), 1U);
+  EXPECT_EQ(tree->font_fallbacks[0].location.offset, 5U);
+}
+
+// メモ（A29）の有無で記録が変わらない。
+TEST(LayoutFontFallback, MemoDoesNotChangeTheRecords) {
+  const auto mincho = [](ComputedStyle& style) { style.font_family = {"Mincho"}; };
+  const auto root = build({flex({
+      block({at(text("あ"), 5)}, mincho),
+      block({at(text("い"), 40)}, mincho),
+  })});
+  FakeMeasurer with_memo;
+  with_memo.unmet_families = {"Mincho"};
+  const auto memoized = run_layout(root, 400, with_memo);
+  ASSERT_TRUE(memoized.has_value());
+  FakeMeasurer plain;
+  plain.unmet_families = {"Mincho"};
+  const auto without_memo = layout_without_memo(root, make_options(400), plain, ImageLookup{});
+  ASSERT_TRUE(without_memo.has_value());
+  EXPECT_EQ(memoized->font_fallbacks, without_memo->font_fallbacks);
+  EXPECT_EQ(dump_json(*memoized), dump_json(*without_memo));
+}
+
+// ルビ: 親文字と <rt> のどちらの並びも拾う（豆腐と同じ経路）。
+TEST(LayoutFontFallback, RubyBaseAndRubyTextAreBothRecorded) {
+  FakeMeasurer measurer;
+  measurer.unmet_families = {"Mincho", "Rt"};
+  const auto rt_style = [](ComputedStyle& style) { style.font_family = {"Rt"}; };
+  const auto root =
+      build({block({at(ruby({at(text("漢"), 10), at(rt("かん", rt_style), 20)},
+                            [](ComputedStyle& style) { style.font_family = {"Mincho"}; }),
+                       5)})});
+  const auto tree = run_layout(root, 400, measurer);
+  ASSERT_TRUE(tree.has_value());
+  ASSERT_EQ(tree->font_fallbacks.size(), 2U);
+  EXPECT_EQ(tree->font_fallbacks[0].families, (std::vector<std::string>{"Mincho"}));
+  EXPECT_EQ(tree->font_fallbacks[0].location.offset, 10U);
+  EXPECT_EQ(tree->font_fallbacks[1].families, (std::vector<std::string>{"Rt"}));
+  EXPECT_EQ(tree->font_fallbacks[1].location.offset, 20U);
+}
+
+// ダンプ（--dump-stage box）。豆腐・はみ出しと同じ流儀で、1 件も無ければキーごと省く。
+TEST(LayoutFontFallback, DumpJsonListsFontFallbacks) {
+  FakeMeasurer measurer;
+  measurer.unmet_families = {"Mincho"};
+  const auto root = build({block({at(text("あ"), 10)}, [](ComputedStyle& style) {
+    style.font_family = {"Mincho", "serif"};
+  })});
+  const auto tree = run_layout(root, 400, measurer);
+  ASSERT_TRUE(tree.has_value());
+  EXPECT_NE(dump_json(*tree).find(R"("font_fallbacks": [
+    {
+      "families": [
+        "Mincho",
+        "serif"
+      ],
+      "location": "1:11"
+    }
+  ])"),
+            std::string::npos)
+      << dump_json(*tree);
+}
+
 }  // namespace
 }  // namespace shashoku::layout::test

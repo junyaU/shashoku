@@ -68,10 +68,12 @@ int use_public_api() {
   const std::string_view stage = to_string(DumpStage::DisplayList);
   const std::string_view warning = to_string(WarningKind::MissingGlyph);
   const std::string_view overflow = to_string(WarningKind::ContentOverflow);
+  const std::string_view font_not_found = to_string(WarningKind::FontNotFound);
   const std::string_view release = version();
   return static_cast<int>(message.size() + kind.size() + stage.size() + warning.size() +
-                          overflow.size() + release.size() + failure.warnings.size() +
-                          location.line + (failure.truncated ? 1U : 0U)) == 0
+                          overflow.size() + font_not_found.size() + release.size() +
+                          failure.warnings.size() + location.line +
+                          (failure.truncated ? 1U : 0U)) == 0
              ? 1
              : 0;
 }

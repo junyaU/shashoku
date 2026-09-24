@@ -70,10 +70,11 @@ struct ShapedCluster {
 struct ShapedText {
   std::vector<ShapedGlyph> glyphs;
   std::vector<ShapedCluster> clusters;
-  // `style.font_family` の要求を満たせなかった（A57）。満たせた = 並びのどれかが FontStore の family 名に
-  // 一致した、または並びに `sans-serif` / `system-ui` / `ui-sans-serif` があった（フォールバック列の先頭が
-  // サンセリフである前提。既定フォントは Noto Sans JP）。空の並び（font-family 未指定）は満たしている。
-  // `serif` / `monospace` などの他の総称は解釈できない（読み飛ばす）ので、具体名の一致も無ければ true。
+  // `style.font_family` の要求を満たせなかった（A57）。満たせた = 並びのどれかが FontStore の
+  // family 名に一致した、または並びに `sans-serif` / `system-ui` / `ui-sans-serif` があった
+  // （フォールバック列の先頭がサンセリフである前提。既定フォントは Noto Sans JP）。
+  // 空の並び（font-family 未指定）は満たしている。`serif` / `monospace` などの他の総称は
+  // 解釈できない（読み飛ばす）ので、具体名の一致も無ければ true。
   // **Shaper は溜めない**。警告を組み立てるのは ③ レイアウト（豆腐と同じ流儀。A31）
   bool family_request_unmet = false;
 };

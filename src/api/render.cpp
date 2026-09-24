@@ -572,11 +572,37 @@ Warning to_warning(const layout::ContentOverflow& overflow) {
                  .overflow_edge = edge};
 }
 
+// font-family の要求を満たせなかった記録（③ レイアウトが集める。A57）→ 公開 API の Warning。
+// `actual_family` は実際に描いたフォールバック列の先頭の family 名（FontStore の追加順の先頭）。
+// 直し方（`--font` で渡す / `font-family` を外す）は文面に含める。
+Warning to_warning(const layout::FontFallback& fallback, std::string_view actual_family) {
+  std::string requested;
+  for (const std::string& family : fallback.families) {
+    if (!requested.empty()) {
+      requested += ", ";
+    }
+    requested += std::format("`{}`", family);
+  }
+  // family 名を読めないフォントでも黙らない（名前が無ければ「最初に読み込んだフォント」と言う）。
+  const std::string actual = actual_family.empty() ? std::string("the first loaded font")
+                                                   : std::format("`{}`", actual_family);
+  return Warning{.kind = WarningKind::FontNotFound,
+                 .detail = std::format(
+                     "no requested font family is loaded ({}); text uses {} instead at {}:{}",
+                     requested, actual, fallback.location.line, fallback.location.column),
+                 .codepoint = 0,
+                 .location = fallback.location,
+                 .overflow_px = 0.0F,
+                 .overflow_edge = OverflowEdge::None};
+}
+
 // ③ が集めた「続行できた問題」を Diagnostics に通す（A46 / §3.10）。
 // ここを通すことで (1) max_diagnostics の上限が警告にも掛かり (2) エラーと同じ規則で
 // 決定的に整列し (3) 失敗したときの `RenderFailure::warnings` にもそのまま乗る。
 // 上限に達したら記録をやめる（truncated は Diagnostics が立てる）。
-void collect_warnings(const layout::BoxTree& tree, Diagnostics& diagnostics) {
+// `fonts` は実際に使ったフォントの表（フォールバック列の先頭の名前を文面に入れる。A57）。
+void collect_warnings(const layout::BoxTree& tree, const text::FontStore& fonts,
+                      Diagnostics& diagnostics) {
   for (const layout::MissingGlyph& glyph : tree.missing_glyphs) {
     if (!diagnostics.add_warning(to_warning(glyph))) {
       break;  // 一度上限に達したら空きは戻らない
@@ -584,6 +610,13 @@ void collect_warnings(const layout::BoxTree& tree, Diagnostics& diagnostics) {
   }
   for (const layout::ContentOverflow& overflow : tree.overflows) {
     if (!diagnostics.add_warning(to_warning(overflow))) {
+      break;
+    }
+  }
+  // フォールバック列の先頭は FontId 0（FontStore の追加順の先頭。§3.5）。
+  const std::string_view actual_family = fonts.empty() ? std::string_view{} : fonts.family(0);
+  for (const layout::FontFallback& fallback : tree.font_fallbacks) {
+    if (!diagnostics.add_warning(to_warning(fallback, actual_family))) {
       break;
     }
   }
@@ -637,7 +670,7 @@ std::expected<RenderResult, RenderFailure> render_impl(std::string_view html,
   }
   // ③ が集めた「続行できた問題」（豆腐・紙面からのはみ出し）を診断に通す（A46）。
   // ここから先で失敗したときも、`RenderFailure::warnings` にそのまま乗る。
-  collect_warnings(*tree, diagnostics);
+  collect_warnings(*tree, *resources->fonts, diagnostics);
   const Result<float> height = output_height(*tree, options);
   if (!height) {
     return to_failure(diagnostics, height.error());
@@ -755,7 +788,7 @@ std::expected<std::string, RenderFailure> dump_impl(std::string_view html,
   }
   // ③ が集めた警告は dump では返す先が無い（戻り値は文字列 1 本）が、診断には通す:
   // strict の判定と `RenderFailure::warnings` を render() と同じ組み立てにするため（A46）。
-  collect_warnings(*tree, diagnostics);
+  collect_warnings(*tree, *resources->fonts, diagnostics);
   const Result<std::string> dumped = dump_after_layout(*tree, options, stage);
   if (!dumped) {
     return to_failure(diagnostics, dumped.error());

@@ -199,6 +199,21 @@ std::string dump_json(const BoxTree& tree) {
     }
     writer.end_array();
   }
+  // font-family の要求を満たせなかった記録（A57）。1 件も無ければキーごと省く
+  if (!tree.font_fallbacks.empty()) {
+    writer.key("font_fallbacks").begin_array();
+    for (const FontFallback& fallback : tree.font_fallbacks) {
+      writer.begin_object();
+      writer.key("families").begin_array();
+      for (const std::string& family : fallback.families) {
+        writer.value(family);
+      }
+      writer.end_array();
+      writer.key("location").value(location_text(fallback.location));
+      writer.end_object();
+    }
+    writer.end_array();
+  }
   writer.end_object();
   return std::move(writer).str();
 }

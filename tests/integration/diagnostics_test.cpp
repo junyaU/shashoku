@@ -238,6 +238,68 @@ TEST(Diagnostics, TofuAndOverflowAreSortedByPosition) {
 }
 
 // ---------------------------------------------------------------------------
+// 結果にも（A46 の 3）: font-family の要求を満たせなかった（A57）
+// ---------------------------------------------------------------------------
+
+// 明朝を指定したのに渡していない = 黙ってゴシックで描いていた（A57 の動機）。
+// 警告 1 件・識別子・位置が出て、描画は続く。
+TEST(Diagnostics, FontNotFoundIsWarnedWithTheRequestedFamilies) {
+  const auto result =
+      render(R"(<div style="font-family: 'Hiragino Mincho ProN', serif">明朝</div>)",
+             japanese_fonts(), options_for(320));
+  ASSERT_TRUE(result.has_value()) << to_string(result.error());
+  ASSERT_EQ(result->warnings.size(), 1U);
+  const Warning& warning = result->warnings[0];
+  EXPECT_EQ(warning.kind, WarningKind::FontNotFound);
+  EXPECT_EQ(to_string(warning.kind), "font-not-found");
+  EXPECT_EQ(warning.codepoint, 0U);
+  EXPECT_FLOAT_EQ(warning.overflow_px, 0.0F);
+  EXPECT_EQ(warning.overflow_edge, OverflowEdge::None);
+  // 位置は宣言ではなくテキストノードの先頭（AI は文面の family 名で宣言を探す。A57）
+  EXPECT_EQ(location_of(warning).line, 1U);
+  EXPECT_EQ(location_of(warning).column, 57U);
+  // 文面は契約ではないが、直し方に必要な 2 つ（要求した名前・実際に描いた family）は入れる
+  EXPECT_NE(warning.detail.find("Hiragino Mincho ProN"), std::string::npos) << warning.detail;
+  EXPECT_NE(warning.detail.find("serif"), std::string::npos) << warning.detail;
+  EXPECT_NE(warning.detail.find("Noto Sans JP"), std::string::npos) << warning.detail;
+  EXPECT_FALSE(result->png.empty());  // 警告であって失敗ではない
+}
+
+// 要求を満たせていれば出ない: 具体名の一致、`sans-serif`（既定のフォールバックで満たす）、未指定。
+TEST(Diagnostics, NoFontWarningWhenTheRequestIsMet) {
+  for (const std::string_view html : {
+           R"(<div style="font-family: 'Noto Sans JP', serif">和文</div>)",
+           R"(<div style="font-family: sans-serif">和文</div>)",
+           R"(<div style="font-family: 'Hiragino Kaku Gothic ProN', system-ui">和文</div>)",
+           R"(<div>和文</div>)",
+       }) {
+    const auto result = render(html, japanese_fonts(), options_for(320));
+    ASSERT_TRUE(result.has_value()) << to_string(result.error());
+    EXPECT_TRUE(result->warnings.empty()) << html << " / " << result->warnings.size();
+  }
+}
+
+// 粒度は `font-family` の並びごとに 1 件（宣言が 1 つなら直す箇所も 1 つ）。
+// 同じ並びを何回使っても 1 件で、位置は入力順で最初のテキストノードの先頭。
+TEST(Diagnostics, FontNotFoundIsReportedOncePerFamilyStack) {
+  constexpr std::string_view kHtml =
+      "<div style=\"font-family: 'Yu Mincho'\">\n"
+      "<p>ひとつめ</p>\n"
+      "<p>ふたつめ</p>\n"
+      "</div>\n"
+      "<p style=\"font-family: monospace\">べつの並び</p>\n";
+  const auto result = render(kHtml, japanese_fonts(), options_for(320));
+  ASSERT_TRUE(result.has_value()) << to_string(result.error());
+  ASSERT_EQ(result->warnings.size(), 2U) << result->warnings.size();
+  EXPECT_EQ(result->warnings[0].kind, WarningKind::FontNotFound);
+  EXPECT_EQ(location_of(result->warnings[0]).line, 2U);  // 1 つめの <p> の中身
+  EXPECT_EQ(result->warnings[1].kind, WarningKind::FontNotFound);
+  EXPECT_EQ(location_of(result->warnings[1]).line, 5U);
+  // 並びは入力位置の昇順
+  EXPECT_LT(location_of(result->warnings[0]).offset, location_of(result->warnings[1]).offset);
+}
+
+// ---------------------------------------------------------------------------
 // 格上げ（A46 の 4）: warnings_as_errors
 // ---------------------------------------------------------------------------
 
@@ -281,6 +343,19 @@ TEST(Diagnostics, StrictPromotesContentOverflow) {
   EXPECT_EQ(result.error().errors[0].kind, ErrorKind::WarningAsError);
   EXPECT_EQ(promoted_kind(result.error().errors[0]), WarningKind::ContentOverflow);
   EXPECT_TRUE(result.error().errors[0].hint.empty());
+}
+
+// フォントの取りこぼしも同じ経路で格上げされる（サーバーで「指定と違う書体の画像は配らない」判断に使う）。
+TEST(Diagnostics, StrictPromotesFontNotFound) {
+  const auto result = render(R"(<div style="font-family: 'Yu Mincho', serif">明朝</div>)",
+                             japanese_fonts(), strict_options(320));
+  ASSERT_FALSE(result.has_value()) << "strict なのに成功した";
+  const RenderFailure& failure = result.error();
+  ASSERT_EQ(failure.errors.size(), 1U) << to_string(failure);
+  EXPECT_EQ(failure.errors[0].kind, ErrorKind::WarningAsError);
+  EXPECT_EQ(promoted_kind(failure.errors[0]), WarningKind::FontNotFound);
+  EXPECT_EQ(location_of(failure.errors[0]).line, 1U);
+  EXPECT_TRUE(failure.warnings.empty());
 }
 
 // 格上げした message に位置を書かない（error.hpp の契約）。位置は `location` にあり、

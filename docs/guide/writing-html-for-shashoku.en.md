@@ -129,9 +129,11 @@ pseudo-classes and pseudo-elements (`:hover` `::before`), at-rules (`@media`, `@
 > **unitless** whenever the element has children with a different `font-size`.
 > `font-size` does not accept keywords such as `large`.
 
-> `font-family` only matches the **family name a font file declares for itself**. Generic families
-> (`serif`, `sans-serif`, `monospace`, …) and the names of fonts you did not pass are
-> **skipped silently, not reported as an error** (see §7 for serif and monospace).
+> `font-family` only matches the **family name a font file declares for itself**. If nothing in the
+> list can be satisfied (names you did not pass, plus generics shashoku cannot interpret such as
+> `serif` or `monospace`), you get **`warning[font-not-found]` and the text is drawn with the default
+> font** (rendering continues). `sans-serif`, `system-ui` and `ui-sans-serif` are satisfied by the
+> default font (a sans face), so they raise nothing (see §7 for serif and monospace).
 
 **A symbol only appears if the font has it.** Anything missing renders as □ (tofu) and produces a
 `warning[missing-glyph]`. The list below was checked by actually drawing it with the embedded
@@ -905,6 +907,17 @@ cut content, `right` means raise `--width` or shrink the box's width and padding
 `--height` (the height follows the content) nothing can overflow vertically, so only the horizontal
 edges are checked.
 
+```
+warning[font-not-found]: no requested font family is loaded (`Hiragino Mincho ProN`, `serif`); text uses `Noto Sans JP` instead at 1:57
+```
+
+`font-not-found` means **none of the families in `font-family` could be satisfied, so another font
+drew the text** (asking for a serif face and getting the sans default is the typical case). Fix it by
+passing that font with `--font`, by dropping `font-family`, or by writing `sans-serif`.
+`sans-serif`, `system-ui` and `ui-sans-serif` are satisfied by the default font, so they raise
+nothing; `serif`, `monospace` and the other generics are not interpreted by shashoku, so on their own
+they are not satisfied (§7).
+
 **A warning still produces a PNG and still exits 0.** If you publish automatically, read stderr too.
 **`--strict` turns warnings into failures**: no PNG is written and an existing file is left untouched.
 
@@ -935,8 +948,9 @@ shashoku 0.1.0 today:
   No hint means there is no substitute
 - **Identical diagnostics at one location are reported once**, even when several elements match the
   same rule
-- There are two warnings: `missing-glyph` (tofu) and `content-overflow` (**content that does not fit
-  the fixed canvas**). Set `--height` too small and you are told how much is cut off, and on which edge
+- There are three warnings: `missing-glyph` (tofu), `content-overflow` (**content that does not fit
+  the fixed canvas**) and `font-not-found` (**no requested `font-family` could be satisfied**).
+  Set `--height` too small and you are told how much is cut off, and on which edge
 - **`--strict`** turns any warning into a failure and **writes no PNG** (an existing file is left
   untouched). That is the "do not publish" signal for a server
 - **`--diagnostics json`** writes one JSON object to stdout (on success and on failure)
@@ -1027,8 +1041,10 @@ shashoku og-card.html -o og.png --width 1200 --height 630 --strict
 ### Serif and monospace (`--font` and `font-family`)
 
 **The embedded default font is only Noto Sans JP, Regular and Bold.** Writing
-`font-family: serif` or `font-family: monospace` changes **not one pixel** (generic families, and
-the names of fonts you did not pass, are **skipped silently rather than reported as an error**).
+`font-family: serif` or `font-family: monospace` changes **not one pixel** (generics shashoku cannot
+interpret, and the names of fonts you did not pass, are skipped). It is not silent about it, though:
+if nothing in the list can be satisfied you get **`warning[font-not-found]`** (`sans-serif`,
+`system-ui` and `ui-sans-serif` are satisfied by the default font, so they raise nothing).
 To get a serif or a monospace face, pass that font file with `--font`.
 
 - `font-family` matches the **family name the font file declares for itself** (case and surrounding

@@ -1635,9 +1635,14 @@ definite ならその値」で、**`flex-basis` は含まれない**。
   偽の TextMeasurer でフラグを立てて確かめる
 - **文面**: `no requested font family is loaded (\`A\`, \`B\`); text uses \`Noto Sans JP\` instead at L:C`。
   直し方は文面に含める（`--font` でそのフォントを渡す、または `font-family` を外す）
-- **確かめること（実装時に追記）**: a_plain の case03 / 05 / 07 / 10 で 1 件ずつ出ること、`sans-serif` だけの
-  入力では出ないこと、guided 15 件（ガイドどおり `font-family` を書かない）で出ないこと、ゴールデンと examples の
-  絵が不変なこと
+- **確かめたこと（2026-09-24、release の CLI で実測）**: `c_fix` の case03 / 05 / 07 / 10 で
+  `warning[font-not-found]` が **1 件ずつ**出た（どれも `Noto Serif JP` / `Hiragino Mincho ProN` /
+  `Yu Mincho` …）。**case04 でも 1 件出た**（`JetBrains Mono`, `Consolas`, `monospace` のコード欄。
+  規則どおりで、明朝 4 件に加えて取りこぼしがもう 1 件あったということ）。`sans-serif` だけ・
+  `system-ui` だけ・未指定では出ない。guided 15 件（日本語 10 + 英語 5。記録どおりの `cli_args` に
+  `--strict`）は**全件 exit 0 で警告 0 件**（ガイドどおり `font-family` を書いていない）。
+  `examples/*.html` 5 本は修正前後の CLI で **PNG がバイト単位で同一**、ゴールデン 16 枚は
+  dev / asan の全テスト（各 1294 件）が通った = 1 ピクセルも変わっていない
 
 ---
 
@@ -2268,7 +2273,8 @@ layout に進まず `RenderFailure`（`std::move(diag).into_failure()`。整列�
 （`to_failure(diag, error)`。`LimitExceeded` などもこの経路なので、集めた対応外と一緒に出る）。
 ③ 以降の失敗は今までどおり 1 件で、`RenderFailure{errors = {その 1 件}} + 集まっていた警告`。
 
-警告は ③ が成功した直後に `BoxTree::missing_glyphs`（A31）と `BoxTree::overflows`（A46 / A50）から作り、
+警告は ③ が成功した直後に `BoxTree::missing_glyphs`（A31）・`BoxTree::overflows`（A46 / A50）・
+`BoxTree::font_fallbacks`（A57）から作り、
 `diag.add_warning()` に通してから（= 上限が掛かる）(offset, kind, codepoint, detail) で安定に整列する
 （豆腐だけの列では A31 の順序と同じ）。一度上限に達したらその段の残りは作らない。ここで診断に入れておくので、
 ④以降で失敗したときも `RenderFailure::warnings` に載る。`ContentOverflow` の `detail` は

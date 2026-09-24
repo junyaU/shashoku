@@ -40,6 +40,9 @@ class FakeMeasurer final : public text::TextMeasurer {
   std::u32string fallback_chars;
   // 豆腐の再現。ここに入れた文字のクラスタは missing = true になる（issue #9）
   std::u32string missing_chars;
+  // font-family の要求を満たせなかったことの再現（A57）。style.font_family にここの名前が
+  // 1 つでもあれば ShapedText::family_request_unmet を立てる（実物の照合はしない）
+  std::vector<std::string> unmet_families;
   // 失敗の注入（A30 / issue #3）。ここの文字を含む区間の shape() がエラーを返す
   std::u32string fail_on;
   bool fail_metrics = false;

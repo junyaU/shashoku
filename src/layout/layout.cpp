@@ -241,7 +241,11 @@ Result<float> LayoutEngine::measure_block_size(const BlockInput& input, const Bo
       return *found;
     }
   }
+  // 計測中であることを下の段に伝える（A54 の追記）。捨てる箱の中の座標を作らないために、
+  // stretch した flex アイテムの組み直しはここでは省く（箱の大きさは変わらない）。
+  ++measuring_;
   Result<BlockBox> box = layout_block(input, sizing, content_inline_start, 0);
+  --measuring_;
   if (!box) {
     return std::unexpected(box.error());
   }

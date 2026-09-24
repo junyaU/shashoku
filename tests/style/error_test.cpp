@@ -100,7 +100,6 @@ TEST(StyleError, UnsupportedProperties) {
       {"position: absolute", ErrorKind::UnsupportedProperty},
       {"box-shadow: 0 0 4px black", ErrorKind::UnsupportedProperty},
       {"grid-template-columns: 1fr 1fr", ErrorKind::UnsupportedProperty},
-      {"box-sizing: border-box", ErrorKind::UnsupportedProperty},
       {"border-top: 1px solid red", ErrorKind::UnsupportedProperty},
       {"border-top-left-radius: 4px", ErrorKind::UnsupportedProperty},
       {"overflow: hidden", ErrorKind::UnsupportedProperty},
@@ -112,6 +111,39 @@ TEST(StyleError, UnsupportedProperties) {
       {"font: 16px serif", ErrorKind::UnsupportedProperty},
       {"-webkit-line-clamp: 2", ErrorKind::UnsupportedProperty},
   });
+}
+
+// A56: `box-sizing` は対応したので、プロパティ名そのものは通る。値だけが 2 つに限られる。
+TEST(StyleError, BoxSizingIsSupportedAndOnlyItsValuesAreChecked) {
+  for (const std::string_view css : {"box-sizing: content-box", "box-sizing: border-box"}) {
+    SCOPED_TRACE(css);
+    const Outcome outcome = collect_inline(css);
+    EXPECT_TRUE(outcome.errors.empty())
+        << (outcome.errors.empty() ? "" : outcome.errors.front().message);
+  }
+  const Outcome outcome = collect_inline("box-sizing: padding-box");
+  ASSERT_EQ(outcome.errors.size(), 1U);
+  EXPECT_EQ(outcome.errors.front().kind, ErrorKind::UnsupportedValue);
+  EXPECT_NE(outcome.errors.front().message.find("content-box, border-box"), std::string::npos)
+      << outcome.errors.front().message;
+}
+
+// `* { box-sizing: border-box }` は普段の AI の HTML の定番（A56 の根拠。10/10 が書いた）。
+// `box-sizing` は**箱のプロパティではない**ので、`*` が inline の要素に当たっても
+// `unsupported-layout` にならない（なったら 1 行そのままでは通らなくなる）。
+TEST(StyleError, UniversalBoxSizingReachesInlineElementsWithoutError) {
+  const html::Node tree = test_root(test_style_element("* { box-sizing: border-box }"),
+                                    test_parent("div", {}, test_element("span")));
+  const Resolved resolved = resolve_collect(tree);
+  ASSERT_TRUE(resolved.tree.has_value());
+  EXPECT_TRUE(resolved.errors.empty())
+      << (resolved.errors.empty() ? "" : resolved.errors.front().message);
+  ASSERT_FALSE(resolved.tree->children.empty());
+  const StyledNode& div = resolved.tree->children.front();
+  EXPECT_EQ(div.style.box_sizing, BoxSizing::BorderBox);
+  ASSERT_FALSE(div.children.empty());
+  EXPECT_EQ(div.children.front().style.display, Display::Inline);
+  EXPECT_EQ(div.children.front().style.box_sizing, BoxSizing::BorderBox);
 }
 
 // 安定した契約はケバブケースの識別子（A46-6）。message ではなくこちらで機械が読む。
@@ -143,7 +175,6 @@ TEST(StyleError, UnsupportedPropertyMessageNamesTheProperty) {
 constexpr auto kHintedProperties = std::to_array<std::string_view>({
     "background-clip",
     "background-image",
-    "box-sizing",
     "flex-wrap",
     "float",
     "grid-area",
@@ -195,8 +226,7 @@ TEST(StyleError, HintsNameTheVerifiedAlternative) {
     std::string_view css;
     std::string_view needle;
   };
-  const std::array<Hint, 13> cases{{
-      {"box-sizing: border-box", "content-box"},
+  const std::array<Hint, 12> cases{{
       // CSS Box Alignment 3 §8.4 の legacy gap properties。写し先は 3 つとも対応済みだが、
       // shashoku に grid は無く flex に `grid-gap` と書く動機もないので別名は入れない（A35）。
       // 代わりに写し先を案内する
@@ -798,7 +828,7 @@ TEST(StyleError, AllProblemsAreCollectedInOnePass) {
   constexpr SourceLocation kFirst{.offset = 200, .line = 8, .column = 6};
   constexpr SourceLocation kSecond{.offset = 300, .line = 9, .column = 7};
   const html::Node tree =
-      test_root(test_style_element("p { float: left; box-sizing: border-box }\n"
+      test_root(test_style_element("p { float: left; box-shadow: 0 0 4px black }\n"
                                    "div p { color: red }",
                                    kSheet),
                 test_element("div", {test_attr("style", "position: absolute", kFirst)}),
@@ -806,7 +836,7 @@ TEST(StyleError, AllProblemsAreCollectedInOnePass) {
   const Outcome outcome = collect(tree);
   EXPECT_EQ(outcome.kinds(), (std::vector<ErrorKind>{
                                  ErrorKind::UnsupportedProperty,  // float（<style>）
-                                 ErrorKind::UnsupportedProperty,  // box-sizing（<style>）
+                                 ErrorKind::UnsupportedProperty,  // box-shadow（<style>）
                                  ErrorKind::CssParse,             // div p（子孫結合子）
                                  ErrorKind::UnsupportedProperty,  // position（1 つ目の属性）
                                  ErrorKind::UnsupportedLayout,    // span への padding

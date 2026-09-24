@@ -19,9 +19,9 @@ python3 examples/server/render_with_retry.py --shashoku build/release/tools/shas
 
 ```
 attempt 1/3: 3 error(s)
-  error[unsupported-property] at 3:12: `box-sizing` is not a supported property
-    hint: content-box only: subtract padding and border from `width` / `height`
-  error[unsupported-property] at 3:36: `box-shadow` is not a supported property
+  error[unsupported-property] at 3:12: `max-width` is not a supported property
+    hint: no min/max sizes: use a fixed `width` / `height`, or drop it
+  error[unsupported-property] at 3:30: `box-shadow` is not a supported property
   error[unsupported-property] at 5:12: `text-transform` is not a supported property
 attempt 2/3: ok, wrote out.png (640x141)
 ```

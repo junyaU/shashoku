@@ -214,6 +214,9 @@ void apply_inherit(PropertyId property, const StyleState& parent, StyleState& st
     case PropertyId::Display:
       s.display = p.display;
       return;
+    case PropertyId::BoxSizing:
+      s.box_sizing = p.box_sizing;
+      return;
     case PropertyId::Width:
       s.width = p.width;
       return;
@@ -323,6 +326,9 @@ void apply_initial(PropertyId property, StyleState& state) {
   switch (property) {
     case PropertyId::Display:
       s.display = i.display;
+      return;
+    case PropertyId::BoxSizing:
+      s.box_sizing = i.box_sizing;
       return;
     case PropertyId::Width:
       s.width = i.width;
@@ -456,6 +462,9 @@ Result<void> apply_value(PropertyId property, const SpecifiedValue& value, Style
   switch (property) {
     case PropertyId::Display:
       s.display = take<Display>(value);
+      return {};
+    case PropertyId::BoxSizing:
+      s.box_sizing = take<BoxSizing>(value);
       return {};
     case PropertyId::Width:
       return dimension(s.width);

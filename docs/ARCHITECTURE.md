@@ -86,7 +86,8 @@ flex の固有寸法計測がその外側から同じ段落を何度も組み直
 flex コンテナの中では一切相殺しない。ブラウザとのピクセル一致は目標ではない（DESIGN.md §4）。
 
 **A11. 枠線と角丸は 4 辺・4 隅共通のみ。** `border-top` や隅ごとの半径は `UnsupportedProperty`。
-`box-sizing` は content-box のみ（プロパティ自体が対応外）。
+~~`box-sizing` は content-box のみ（プロパティ自体が対応外）。~~ → **A56 で上書き**
+（`box-sizing: border-box` に対応した。既定は content-box のまま）。
 
 **A12. 画像は名前で参照する。** `render()` に `ImageSet`（名前 → PNG バイト列）を渡し、
 `<img src="名前">` で引く。ネットワークにもファイルシステムにも触れない。対応形式は PNG のみ。
@@ -116,8 +117,9 @@ FontSet にない名前を飛ばすのは「黙って崩す」に当たらない
 
 **A18. `<img>` は交差軸の stretch で歪めない。** flex アイテムの `<img>` は `align-items: stretch` でも
 縦横比を保つ（CSS では歪むが、OG 画像でアイコンが潰れるのは誰も望まない）。主軸方向の grow / shrink は
-CSS どおりに効く。`box-sizing` は content-box のみ（A11）なので、1200×630 の箱に padding 80px を
-入れるなら `width: 1040px; height: 470px` と書く。
+CSS どおりに効く。（A56 より前は `box-sizing` が content-box のみだったので、1200×630 の箱に
+padding 80px を入れるには `width: 1040px; height: 470px` と書く必要があった。いまは
+`box-sizing: border-box` を書けば `width: 1200px; height: 630px` でよい。）
 
 **A19. `GlyphSource::rasterize()` は `Result<GlyphBitmap>` を返し、「成功して空のビットマップ」は
 空白グリフだけを意味する。** 値返しの契約では、不正な `FontId`・`FT_Load_Glyph` の失敗・輪郭を
@@ -1662,6 +1664,48 @@ A52 / A53 後の再測定（`docs/benchmark/results_a53_2026-09-24.md` §2 / §3
   前は 3 往復かかった border-width → border-radius → padding-top が 1 回で出る。
   `examples/*.html` 5 本の PNG は main（2c7066c）の release バイナリの出力と**バイト一致**（絵は変えていない）
 
+**A56. `box-sizing: border-box` に対応する。A11 の「content-box のみ」を上書きする。**（2026-09-24）
+
+`width` / `height` / `flex-basis` が **border box の寸法**になる書き方に対応する。初期値は `content-box`
+（ブラウザと同じ）で、**継承しない**。既定のままの絵は 1 ビットも変わらない。
+
+- **経緯**: A52 / A53 後の再測定（`docs/benchmark/results_a53_2026-09-24.md`）で、**普段の AI の HTML は
+  10/10 が `* { box-sizing: border-box }` を書き**、hint に従った手の引き算が 26 か所に及んだ。
+  `*` セレクタはすでに対応しているので、`box-sizing` を足せばその 1 行がそのまま通る。
+  ガイドと利用者の手計算（§3-(1)、§4.6 / §4.7 / §4.9 / §4.14 の「552 = 600 − 24×2」のような計算）が
+  まとめて要らなくなる。A47 の関門「対象用途で成功率・修正の手間を改善するか」に Yes
+- **決めたこと**（CSS Box Sizing 3 §3）:
+  - 値は `content-box | border-box` の 2 つだけ。初期値 `content-box`、**継承しない**。
+    `inherit` / `initial` は既存の global keyword の経路をそのまま通る
+  - `border-box` のとき content = **max(指定値 − padding（その軸の 2 辺）− border×2, 0)**。
+    `%` の `width` は**先に解決してから**引く。引ききれないときは content が 0 で止まり、
+    箱は指定値より大きくなる（仕様どおり）
+  - **`flex-basis` も同じ扱い**（CSS Flexbox 1 §7.2.3: `flex-basis` は `width` / `height` と同じく
+    `box-sizing` の影響を受ける）。`auto` / 内容サイズはそのまま
+  - **`<img>` も同じ**。CSS の `width` / `height` と、`width` / `height` 属性
+    （presentational hint = 同じプロパティ）を区別しない
+  - **縦書きでも式は論理軸で同じ**。引く padding の辺は `LogicalMap` で読み替える
+    （`vertical-rl` の inline は上下、block は右左）。border は 4 辺共通のまま（A11）
+  - **`box-sizing` は「箱のプロパティ」に数えない**。数えると `* { box-sizing: border-box }` が
+    文中の `span` に当たって `unsupported-layout` になり、この 1 行が通らなくなる
+- **ヘルパの置き場所**: 引き算は `LayoutEngine::border_box_extra()` と
+  `LayoutEngine::content_from_specified()`（`src/layout/engine.cpp`）の **2 つだけ**に置く。
+  block（`resolve_box()`）・flex（`item_intrinsic()` / `prepare_cross_row|column()` /
+  `prepare_base_row|column()`）・固有寸法（`outer_intrinsic()`）・`<img>`（`resolve_image()`）が
+  すべてここを通る。軸は `SizeAxis{Inline, Block}`（**論理**）で、物理の `width` / `height` から
+  引く `<img>` だけが writing-mode で読み替える
+- **確かめたこと**: `dev` / `asan` とも全件通り、**ゴールデン画像は 1 枚も変わらない**。
+  `examples/*.html` 5 本と `docs/guide/examples/*.html` 14 本を修正前のバイナリ（`build/release`）と
+  描き比べて **19 本すべてバイト単位で一致**（既定が content-box のままなので）。
+  `* { box-sizing: border-box }` を足した入力で `width: 200px; padding: 20px; border: 2px` の箱は
+  `--dump-stage box` で border box 200 / 行の content 156（開始 22）。
+  `docs/benchmark/2026-09-23/inputs/a_plain/case03.html` は修正前に `box-sizing` の
+  `unsupported-property` が出ていたが、修正後は出ない（診断の行が 29 → 27）。
+  **`border-box` で外寸をそのまま書いた紙面と、引き算を手でやった `content-box` の紙面の PNG が
+  バイト一致する**ことを統合テストで固定した（`tests/integration/box_sizing_test.cpp`）
+- **A11 の訂正**: A11 の「`box-sizing` は content-box のみ（プロパティ自体が対応外）」はこの判断で失効する。
+  A11 のうち「枠線と角丸は 4 辺・4 隅共通のみ」は今までどおり
+
 ---
 
 ## 2. モジュールと依存
@@ -1998,6 +2042,10 @@ std::string dump_json(const StyledNode& root);
 - UA スタイル: `div p h1-h6` は block。`h1`〜`h6` は font-size `2 / 1.5 / 1.17 / 1 / 0.83 / 0.67 em`・
   bold・上下 margin（ブラウザの既定値）。`p` は上下 margin 1em。`rt` は font-size 50%。
   `rp` と `style` は display: none
+- **`box-sizing`**（`content-box | border-box`。初期値 `content-box`、**継承しない**。A56）。
+  計算値は値をそのまま持ち、**引き算は ③ layout が行う**（`%` の解決に包含ブロックが要るため）。
+  `box-sizing` は `display: inline` への検査でいう「箱のプロパティ」には**数えない**:
+  数えると `* { box-sizing: border-box }` が文中の `span` に当たって `unsupported-layout` になる
 - 対応プロパティは DESIGN.md §4 の一覧 + 次のショートハンド / 別名:
   `margin` `padding`（1〜4 値）、`border`（`<幅> solid <色>` / `none`）、`border-width`
   `border-style`（solid / none）`border-color`、`flex`（`none` / `auto` / 1〜3 値）、
@@ -2162,6 +2210,19 @@ std::string dump_json(const BoxTree&);
 - **block**: 幅は親から降り、高さは子から戻る。`width: auto` は利用可能幅いっぱい。
   `margin: 0 auto` の中央寄せ。兄弟間のマージン相殺（A10）。子が inline と block の混在なら
   inline の連続を無名ブロックで包む
+- **`box-sizing`（A56。CSS Box Sizing 3 §3）**: `border-box` のとき `width` / `height` /
+  `flex-basis` は **border box** の寸法なので、content = `max(指定値 − padding（その軸の 2 辺）
+  − border×2, 0)`。`%` は**先に解決してから**引く。引ききれなければ content は 0 で、箱は
+  指定値より大きくなる。**引き算は `LayoutEngine::border_box_extra()` と
+  `LayoutEngine::content_from_specified()` の 2 つだけに置き**、block（`resolve_box()`）・
+  flex（`item_intrinsic()` / `prepare_cross_row|column()` / `prepare_base_row|column()`）・
+  固有寸法（`outer_intrinsic()`）・`<img>`（`resolve_image()`）がすべてここを通る。
+  軸は `SizeAxis{Inline, Block}`（**論理**）で、縦書きでも同じ式になる。物理の `width` /
+  `height` から引く `<img>` だけが writing-mode で軸を読み替える。
+  `<img>` は CSS の `width` / `height` と `width` / `height` **属性**を区別しない
+  （presentational hint = 同じプロパティ）。**flex アイテムの stretch と `flex-grow` /
+  `flex-shrink` の結果は content サイズとして扱う**ので `box-sizing` の影響を受けない
+  （指定された寸法にだけ効く）
 - **inline**: インライン整形文脈ごとに、(a) 空白の畳み込み（A14。文字を 1 つも持たない
   インラインボックスは「文字のない支柱」として位置つきで別に記録する。A42）
   → (b) **シェーピング属性**が

@@ -1,7 +1,5 @@
 #include "style/css_parser.hpp"
 
-#include <algorithm>
-#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <format>
@@ -13,6 +11,7 @@
 #include "core/diagnostics.hpp"
 #include "core/result.hpp"
 #include "core/utf8.hpp"
+#include "html/tags.hpp"
 #include "shashoku/error.hpp"
 #include "style/css_chars.hpp"
 #include "style/declaration.hpp"
@@ -22,21 +21,12 @@
 namespace shashoku::style {
 namespace {
 
-// 対応タグ（ARCHITECTURE.md §3.6）。正は ① html の `kSupportedTags` で、ここはその写し
-// （style は html に依存しないので表を共有できない）。タイプセレクタがこの表に無いタグを
-// 名指ししていたら、① はそのタグを要素にしない（透過か `UnsupportedTag`）ので、その規則は
-// **決して一致しない**（A55）。メッセージに並べるので辞書順に持つ。
-constexpr std::array<std::string_view, 15> kSupportedTags{"br", "div", "h1",   "h2",   "h3",
-                                                          "h4", "h5",  "h6",   "img",  "p",
-                                                          "rp", "rt",  "ruby", "span", "style"};
-
-bool is_supported_tag(std::string_view tag) {
-  return std::ranges::find(kSupportedTags, tag) != kSupportedTags.end();
-}
-
+// 対応タグの表は ① html と共有する（`html/tags.hpp`。ヘッダのみの依存で、dom.hpp と同じ扱い）。
+// タイプセレクタがこの表に無いタグを名指ししていたら、① はそのタグを要素にしない
+// （透過か `UnsupportedTag`）ので、その規則は**決して一致しない**（A55）。
 std::string supported_tags_text() {
   std::string out;
-  for (const std::string_view tag : kSupportedTags) {
+  for (const std::string_view tag : html::kSupportedTags) {
     if (!out.empty()) {
       out += ", ";
     }
@@ -564,7 +554,7 @@ Result<std::vector<Selector>> Parser::keep_usable_selectors(std::vector<ParsedSe
   usable.reserve(parsed.size());
   for (ParsedSelector& entry : parsed) {
     const std::string_view tag = entry.selector.tag;
-    if (!tag.empty() && !is_supported_tag(tag)) {
+    if (!tag.empty() && !html::is_supported_tag(tag)) {
       if (Result<void> noted = note(unsupported_tag_selector(entry.offset, tag)); !noted) {
         return std::unexpected(noted.error());
       }

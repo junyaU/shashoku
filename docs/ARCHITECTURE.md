@@ -1650,9 +1650,11 @@ A52 / A53 後の再測定（`docs/benchmark/results_a53_2026-09-24.md` §2 / §3
   （`body, div { … }` は body の 1 件を報告して div には当てる）。宣言は (b) と同じく報告だけする。
   hint は「外側の `div` にクラスを付けて移す or 規則を削る」で、**移して同じ絵になることを CLI で確かめた**
   （背景・padding・本文色が外側の div で出る）
-- **対応タグの表を style にも持った。** 正は ① html の `kSupportedTags` だが、style は html に依存しない
-  （§2 の依存の向き）ので `css_parser.cpp` に同じ表を写した。食い違いが出たら style が誤報するので、
-  タグを増やすときは両方を直す（テストは `SupportedTagSelectorsAreNotReported` が 15 タグを通す）
+- **対応タグの表は ① html と共有する**（`src/html/tags.hpp`）。写しを持つと食い違ったときに style が
+  誤報するので、`parser.cpp` の `kSupportedTags` / `is_supported_tag()` を**ヘッダのみ**の
+  `html/tags.hpp`（`constexpr` の配列と `constexpr` 関数だけ。リンクする実体は置かない）に移し、
+  style からも引く。style → html の依存は `dom.hpp` と同じ「ヘッダのみ」のままで、§2 の向きも変わらない
+  （テストは `SupportedTagSelectorsAreNotReported` が 15 タグを通す）
 - **確かめたこと**: `docs/benchmark/2026-09-23/inputs/a_plain/case01.html` は 1 回の実行で出る診断が
   **61 → 71 件**（`unsupported-tag` +2 = `body` / `table` のセレクタ、`unsupported-property` +8 =
   捨てていた規則の中の `border-right` / `vertical-align`）、case04 は **40 → 55 件**（タグのセレクタ +6、
@@ -1938,7 +1940,8 @@ std::string dump_json(const Node& root);
 - 入力は断片（`<html>` / `<body>` なしで `<div>…` から始まる）。トップレベルに複数ノード可
 - 対応タグ: `div span p h1-h6 img ruby rt rp br style`。それ以外は `UnsupportedTag`
   （`html head body script …` も含めてエラー。集めて続行し、要素は透過にする。下記）。
-  コメントと `<!DOCTYPE>` は読み飛ばす
+  コメントと `<!DOCTYPE>` は読み飛ばす。表は `src/html/tags.hpp`（ヘッダのみ）に置き、
+  ② style も引く（対応外のタグを名指しするセレクタの検査。A55）
 - 対応属性: 共通 `style class id`、`img` は加えて `src width height alt`。それ以外は
   `UnsupportedAttribute`。属性の重複は `HtmlParse`（**残す属性だけ**。A49）。引用符は `"` `'` なし の 3 形式
 - 空要素 `br img` は閉じタグなし（`<br/>` も可）。それ以外の要素の閉じ忘れ・対応しない終了タグ・
@@ -2026,8 +2029,8 @@ std::string dump_json(const StyledNode& root);
     1 セレクタにつき 1 件（要素ごとには増えない）。カンマ区切りは**その部分だけ**落として残りは適用する。
     hint は「外側の `div` にクラスを付けて移す or 規則を削る」。**一致しないクラス / ID / `*` は
     「正常な選択の結果」なので報告しない**（未使用の CSS を毎回警告すると `--strict` が使えなくなる）。
-    対応タグの表は `css_parser.cpp` が ① の `kSupportedTags` の写しを持つ（style は html に依存しないため。
-    タグを増やすときは両方を直す）
+    対応タグの表は ① と共有する（`src/html/tags.hpp`。ヘッダのみの依存で `dom.hpp` と同じ扱い。
+    写しを持たないので食い違わない）
   - **順序**: 診断は「足した順」（`<style>` の規則 → トップレベルの `writing-mode` の食い違い → 木を
     前順に辿った各要素の `style` 属性と計算値の検査）。入力位置での整列は api が `Diagnostics::sort()` で行う
   - **二重に出さない**: 文書の `writing-mode` を決める先読み（`document_writing_mode`）は同じ要素を

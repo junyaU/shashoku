@@ -37,6 +37,14 @@ TEST(StyleValue, KeywordsAreCaseInsensitive) {
   EXPECT_EQ(computed("Text-Align: Justify").text_align, TextAlign::Justify);
 }
 
+// A56（CSS Box Sizing 3 §3）。初期値は content-box。
+TEST(StyleValue, BoxSizing) {
+  EXPECT_EQ(ComputedStyle{}.box_sizing, BoxSizing::ContentBox);  // 初期値
+  EXPECT_EQ(computed("box-sizing: content-box").box_sizing, BoxSizing::ContentBox);
+  EXPECT_EQ(computed("box-sizing: border-box").box_sizing, BoxSizing::BorderBox);
+  EXPECT_EQ(computed("BOX-SIZING: BORDER-BOX").box_sizing, BoxSizing::BorderBox);
+}
+
 TEST(StyleValue, FlexDirection) {
   EXPECT_EQ(computed("flex-direction: row").flex_direction, FlexDirection::Row);
   EXPECT_EQ(computed("flex-direction: column").flex_direction, FlexDirection::Column);

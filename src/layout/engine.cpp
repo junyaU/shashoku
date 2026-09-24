@@ -142,6 +142,27 @@ void translate(BlockBox& box, float delta_inline, float delta_block) {
   }
 }
 
+// A56（CSS Box Sizing 3 §3）。`box-sizing: border-box` のとき `width` / `height` /
+// `flex-basis` は border box の寸法なので、content にするには padding（その軸の 2 辺）と
+// border x 2 を引く。**この 2 つの関数が引き算の唯一の置き場所**で、block（resolve_box）・
+// flex（flex_layout.cpp）・固有寸法（intrinsic.cpp）・<img>（image.cpp）が全部ここを通る。
+float LayoutEngine::border_box_extra(const style::ComputedStyle& style, SizeAxis axis) const {
+  if (style.box_sizing == style::BoxSizing::ContentBox) {
+    return 0;
+  }
+  const LogicalEdges<float> padding = map_.edges(style.padding);
+  const float border = std::max(style.border_width, 0.0F);
+  return (2 * border) + (axis == SizeAxis::Inline ? padding.inline_start + padding.inline_end
+                                                  : padding.block_start + padding.block_end);
+}
+
+float LayoutEngine::content_from_specified(const style::ComputedStyle& style, const Dimension& size,
+                                           float percent_basis, SizeAxis axis) const {
+  // `%` は先に解決してから引く（CSS Box Sizing 3 §3: border box の寸法を基準に解く）
+  const float specified = resolve_length(size, percent_basis);
+  return std::max(specified - border_box_extra(style, axis), 0.0F);
+}
+
 LogicalEdges<float> LayoutEngine::resolve_margin(const style::ComputedStyle& style,
                                                  float percent_basis) const {
   const LogicalEdges<Dimension> margin = map_.edges(style.margin);
@@ -181,9 +202,9 @@ Result<BoxSizing> LayoutEngine::resolve_box(const style::ComputedStyle& style,
     // auto の幅は残り全部。auto のマージンは 0 になる
     sizing.content_inline_size = std::max(available - extra - start - end, 0.0F);
   } else {
-    sizing.content_inline_size = override_inline
-                                     ? std::max(*override_inline, 0.0F)
-                                     : std::max(resolve_length(inline_size, available), 0.0F);
+    sizing.content_inline_size =
+        override_inline ? std::max(*override_inline, 0.0F)
+                        : content_from_specified(style, inline_size, available, SizeAxis::Inline);
     const float rest = available - extra - sizing.content_inline_size - start - end;
     if (start_auto && end_auto) {
       const float spare = std::max(rest, 0.0F);  // 余りが負なら中央寄せしない
@@ -218,7 +239,8 @@ Result<BoxSizing> LayoutEngine::resolve_box(const style::ComputedStyle& style,
                       : "percentage height is not supported",
                   location);
     }
-    sizing.content_block_size = std::max(block_size.value, 0.0F);
+    // ここまで来れば `%` ではないので、percent_basis は使われない
+    sizing.content_block_size = content_from_specified(style, block_size, 0, SizeAxis::Block);
   }
   return sizing;
 }

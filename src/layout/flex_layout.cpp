@@ -165,7 +165,9 @@ Result<Intrinsic> item_intrinsic(LayoutEngine& engine, const Item& item, float p
   if (!item.replaced) {
     const Dimension width = engine.map().inline_size(*item.style);
     if (!width.is_auto()) {
-      const float value = std::max(resolve_length(width, percent_basis), 0.0F);
+      // border-box なら指定値から padding と border を引く（A56）
+      const float value =
+          engine.content_from_specified(*item.style, width, percent_basis, SizeAxis::Inline);
       return Intrinsic{.min_content = value, .max_content = value};
     }
   }
@@ -214,7 +216,8 @@ Result<void> prepare_cross_row(LayoutEngine& engine, std::vector<Item>& items, A
     }
     const Dimension height = cross_property(item, engine.map(), true);
     if (!height.is_auto() && height.kind != Dimension::Kind::Percent) {
-      item.cross_definite = std::max(height.value, 0.0F);
+      // `%` ではないので percent_basis は使われない（A56 の引き算だけが効く）
+      item.cross_definite = engine.content_from_specified(*item.style, height, 0, SizeAxis::Block);
     }
     const bool auto_margin = auto_cross_start(item, true) || auto_cross_end(item, true);
     item.stretch = align == AlignItems::Stretch && !item.cross_definite && !auto_margin;
@@ -240,7 +243,7 @@ Result<void> prepare_cross_column(LayoutEngine& engine, std::vector<Item>& items
     const Dimension width = cross_property(item, engine.map(), false);
     const bool auto_margin = auto_cross_start(item, false) || auto_cross_end(item, false);
     if (!width.is_auto()) {
-      item.cross = std::max(resolve_length(width, cross_size), 0.0F);
+      item.cross = engine.content_from_specified(*item.style, width, cross_size, SizeAxis::Inline);
     } else if (align == AlignItems::Stretch && !auto_margin) {
       item.cross = std::max(available, 0.0F);
       item.stretch = true;
@@ -269,14 +272,18 @@ Result<void> prepare_base_row(LayoutEngine& engine, std::vector<Item>& items, fl
       return std::unexpected(content.error());
     }
     const Dimension main = main_dimension(item, engine.map(), true);
-    item.base =
-        main.is_auto() ? content->max_content : std::max(resolve_length(main, main_size), 0.0F);
+    // border-box は flex-basis にも効く（CSS Flexbox 1 §7.2.3。A56）
+    item.base = main.is_auto()
+                    ? content->max_content
+                    : engine.content_from_specified(*item.style, main, main_size, SizeAxis::Inline);
     // §4.5 の specified size suggestion は **width**。flex-basis は使わない（A52）。
     // row の `%` は常に確定した基準（コンテナの content 幅）で解けるので definite として扱う
     const Dimension width = main_size_property(item, engine.map(), true);
-    item.min_main = width.is_auto() ? content->min_content
-                                    : std::min(content->min_content,
-                                               std::max(resolve_length(width, main_size), 0.0F));
+    item.min_main =
+        width.is_auto()
+            ? content->min_content
+            : std::min(content->min_content, engine.content_from_specified(
+                                                 *item.style, width, main_size, SizeAxis::Inline));
     if (item.replaced) {
       item.min_main = std::max(content->min_content, 0.0F);  // 画像は内容サイズより縮めない
     }
@@ -309,12 +316,15 @@ Result<void> prepare_base_column(LayoutEngine& engine, std::vector<Item>& items,
       content_height = std::max(*block_size - main_extra(item, false), 0.0F);
     }
     const Dimension main = main_dimension(item, engine.map(), false);
+    // border-box は flex-basis にも効く（CSS Flexbox 1 §7.2.3。A56）
     if (main.is_auto()) {
       item.base = content_height;
     } else if (main.kind == Dimension::Kind::Percent) {
-      item.base = main_definite ? std::max(resolve_length(main, main_size), 0.0F) : content_height;
+      item.base = main_definite
+                      ? engine.content_from_specified(*item.style, main, main_size, SizeAxis::Block)
+                      : content_height;
     } else {
-      item.base = std::max(main.value, 0.0F);
+      item.base = engine.content_from_specified(*item.style, main, 0, SizeAxis::Block);
     }
     // §4.5 の specified size suggestion は **height**。flex-basis は使わない（A52）。
     // 主軸が不定（高さ auto の column）なら `%` の height は definite ではないので、
@@ -323,7 +333,8 @@ Result<void> prepare_base_column(LayoutEngine& engine, std::vector<Item>& items,
     const bool height_definite =
         !height.is_auto() && (height.kind != Dimension::Kind::Percent || main_definite);
     item.min_main = height_definite ? std::min(content_height,
-                                               std::max(resolve_length(height, main_size), 0.0F))
+                                               engine.content_from_specified(
+                                                   *item.style, height, main_size, SizeAxis::Block))
                                     : content_height;
   }
   return {};

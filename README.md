@@ -279,7 +279,7 @@ OOM killer にプロセスごと殺されることがあります。**メモリ�
 
 | 分類 | プロパティ |
 |---|---|
-| ボックス | `display`（`block` \| `flex` \| `inline` \| `none`）、`width` `height`、`margin`（`auto` 可）、`padding`、`border`（`<幅> solid <色>` \| `none`）、`border-width` `border-style` `border-color` `border-radius`、`background` / `background-color` |
+| ボックス | `display`（`block` \| `flex` \| `inline` \| `none`）、`box-sizing`（`content-box` \| `border-box`）、`width` `height`、`margin`（`auto` 可）、`padding`、`border`（`<幅> solid <色>` \| `none`）、`border-width` `border-style` `border-color` `border-radius`、`background` / `background-color` |
 | flexbox | `flex-direction` `justify-content` `align-items` `gap` `row-gap` `column-gap` `flex` `flex-grow` `flex-shrink` `flex-basis` |
 | テキスト | `color` `font-size` `font-family` `font-weight` `line-height` `letter-spacing` `text-align`（`justify` 含む）、`line-break`（`auto` \| `strict` \| `normal` \| `loose`）、`overflow-wrap`（`word-wrap` は別名） |
 | 縦書き | `writing-mode`（`horizontal-tb` \| `vertical-rl`） |
@@ -287,11 +287,12 @@ OOM killer にプロセスごと殺されることがあります。**メモリ�
 単位は `px` `em` と単位なしの `0`。`%` は `width` と `flex-basis` のみ。
 色は `#rgb` `#rgba` `#rrggbb` `#rrggbbaa`、`rgb()` `rgba()`、CSS の色名、`transparent`、`currentColor`（`border-color` のみ）。
 
-> **⚠️ `box-sizing` は content-box のみ**（プロパティ自体が対応外）。
-> `width` / `height` は **padding と border を含まない**値なので、
+> **`box-sizing` は両方使えます。既定は content-box**（ブラウザと同じ）。
+> 既定のままなら `width` / `height` は **padding と border を含まない**値なので、
 > 1200×630 の OG 画像を padding 80px で作るなら `width: 1040px; height: 470px; padding: 80px;`
 > と書きます（1040 + 80×2 = 1200、470 + 80×2 = 630）。
-> 枠線があればその幅も 2 辺ぶん引いてください。
+> **先頭に `* { box-sizing: border-box }` を書けばこの引き算は要りません**
+> （`width: 1200px; height: 630px; padding: 80px;` と書けます）。`flex-basis` と `<img>` にも同じように効きます。
 
 > **⚠️ 縦書きの約束事**。`writing-mode` を書けるのは**トップレベル要素だけ**で、
 > 途中で向きを変えること（直交フロー）はできません。縦書きでは内容が横に伸びるので
@@ -339,7 +340,7 @@ shashoku は純粋関数です（[DESIGN.md §3-5](docs/DESIGN.md)）。グロ�
 
 - **ルビ**: 親文字とルビの幅が違うときは JLREQ 3.3.6 の 1:2:…:2:1 で配り、はみ出したぶんは隣の**仮名**にだけ掛けます（JLREQ 3.3.8。漢字・欧文・数字・約物には掛けません）。`<rt>` に `letter-spacing` は効きません（ARCHITECTURE.md A37）。**縦中横**（`text-combine-upright`）はありません
 - **flexbox**: 単一行のみ（`flex-wrap` なし）。`align-self` `order` `flex-flow` なし
-- **ボックス**: `box-sizing` は content-box のみ。`max-width` / `min-width` なし。枠線と角丸は **4 辺・4 隅共通のみ**（`border-top` や隅ごとの半径は不可）。マージンの相殺は**隣り合う兄弟ブロック間だけ**（親子間はしません）
+- **ボックス**: `max-width` / `min-width` なし。枠線と角丸は **4 辺・4 隅共通のみ**（`border-top` や隅ごとの半径は不可）。マージンの相殺は**隣り合う兄弟ブロック間だけ**（親子間はしません）
 - **画像**: **PNG のみ**（JPEG / SVG / WebP は非対応）。URL もファイルパスも解釈せず、バイト列で渡します
 - **絵文字**: カラー絵文字フォント（CBDT / sbix / COLR / OT-SVG）は**色では描けません**。ビットマップ専用のフォント（CBDT / sbix）は読み込みでエラーにします。COLR は**ベースの輪郭があればその輪郭を単色で**描き、輪郭が無い（色レイヤーだけで絵を作る）グリフは **□ を描いて警告**を返します（`WarningKind::MissingGlyph`）。グリフが無いときも同じです
 

@@ -43,6 +43,9 @@ struct Item {
   std::optional<float> cross_definite;  // 交差軸 content サイズが確定ならその値
   float cross = 0;                      // column で使う交差軸 content サイズ
   bool stretch = false;
+  // 配置を行の交差サイズが決まるまで先送りした項目（A54 の追記）の、伸ばす前の
+  // 交差サイズ（border-box）。計測だけしてあり、箱はまだ組んでいない。
+  std::optional<float> deferred_cross;
   BlockBox box;
 };
 
@@ -460,7 +463,7 @@ void resolve_flexible_lengths(std::vector<Item>& items, bool row, bool main_defi
 
 // ---- 配置 -----------------------------------------------------------------------
 
-Result<void> layout_item(LayoutEngine& engine, Item& item, bool row) {
+BoxSizing item_sizing(const Item& item, bool row) {
   BoxSizing sizing;
   sizing.margin = item.margin;
   sizing.padding = item.padding;
@@ -472,9 +475,13 @@ Result<void> layout_item(LayoutEngine& engine, Item& item, bool row) {
     sizing.content_inline_size = item.cross;
     sizing.content_block_size = item.target;
   }
+  return sizing;
+}
+
+Result<void> layout_item(LayoutEngine& engine, Item& item, bool row) {
   // border-box の原点を (0, 0) に置いて組み、あとで最終位置へ平行移動する
-  Result<BlockBox> box =
-      engine.layout_block(item.input, sizing, item.border + item.padding.inline_start, 0);
+  Result<BlockBox> box = engine.layout_block(item.input, item_sizing(item, row),
+                                             item.border + item.padding.inline_start, 0);
   if (!box) {
     return std::unexpected(box.error());
   }
@@ -482,13 +489,49 @@ Result<void> layout_item(LayoutEngine& engine, Item& item, bool row) {
   return {};
 }
 
+// 伸ばした交差サイズを知って組み直す必要がある項目か（A54）。
+//
+// 組み直しが要るのは、項目が自分で flex コンテナのときだけ。ふつうのブロックは definite な
+// content_block_size を**自分の矩形にしか使わない**（子の BoxSizing には伝わらない: block
+// 方向の `%` は未対応）ので、伸ばした値で組み直しても 1 ビットも変わらない。その矩形は
+// apply_cross_stretch() が書き換える。
+bool contents_depend_on_cross_size(const Item& item) {
+  return !item.replaced && !item.input.anonymous && item.style != nullptr &&
+         item.style->display == style::Display::Flex;
+}
+
+// この項目の配置を「行の交差サイズが決まってから」に先送りするか（A54 の追記）。
+//
+// row の stretch では、項目を組むべき交差サイズが行の交差サイズ（= 全項目を測ったあと）に
+// なるまで分からない。先に組んでから伸びたぶんを組み直すと、1 段につき 2 回組むことになり、
+// 入れ子の深さ d に対して 2^d になる（実測: d = 12 で layout_block 16,383 回・67ms）。
+// そこで、組み直しが要りうる項目だけは **計測（A29 のメモに乗る）→ 配置 1 回**にする。
+bool defer_until_line_cross(const Item& item, bool row) {
+  return row && item.stretch && contents_depend_on_cross_size(item);
+}
+
+// 項目を組む。先送りする項目は、伸ばす前の交差サイズだけ測って箱は作らない。
 Result<void> layout_items(LayoutEngine& engine, std::vector<Item>& items, bool row) {
   for (Item& item : items) {
+    if (defer_until_line_cross(item, row)) {
+      const Result<float> cross = engine.measure_block_size(
+          item.input, item_sizing(item, row), item.border + item.padding.inline_start);
+      if (!cross) {
+        return std::unexpected(cross.error());
+      }
+      item.deferred_cross = *cross;
+      continue;
+    }
     if (const Result<void> laid = layout_item(engine, item, row); !laid) {
       return laid;
     }
   }
   return {};
+}
+
+// 伸ばす前の交差サイズ（border-box）。先送りした項目は測った値、それ以外は組んだ箱の値。
+float hypothetical_cross(const Item& item, bool row) {
+  return item.deferred_cross ? *item.deferred_cross : box_cross(item, row);
 }
 
 // 単一行なので「行の交差サイズ」= コンテナの交差サイズ。
@@ -499,27 +542,22 @@ float resolve_line_cross(const std::vector<Item>& items, bool row, bool cross_de
   }
   float line_cross = 0;
   for (const Item& item : items) {
-    line_cross = std::max(line_cross, box_cross(item, row) + margin_cross_start(item, row) +
-                                          margin_cross_end(item, row));
+    line_cross =
+        std::max(line_cross, hypothetical_cross(item, row) + margin_cross_start(item, row) +
+                                 margin_cross_end(item, row));
   }
   return line_cross;
 }
 
-// 伸ばした交差サイズを知って組み直す必要がある項目か（A54）。
-//
-// 組み直しが要るのは、項目が自分で flex コンテナのときだけ。ふつうのブロックは definite な
-// content_block_size を**自分の矩形にしか使わない**（子の BoxSizing には伝わらない: block
-// 方向の `%` は未対応）ので、組み直しても 1 ビットも変わらない。その矩形は下の
-// apply_cross_stretch() が書き換える。入れ子の深さ d に対して費用が 2^d にならないように、
-// 省けるものは省く（A22 / A29）。
-bool contents_depend_on_cross_size(const Item& item) {
-  return !item.replaced && !item.input.anonymous && item.style != nullptr &&
-         item.style->display == style::Display::Flex;
-}
-
 // row の stretch（CSS Flexbox §9.4 step 11 / §9.8）。伸ばした交差サイズは definite なので、
-// 中身がその値に依存する項目は、その値を与えてもう一度組む。column の stretch は幅なので
+// 中身がその値に依存する項目は、その値を与えて組む。column の stretch は幅なので
 // 組む前に反映ずみ（prepare_cross_column）。
+//
+// **計測中（engine.measuring()）は組まない**（A54 の追記）。計測が要るのは箱の大きさだけで、
+// 中の座標は捨てられる。行の交差サイズは resolve_line_cross() が**この関数より前に**決めていて、
+// 箱の外形も line_cross から書き戻すので、ここで組んでも組まなくても計測の戻り値は変わらない
+// （row の主軸サイズも definite なので、コンテナの大きさは項目の箱に依らない）。
+// 省くと計測 1 回が深さに線形になり、省かないと全体が深さの二乗になる。
 Result<void> apply_cross_stretch(LayoutEngine& engine, std::vector<Item>& items, bool row,
                                  float line_cross) {
   if (!row) {
@@ -531,10 +569,16 @@ Result<void> apply_cross_stretch(LayoutEngine& engine, std::vector<Item>& items,
     }
     const float outer =
         std::max(line_cross - margin_cross_start(item, row) - margin_cross_end(item, row), 0.0F);
-    // 伸び幅が 0（= この項目が行の交差サイズを決めた）なら、組み直しても中身は動かない。
-    // 判定は同じ入力から同じ結果になる（決定性は保たれる）
-    if (contents_depend_on_cross_size(item) && std::abs(outer - box_cross(item, row)) > kEpsilon) {
-      item.cross_definite = std::max(outer - cross_extra(item, row), 0.0F);
+    if (item.deferred_cross && engine.measuring()) {
+      // 捨てられる木なので中身は組まない。大きさだけ埋めておく（主軸は伸び縮み済みの target）
+      item.box.rect.inline_size = item.target + main_extra(item, row);
+    } else if (item.deferred_cross) {
+      // 先送りした項目をここで初めて組む。伸び幅が 0（= この項目が行の交差サイズを決めた）
+      // なら、測ったときと同じ条件（交差サイズ不定）で組む。判定は同じ入力から同じ結果に
+      // なる（決定性は保たれる）
+      if (std::abs(outer - *item.deferred_cross) > kEpsilon) {
+        item.cross_definite = std::max(outer - cross_extra(item, row), 0.0F);
+      }
       if (const Result<void> laid = layout_item(engine, item, row); !laid) {
         return laid;
       }

@@ -1,5 +1,9 @@
+#include <algorithm>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <iomanip>
+#include <iostream>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -249,6 +253,169 @@ TEST(LayoutComplexity, WideFlexTreeShapesOncePerTextNode) {
   // ノード数 n = depth×siblings に対して n² の定数倍まで
   const std::uint64_t nodes = kDepth * kSiblings;
   EXPECT_LE(counters.layout_block, (2 * nodes * nodes) + 32);
+}
+
+// ---- A54: stretch で伸びた項目の組み直しの計算量 -------------------------------------
+//
+// row の flex で stretch した項目は「行の交差サイズが決まってから」中身を組まなければ
+// ならない（A54）。素直に「まず組んで、伸びていたら組み直す」と 1 段につき 2 回組むので、
+// 入れ子の深さ d に対して 2^d になる。ここでは 3 つの形で **回数** を固定する。
+// 時間は環境に依るので assert せず、表（ARCHITECTURE.md A54 の追記）に載せる。
+//
+// 3 つの形（どれも row の flex を d 段重ねる。align-items は既定の stretch）:
+//   Worst  各段 = [背の高いブロック（段ごとに 1 行ずつ高くする）, 次の段]。次の段の
+//          伸び幅が必ず > 0 になるので、素直な実装では毎段で組み直しが起きる = 2^d
+//   Chain  各段 = [次の段] だけ。行の交差サイズをその項目自身が決めるので伸び幅 0
+//   NoTall 各段 = [次の段, 1 行のテキスト]。兄弟はいるが背が低いので伸び幅 0
+
+using style::AlignItems;
+using style::Dimension;
+
+constexpr float kStretchBar = 24;  // 最内の棒の高さ（1 行 = 16 より高くしておく）
+
+enum class StretchShape : std::uint8_t { Worst, Chain, NoTall };
+
+std::string_view shape_name(StretchShape shape) {
+  switch (shape) {
+    case StretchShape::Worst:
+      return "worst";
+    case StretchShape::Chain:
+      return "chain";
+    case StretchShape::NoTall:
+      return "no-tall";
+  }
+  return "?";
+}
+
+// lines 行ぶんの高さ（16 × lines）を持つブロック。
+Tree tall_block(std::size_t lines) {
+  std::vector<Tree> children;
+  for (std::size_t i = 0; i < lines; ++i) {
+    if (i > 0) {
+      children.push_back(br());
+    }
+    children.push_back(text("あ"));
+  }
+  return block(std::move(children));
+}
+
+// 最内のしるし: 自分の行の交差サイズの中央に来る棒。stretch が最内まで届いたかを座標で見る。
+Tree centered_bar() {
+  return flex({block({},
+                     [](ComputedStyle& style) {
+                       style.width = Dimension::px(24);
+                       style.height = Dimension::px(kStretchBar);
+                     })},
+              [](ComputedStyle& style) { style.align_items = AlignItems::Center; });
+}
+
+Tree nest_stretch(std::size_t depth, StretchShape shape) {
+  Tree inner = centered_bar();
+  for (std::size_t i = 0; i < depth; ++i) {
+    std::vector<Tree> children;
+    switch (shape) {
+      case StretchShape::Worst:
+        // i 段目の中身の自然な高さは max(24, 16(i+1))。1 行ぶん高いブロックを兄弟に置くと、
+        // どの段でも「伸び幅 > 0」になる = 組み直しが毎段で起きる
+        children.push_back(tall_block(i + 2));
+        children.push_back(std::move(inner));
+        break;
+      case StretchShape::Chain:
+        children.push_back(std::move(inner));
+        break;
+      case StretchShape::NoTall:
+        children.push_back(std::move(inner));
+        children.push_back(text("あ"));
+        break;
+    }
+    inner = flex(std::move(children));  // row・align-items: stretch（どちらも既定）
+  }
+  return inner;
+}
+
+// 深さ d の入れ子を 1 回組んで、そのときのカウンタを返す。
+Counters stretch_counters(std::size_t depth, StretchShape shape) {
+  FakeMeasurer measurer;
+  const auto root = build({nest_stretch(depth, shape)});
+  Counters counters;
+  const auto tree = run_layout(root, make_options(600), measurer, counters);
+  EXPECT_TRUE(tree.has_value()) << "depth=" << depth;
+  return counters;
+}
+
+// 入力に含まれるテキストノードの数（= シェーピングの回数の期待値。A6）。
+std::uint64_t text_nodes_of(std::size_t depth, StretchShape shape) {
+  const auto d = static_cast<std::uint64_t>(depth);
+  switch (shape) {
+    case StretchShape::Worst:
+      return d * (d + 3) / 2;  // 段ごとに 2, 3, … 行のブロックが 1 つ
+    case StretchShape::Chain:
+      return 0;  // テキストなし
+    case StretchShape::NoTall:
+      return d;  // 段ごとに 1 行
+  }
+  return 0;
+}
+
+// 組み直しの回数は入れ子の深さ **d に線形**（A54 の追記）。
+//
+// 直す前（A54 のまま）の最悪の形は 2^(d+2) − 1 回で、d = 12 で 16,383 回・67ms だった。
+// 対策後は「計測 1 + 配置 1」なので、1 段あたりの増分が定数になる。2 つの見方で固定する:
+//   * 1 段増やしたときの増分が定数以下（これが破れると多項式にも指数にもなる）
+//   * 絶対値が 6d + 16 以下（実測は最悪の形で 4d + 3、鎖で 2d + 4）
+TEST(LayoutComplexity, StretchRelayoutStaysLinearInTheNestingDepth) {
+  constexpr std::size_t kMaxDepth = 12;
+  constexpr std::uint64_t kPerDepth = 6;
+  for (const StretchShape shape :
+       {StretchShape::Worst, StretchShape::Chain, StretchShape::NoTall}) {
+    std::uint64_t previous = 0;
+    for (std::size_t depth = 1; depth <= kMaxDepth; ++depth) {
+      const Counters counters = stretch_counters(depth, shape);
+      const auto d = static_cast<std::uint64_t>(depth);
+      SCOPED_TRACE(testing::Message() << shape_name(shape) << " depth=" << depth);
+      EXPECT_LE(counters.layout_block, (kPerDepth * d) + 16);
+      if (depth > 1) {
+        EXPECT_LE(counters.layout_block - previous, kPerDepth) << "1 段あたりの増分";
+      }
+      previous = counters.layout_block;
+      // シェーピングは入力のテキストノードごとに 1 回（A6 / A29）。組み直しでは増えない
+      EXPECT_EQ(counters.shape_calls, text_nodes_of(depth, shape));
+      // 段落の準備は入力の段落の数だけ（どの形も 1 段につき多くて 1 つ増える）
+      EXPECT_LE(counters.inline_prepare, d + 2);
+    }
+  }
+}
+
+// 表を出す口（ARCHITECTURE.md A54 の追記の数字はこれで採った）。回数は環境に依らないが
+// 時間は依るので、ふつうのテスト実行からは外してある。出し方:
+//   build/dev/tests/layout/layout_test --gtest_also_run_disabled_tests \
+//     --gtest_filter='*StretchRelayoutCostTable*'
+TEST(LayoutComplexity, DISABLED_StretchRelayoutCostTable) {
+  constexpr int kRepeats = 3;
+  constexpr std::size_t kMaxDepth = 12;
+  std::cout << "shape\td\tlayout_block\tshape_calls\tms(median of " << kRepeats << ")\n";
+  for (const StretchShape shape :
+       {StretchShape::Worst, StretchShape::Chain, StretchShape::NoTall}) {
+    for (std::size_t depth = 1; depth <= kMaxDepth; ++depth) {
+      std::vector<double> times;
+      Counters counters;
+      for (int run = 0; run < kRepeats; ++run) {
+        FakeMeasurer measurer;
+        const auto root = build({nest_stretch(depth, shape)});
+        Counters run_counters;
+        const auto start = std::chrono::steady_clock::now();
+        const auto tree = run_layout(root, make_options(600), measurer, run_counters);
+        const auto end = std::chrono::steady_clock::now();
+        ASSERT_TRUE(tree.has_value()) << "depth=" << depth;
+        times.push_back(std::chrono::duration<double, std::milli>(end - start).count());
+        counters = run_counters;
+      }
+      std::sort(times.begin(), times.end());
+      std::cout << shape_name(shape) << '\t' << depth << '\t' << counters.layout_block << '\t'
+                << counters.shape_calls << '\t' << std::fixed << std::setprecision(3)
+                << times[times.size() / 2] << '\n';
+    }
+  }
 }
 
 }  // namespace

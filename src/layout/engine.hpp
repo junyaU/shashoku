@@ -101,6 +101,13 @@ class LayoutEngine {
   [[nodiscard]] LayoutCache& cache() const { return *cache_; }
   [[nodiscard]] bool memo_enabled() const { return memo_; }
 
+  // いま measure_block_size() の中か（A54 の追記）。計測が要るのは箱の**大きさ**だけで、
+  // 中の座標は捨てられる。stretch した flex アイテムの組み直し（A54）は箱の大きさを
+  // 変えない（row の行の交差サイズは組み直しの前に決まり、外形は line_cross から
+  // 書き戻す）ので、計測中は省ける。省かないと、計測の中でも各段が 2 回組むことになり
+  // 全体が深さの二乗になる。
+  [[nodiscard]] bool measuring() const { return measuring_ > 0; }
+
   // 計測器の呼び出しは必ずここを通す（回数と文字数を数えるため。TextMeasurer 自体は公開しない）。
   // 失敗はそのまま伝播する（A30 / issue #3）。数えるのは「実際に行った仕事」なので、
   // 失敗した呼び出しも数える。
@@ -178,6 +185,8 @@ class LayoutEngine {
   // 溜まった豆腐。std::set の順序がそのまま出力の順序になる（MissingGlyph::operator<）ので、
   // ポインタ値も unordered の反復順もここには入らない（DESIGN.md §3-5）。
   std::set<MissingGlyph> missing_glyphs_;
+  // measure_block_size() の入れ子の深さ（0 なら本番の配置中）。measuring() を参照。
+  std::uint32_t measuring_ = 0;
   bool memo_ = true;
 };
 

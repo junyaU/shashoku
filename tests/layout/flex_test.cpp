@@ -346,6 +346,66 @@ TEST(LayoutFlex, ColumnStretchDoesNotMakeTheItemBlockSizeDefinite) {
   EXPECT_FLOAT_EQ(bar->rect.block_start, 9);  // 自分の行の交差サイズ 20 の中央
 }
 
+// (f) 深い入れ子でも、伸ばした交差サイズは最内まで伝わる（A54 の追記）。
+//
+// stretch する項目は「計測 → 行の交差サイズが決まってから配置 1 回」の順で組む
+// （2^d を避けるため）。途中の段が計測で済まされても、最後に配置するときは外側から
+// 伸ばされた交差サイズで組み直るので、最内の棒は**いちばん外の行の高さ**の中央に来る。
+TEST(LayoutFlex, StretchPropagatesToTheInnermostNestedRow) {
+  FakeMeasurer measurer;
+  // 中央寄せの棒（高さ 2）を、stretch する row の flex で 2 段包む。
+  // いちばん外の行の交差サイズは 88 のカードが決める
+  Tree nest = flex({block({}, sized(24, 2))}, [](ComputedStyle& style) {
+    style.width = Dimension::px(40);
+    style.align_items = AlignItems::Center;
+  });
+  for (int i = 0; i < 2; ++i) {
+    nest = flex({std::move(nest)},
+                [](ComputedStyle& style) { style.width = Dimension::px(40); });  // 既定は stretch
+  }
+  const auto root = build({flex({tall_card(), std::move(nest)})});
+  const auto tree = run_layout(root, 400, measurer);
+  ASSERT_TRUE(tree.has_value());
+
+  const BlockBox* box = nth_child(container_of(*tree), 1);
+  ASSERT_NE(box, nullptr);
+  for (int level = 0; level < 3; ++level) {
+    EXPECT_FLOAT_EQ(box->rect.block_size, kTallCard) << "level=" << level;
+    box = nth_child(*box, 0);
+    ASSERT_NE(box, nullptr) << "level=" << level;
+  }
+  EXPECT_FLOAT_EQ(box->rect.block_start, (kTallCard - 2) / 2);  // 43: 最内の棒
+}
+
+// (g) 計測される場所（高さ auto の column の項目）に入れても、絵は同じ。
+//
+// column は項目の高さを measure_block_size() で測ってから置く（A29）。計測は箱の
+// 大きさしか使わないので stretch の組み直しを省くが、**測った高さは同じ**でなければ
+// ならない。ここが狂うと、外側の column の高さと中身の位置が食い違う。
+TEST(LayoutFlex, MeasuredColumnItemKeepsTheStretchedGeometry) {
+  FakeMeasurer measurer;
+  const auto make_row = [] {
+    return flex({tall_card(), flex({block({}, sized(24, 2))}, [](ComputedStyle& style) {
+                   style.width = Dimension::px(40);
+                   style.align_items = AlignItems::Center;
+                 })});
+  };
+  const auto root = build({flex({make_row()}, [](ComputedStyle& style) {
+    style.flex_direction = FlexDirection::Column;  // 高さ auto = 項目を測ってから置く
+  })});
+  const auto tree = run_layout(root, 400, measurer);
+  ASSERT_TRUE(tree.has_value());
+  const std::vector<LogicalRect> rects = item_rects(*tree);
+  ASSERT_EQ(rects.size(), 1U);
+  EXPECT_FLOAT_EQ(rects[0].block_size, kTallCard);  // 測った高さ = 行の交差サイズ
+  EXPECT_FLOAT_EQ(container_of(*tree).rect.block_size, kTallCard);
+  const BlockBox* column = nth_child(*nth_child(container_of(*tree), 0), 1);
+  ASSERT_NE(column, nullptr);
+  const BlockBox* bar = nth_child(*column, 0);
+  ASSERT_NE(bar, nullptr);
+  EXPECT_FLOAT_EQ(bar->rect.block_start, (kTallCard - 2) / 2);  // 43: 伸ばした高さの中央
+}
+
 // column の stretch は幅を伸ばす（伸ばした幅で中身を組む）。
 TEST(LayoutFlex, ColumnStretchUsesTheContainerWidth) {
   FakeMeasurer measurer;

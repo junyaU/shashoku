@@ -97,7 +97,7 @@ TEST(StyleValue, WordWrapIsALegacyNameAliasOfOverflowWrap) {
   // <span>（インライン要素）でも効く
   const html::Node tree = test_root(
       test_parent("div", {}, test_element("span", {test_attr("style", "word-wrap: anywhere")})));
-  const Result<StyledNode> styled = resolve(tree);
+  const Result<StyledNode> styled = resolve_for_test(tree);
   ASSERT_TRUE(styled.has_value()) << (styled ? "" : styled.error().message);
   EXPECT_EQ(styled->children.front().children.front().style.overflow_wrap, OverflowWrap::Anywhere);
 }
@@ -115,7 +115,7 @@ TEST(StyleValue, WordWrapAcceptsGlobalKeywords) {
   const auto child_wrap = [](std::string_view parent, std::string_view child) {
     const html::Node tree = test_root(test_parent(
         "div", {test_attr("style", parent)}, test_element("div", {test_attr("style", child)})));
-    const Result<StyledNode> styled = resolve(tree);
+    const Result<StyledNode> styled = resolve_for_test(tree);
     EXPECT_TRUE(styled.has_value()) << child << ": " << (styled ? "" : styled.error().message);
     if (!styled || styled->children.empty() || styled->children.front().children.empty()) {
       ADD_FAILURE() << "子要素が木から落ちた";

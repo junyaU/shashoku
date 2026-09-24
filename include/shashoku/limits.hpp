@@ -69,6 +69,15 @@ struct RenderLimits {
   // 出力ビットマップのデバイス画素数（幅 x 高さ、scale 込み）。
   std::uint64_t device_pixels = std::uint64_t{1} << 26U;  // 67,108,864（256 MB）
 
+  // ---- (d) 診断（ARCHITECTURE.md A46）---------------------------------------------
+
+  // 集める診断（エラー + 警告）の件数の上限。達したら記録をやめて解析は続け、
+  // `RenderFailure::truncated` / `RenderResult::diagnostics_truncated` を立てる。
+  // 大量の不正な入力で診断そのものがメモリの消費源にならないための上限。
+  // **実効の下限は 1**: 0 を渡しても最初の 1 件は記録する（エラーが 1 件も記録されずに
+  // 「成功」になる穴を作らないため。他の上限と同じく 0 は「無制限」ではない）。
+  std::size_t max_diagnostics = 100;
+
   bool operator==(const RenderLimits&) const = default;
 };
 

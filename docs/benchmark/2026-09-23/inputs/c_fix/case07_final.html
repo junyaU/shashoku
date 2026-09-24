@@ -1,0 +1,209 @@
+<style>
+  * {
+  }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: #1b2430;
+  }
+  body {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 1080px;
+  }
+  .poster {
+    width: 928px;
+    height: 944px;
+    background: #223046;
+    color: #f3f1ea;
+    font-family: "Noto Sans JP", "Hiragino Kaku Gothic ProN", sans-serif;
+    padding: 72px 76px 64px;
+    display: flex;
+    flex-direction: column;
+  }
+  .g1 {
+    width: 560px;
+    height: 560px;
+    border-radius: 280px;
+    background: rgba(226, 171, 92, 0.30);
+  }
+  .g4 {
+  }
+  .head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 30px;
+  }
+  .series {
+    font-size: 16px;
+    letter-spacing: 0.34em;
+    color: #e2ab5c;
+  }
+  .free {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #e8b567;
+    color: #1a212c;
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    padding: 11px 26px;
+    border-radius: 999px;
+  }
+  h1 {
+    margin: 0 0 6px;
+    font-family: "Noto Serif JP", "Hiragino Mincho ProN", serif;
+    font-size: 72px;
+    font-weight: 700;
+    line-height: 1.34;
+    letter-spacing: 0.02em;
+  }
+  .g5 {
+    display: block;
+    font-family: "Noto Sans JP", sans-serif;
+    font-size: 26px;
+    font-weight: 500;
+    letter-spacing: 0.22em;
+    color: #9fb2c9;
+    margin-bottom: 14px;
+  }
+  .rule {
+    width: 100%;
+    height: 2px;
+    background: #e2ab5c;
+    margin: 28px 0 26px;
+  }
+  .meta {
+    display: flex;
+    gap: 56px;
+    margin-bottom: 34px;
+  }
+  .g6 {
+    font-size: 13px;
+    letter-spacing: 0.2em;
+    color: #8ea3bc;
+    margin-bottom: 7px;
+  }
+  .g7 {
+    font-size: 27px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+  }
+  .speakers-label {
+    font-size: 14px;
+    letter-spacing: 0.24em;
+    color: #8ea3bc;
+    margin-bottom: 16px;
+  }
+  .speakers {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    flex: 1 1 auto;
+  }
+  .sp {
+    display: flex;
+    align-items: center;
+    gap: 22px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: 10px;
+    padding: 18px 24px;
+  }
+  .g8 {
+    flex: 0 0 300px;
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+  }
+  .g9 {
+    font-size: 11px;
+    font-weight: 400;
+    color: #b9c7d8;
+    letter-spacing: 0.06em;
+  }
+  .g10 {
+    font-size: 21px;
+    color: #dfe6ef;
+    letter-spacing: 0.01em;
+  }
+  .g2 {
+    color: #7f93ab;
+  }
+  .g3 {
+    color: #7f93ab;
+  }
+  .foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 30px;
+    padding-top: 24px;
+  }
+  .g11 {
+    font-size: 14px;
+    letter-spacing: 0.2em;
+    color: #8ea3bc;
+    margin-bottom: 6px;
+  }
+  .g12 {
+    font-size: 30px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    color: #f3f1ea;
+  }
+  .g13 {
+    text-align: right;
+    font-size: 15px;
+    line-height: 1.8;
+    color: #9fb2c9;
+  }
+</style>
+<div class="poster"><div class="g1 g4"></div>
+    <div class="head g4">
+      <div class="series">TYPESETTING MEETUP</div>
+      <div class="free">🎟 参加無料</div>
+    </div>
+
+    <h1 class="g4"><span class="num g5">第 12 回</span>組版と文字の勉強会</h1>
+
+    <div class="rule g4"></div>
+
+    <div class="meta g4">
+      <div class="item">
+        <div class="k g6">日時</div>
+        <div class="v g7">2026年10月8日（木）19:30〜21:00</div>
+      </div>
+      <div class="item">
+        <div class="k g6">場所</div>
+        <div class="v g7">オンライン（Zoom）</div>
+      </div>
+    </div>
+
+    <div class="speakers-label g4">登壇者</div>
+    <div class="speakers g4">
+      <div class="sp">
+        <div class="name g8"><ruby>高橋<rt class="g9">たかはし</rt></ruby> <ruby>遥<rt class="g9">はるか</rt></ruby></div>
+        <div class="talk g10"><span class="g2">「</span>縦書き CSS の現在地<span class="g3">」</span></div>
+      </div>
+      <div class="sp">
+        <div class="name g8"><ruby>Chen Wei<rt class="g9">チェン ウェイ</rt></ruby></div>
+        <div class="talk g10"><span class="g2">「</span>CJK フォントのサブセット化<span class="g3">」</span></div>
+      </div>
+      <div class="sp">
+        <div class="name g8"><ruby>佐々木<rt class="g9">ささき</rt></ruby> <ruby>陽向<rt class="g9">ひなた</rt></ruby></div>
+        <div class="talk g10"><span class="g2">「</span>ルビの自動生成<span class="g3">」</span></div>
+      </div>
+    </div>
+
+    <div class="foot g4">
+      <div>
+        <div class="apply-label g11">申込</div>
+        <div class="url g12">example.com/typeset12</div>
+      </div>
+      <div class="note g13">どなたでも参加できます<br>アーカイブ配信あり</div>
+    </div>
+  </div>

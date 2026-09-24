@@ -11,6 +11,7 @@
 #include "integration/integration_support.hpp"
 #include "png/crc32.hpp"
 #include "shashoku/shashoku.hpp"
+#include "support/failure.hpp"
 
 // 入力の上限（ARCHITECTURE.md A25 / issue #6）。
 //
@@ -35,7 +36,7 @@ RenderError dump_failure(std::string_view html, const RenderOptions& options, Du
     ADD_FAILURE() << "エラーになるはずが成功した: " << html.substr(0, 64);
     return RenderError{};
   }
-  return result.error();
+  return first_error(result.error());
 }
 
 void expect_dump_ok(std::string_view html, const RenderOptions& options, DumpStage stage,
@@ -379,10 +380,12 @@ TEST(RenderLimitsAllocation, DevicePixels) {
   options.limits.device_pixels = 399;
   const auto over = render("<div>あ</div>", japanese_fonts(), options);
   ASSERT_FALSE(over.has_value());
-  EXPECT_EQ(over.error().kind, ErrorKind::LimitExceeded);
-  EXPECT_NE(over.error().message.find("40 x 10 = 400"), std::string::npos) << over.error().message;
-  EXPECT_NE(over.error().message.find("RenderLimits::device_pixels"), std::string::npos)
-      << over.error().message;
+  EXPECT_EQ(first_error(over.error()).kind, ErrorKind::LimitExceeded);
+  EXPECT_NE(first_error(over.error()).message.find("40 x 10 = 400"), std::string::npos)
+      << first_error(over.error()).message;
+  EXPECT_NE(first_error(over.error()).message.find("RenderLimits::device_pixels"),
+            std::string::npos)
+      << first_error(over.error()).message;
 }
 
 // ---------------------------------------------------------------------------
@@ -396,10 +399,10 @@ TEST(RenderLimitsRegression, HugeFontSizeOnATinyCanvasIsRejected) {
   const auto result =
       render(R"(<div style="font-size:30000px;line-height:1">あ</div>)", japanese_fonts(), options);
   ASSERT_FALSE(result.has_value()) << "既定の上限で止まるはず";
-  EXPECT_EQ(result.error().kind, ErrorKind::LimitExceeded);
-  EXPECT_NE(result.error().message.find("font-size 30000 px"), std::string::npos)
-      << result.error().message;
-  EXPECT_TRUE(result.error().location.has_value());
+  EXPECT_EQ(first_error(result.error()).kind, ErrorKind::LimitExceeded);
+  EXPECT_NE(first_error(result.error()).message.find("font-size 30000 px"), std::string::npos)
+      << first_error(result.error()).message;
+  EXPECT_TRUE(first_error(result.error()).location.has_value());
 }
 
 // 上限ぎりぎり（既定の 2048 デバイス px）は通る。グリフのビットマップは 2048^2 = 4 MB 程度。
@@ -443,9 +446,9 @@ TEST(RenderLimitsOutOfMemory, LengthErrorBecomesOutOfMemory) {
 
   const auto result = render("<div>あ</div>", japanese_fonts(), options);
   ASSERT_FALSE(result.has_value());
-  EXPECT_EQ(result.error().kind, ErrorKind::OutOfMemory) << to_string(result.error());
-  EXPECT_NE(result.error().message.find("out of memory"), std::string::npos)
-      << result.error().message;
+  EXPECT_EQ(first_error(result.error()).kind, ErrorKind::OutOfMemory) << to_string(result.error());
+  EXPECT_NE(first_error(result.error()).message.find("out of memory"), std::string::npos)
+      << first_error(result.error()).message;
 }
 
 }  // namespace

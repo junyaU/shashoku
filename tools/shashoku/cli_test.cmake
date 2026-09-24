@@ -32,6 +32,10 @@ if(CASE STREQUAL "png_ok")
   # PNG のシグネチャ（89 50 4E 47 0D 0A 1A 0A）で始まること
   file(READ "${output}" signature LIMIT 8 HEX)
   expect_equal("${signature}" "89504e470d0a1a0a" "PNG signature")
+  # 成功したら実際の寸法を 1 行で（--height を省いたときの高さが分かる。A46）
+  if(NOT stderr_text MATCHES "wrote .*hello\\.png \\(600x[0-9]+\\)")
+    message(FATAL_ERROR "成功時の wrote の行がありません: ${stderr_text}")
+  endif()
 
 elseif(CASE STREQUAL "image_ok")
   # --image name=path の経路（A12）。OG カードはアイコンを引けないと ImageNotFound になる。
@@ -130,6 +134,7 @@ elseif(CASE STREQUAL "unsupported_css")
   endif()
   # 未対応と分かっているプロパティには代替案が一言つく（#20）。手がかりがゼロだと
   # 試用の最初の 1 枚で詰まる。box-sizing は「既知の制限」の筆頭。
+  # 代替案は message ではなく `  hint: …` の独立した行に出る（A46 / A48）。
   set(box_sizing_html "${WORK_DIR}/box_sizing.html")
   file(WRITE "${box_sizing_html}"
        "<div style=\"box-sizing: border-box; width: 200px\">あ</div>\n")
@@ -137,9 +142,231 @@ elseif(CASE STREQUAL "unsupported_css")
     COMMAND "${CLI}" "${box_sizing_html}" --font "${font}" -o "${WORK_DIR}/never.png"
     RESULT_VARIABLE status ERROR_VARIABLE stderr_text)
   expect_equal("${status}" "1" "exit code for box-sizing")
-  if(NOT stderr_text MATCHES "`box-sizing` is not a supported property \\(content-box only")
-    message(FATAL_ERROR "box-sizing のエラーに代替案がありません: ${stderr_text}")
+  if(NOT stderr_text MATCHES "[\r\n]  hint: content-box only")
+    message(FATAL_ERROR "box-sizing のエラーに hint の行がありません: ${stderr_text}")
   endif()
+
+  # 一度に全部（A46 の 1）: ① html と ② style の問題が 1 回の実行でまとめて出る。
+  # 以前は最初の 1 件で止まっていたので、直すのに CLI を何度も走らせていた。
+  set(many_html "${WORK_DIR}/many.html")
+  file(WRITE "${many_html}"
+       "<div style=\"float: left\">あ</div>\n"
+       "<table><span style=\"box-sizing: border-box\">い</span></table>\n"
+       "<div onclick=\"x\" style=\"position: absolute\">う</div>\n")
+  execute_process(
+    COMMAND "${CLI}" "${many_html}" --font "${font}" -o "${WORK_DIR}/never.png"
+    RESULT_VARIABLE status ERROR_VARIABLE stderr_text)
+  expect_equal("${status}" "1" "exit code for many.html")
+  foreach(needle "at 1:6: `float`" "at 2:1: `<table>`" "at 2:14: `box-sizing`"
+                 "at 3:6: `onclick`" "at 3:18: `position`")
+    if(NOT stderr_text MATCHES "${needle}")
+      message(FATAL_ERROR "1 回の実行に ${needle} がありません: ${stderr_text}")
+    endif()
+  endforeach()
+
+elseif(CASE STREQUAL "strict")
+  # --strict（A46 の 4）: 警告もエラーにして PNG を作らない。
+  # 欧文フォントだけで和文を組むと豆腐になる（既定では警告 + exit 0）。
+  set(output "${WORK_DIR}/strict.png")
+  file(WRITE "${output}" "古い PNG ではない中身")
+  file(READ "${output}" before)
+
+  execute_process(
+    COMMAND "${CLI}" "${SOURCE_DIR}/examples/hello.html" --font "${FONT_DIR}/NotoSans-Regular.ttf"
+            -o "${output}" --width 600 --strict
+    RESULT_VARIABLE status ERROR_VARIABLE stderr_text)
+  expect_equal("${status}" "1" "exit code with --strict")
+  if(NOT stderr_text MATCHES "warning-as-error")
+    message(FATAL_ERROR "stderr に warning-as-error がありません: ${stderr_text}")
+  endif()
+  # 位置は 1 行に 1 回だけ（格上げした message から末尾の " at L:C" を落としてある。error.hpp）
+  if(stderr_text MATCHES " at [0-9]+:[0-9]+[^\n]* at [0-9]+:[0-9]+")
+    message(FATAL_ERROR "格上げした診断に位置が二重に出ています: ${stderr_text}")
+  endif()
+  # **失敗時は出力ファイルを作らない・上書きしない**（A46）。既存のファイルは無傷。
+  file(READ "${output}" after)
+  expect_equal("${after}" "${before}" "--strict の失敗で既存の出力が壊れた")
+
+  # 出力が無いところに --strict で失敗しても、ファイルは作られない
+  set(fresh "${WORK_DIR}/strict_fresh.png")
+  file(REMOVE "${fresh}")
+  execute_process(
+    COMMAND "${CLI}" "${SOURCE_DIR}/examples/hello.html" --font "${FONT_DIR}/NotoSans-Regular.ttf"
+            -o "${fresh}" --width 600 --strict
+    RESULT_VARIABLE status ERROR_VARIABLE stderr_text)
+  expect_equal("${status}" "1" "exit code with --strict (fresh)")
+  if(EXISTS "${fresh}")
+    message(FATAL_ERROR "失敗したのに出力ファイルが作られています: ${fresh}")
+  endif()
+
+  # --strict を付けなければ今までどおり警告 + exit 0 で PNG が出る（既定は変えない）
+  execute_process(
+    COMMAND "${CLI}" "${SOURCE_DIR}/examples/hello.html" --font "${FONT_DIR}/NotoSans-Regular.ttf"
+            -o "${fresh}" --width 600
+    RESULT_VARIABLE status ERROR_VARIABLE stderr_text)
+  expect_equal("${status}" "0" "exit code without --strict (stderr: ${stderr_text})")
+  if(NOT stderr_text MATCHES "warning\\[missing-glyph\\]")
+    message(FATAL_ERROR "stderr に豆腐の警告がありません: ${stderr_text}")
+  endif()
+  file(READ "${fresh}" signature LIMIT 8 HEX)
+  expect_equal("${signature}" "89504e470d0a1a0a" "PNG signature")
+
+  # 値を取らないので `=` を付けたら引数エラー（終了コード 2）
+  execute_process(
+    COMMAND "${CLI}" "${SOURCE_DIR}/examples/hello.html" --font "${font}"
+            -o "${WORK_DIR}/never.png" --strict=1
+    RESULT_VARIABLE bad_status ERROR_VARIABLE bad_stderr)
+  expect_equal("${bad_status}" "2" "exit code for --strict=1")
+
+elseif(CASE STREQUAL "content_overflow")
+  # 紙面からのはみ出し（A46 の 3 / A50）。A46 より前は警告なし・exit 0 で切れた PNG が出ていた。
+  set(output "${WORK_DIR}/overflow.png")
+  execute_process(
+    COMMAND "${CLI}" "${SOURCE_DIR}/examples/og_card.html" --font "${font}"
+            --image "icon=${SOURCE_DIR}/examples/icon.png" -o "${output}"
+            --width 1200 --height 200
+    RESULT_VARIABLE status ERROR_VARIABLE stderr_text)
+  expect_equal("${status}" "0" "exit code (stderr: ${stderr_text})")
+  if(NOT stderr_text MATCHES "warning\\[content-overflow\\]")
+    message(FATAL_ERROR "はみ出しの警告がありません: ${stderr_text}")
+  endif()
+  if(NOT stderr_text MATCHES "bottom")
+    message(FATAL_ERROR "はみ出した辺が出ていません: ${stderr_text}")
+  endif()
+
+  # 正しい高さなら警告は出ない（誤検出しない）
+  execute_process(
+    COMMAND "${CLI}" "${SOURCE_DIR}/examples/og_card.html" --font "${font}"
+            --image "icon=${SOURCE_DIR}/examples/icon.png" -o "${output}"
+            --width 1200 --height 630
+    RESULT_VARIABLE status ERROR_VARIABLE stderr_text)
+  expect_equal("${status}" "0" "exit code at the right height (stderr: ${stderr_text})")
+  if(stderr_text MATCHES "content-overflow")
+    message(FATAL_ERROR "正しい高さなのにはみ出しの警告が出ています: ${stderr_text}")
+  endif()
+
+  # --strict なら同じ入力が失敗になる（配らない判断に使える）
+  set(strict_output "${WORK_DIR}/overflow_strict.png")
+  file(REMOVE "${strict_output}")
+  execute_process(
+    COMMAND "${CLI}" "${SOURCE_DIR}/examples/og_card.html" --font "${font}"
+            --image "icon=${SOURCE_DIR}/examples/icon.png" -o "${strict_output}"
+            --width 1200 --height 200 --strict
+    RESULT_VARIABLE status ERROR_VARIABLE stderr_text)
+  expect_equal("${status}" "1" "exit code with --strict")
+  if(NOT stderr_text MATCHES "warning-as-error")
+    message(FATAL_ERROR "stderr に warning-as-error がありません: ${stderr_text}")
+  endif()
+  if(EXISTS "${strict_output}")
+    message(FATAL_ERROR "失敗したのに出力ファイルが作られています: ${strict_output}")
+  endif()
+
+elseif(CASE STREQUAL "diagnostics_json")
+  # --diagnostics json（A46 の 6）: 機械が読む出口。安定した契約は識別子と入力位置。
+  set(html "${WORK_DIR}/json_errors.html")
+  file(WRITE "${html}"
+       "<div style=\"float: left\">あ</div>\n"
+       "<div onclick=\"x\" style=\"box-sizing: border-box\">い</div>\n")
+  execute_process(
+    COMMAND "${CLI}" "${html}" --font "${font}" -o "${WORK_DIR}/never.png" --diagnostics json
+    RESULT_VARIABLE status OUTPUT_VARIABLE stdout_text ERROR_VARIABLE stderr_text)
+  expect_equal("${status}" "1" "exit code")
+  # JSON のときは人向けの stderr を出さない
+  expect_equal("${stderr_text}" "" "JSON のときの stderr")
+  string(JSON ok GET "${stdout_text}" ok)
+  expect_equal("${ok}" "OFF" "ok")
+  string(JSON truncated GET "${stdout_text}" truncated)
+  expect_equal("${truncated}" "OFF" "truncated")
+  string(JSON error_count LENGTH "${stdout_text}" errors)
+  expect_equal("${error_count}" "3" "errors の件数（float / onclick / box-sizing）")
+  string(JSON first_kind GET "${stdout_text}" errors 0 kind)
+  expect_equal("${first_kind}" "unsupported-property" "errors[0].kind")
+  string(JSON first_line GET "${stdout_text}" errors 0 line)
+  expect_equal("${first_line}" "1" "errors[0].line")
+  string(JSON second_kind GET "${stdout_text}" errors 1 kind)
+  expect_equal("${second_kind}" "unsupported-attribute" "errors[1].kind")
+  string(JSON third_hint GET "${stdout_text}" errors 2 hint)
+  if(NOT third_hint MATCHES "content-box")
+    message(FATAL_ERROR "errors[2].hint に代替案がありません: ${third_hint}")
+  endif()
+  string(JSON warning_type TYPE "${stdout_text}" errors 0 warning)
+  expect_equal("${warning_type}" "NULL" "格上げでないエラーの warning")
+  string(JSON width_type TYPE "${stdout_text}" width)
+  expect_equal("${width_type}" "NULL" "失敗時の width")
+
+  # 成功しても同じ形の 1 オブジェクトが出る（警告つき）
+  set(output "${WORK_DIR}/json_ok.png")
+  file(REMOVE "${output}")
+  execute_process(
+    COMMAND "${CLI}" "${SOURCE_DIR}/examples/og_card.html" --font "${font}"
+            --image "icon=${SOURCE_DIR}/examples/icon.png" -o "${output}"
+            --width 1200 --height 200 --diagnostics json
+    RESULT_VARIABLE status OUTPUT_VARIABLE stdout_text ERROR_VARIABLE stderr_text)
+  expect_equal("${status}" "0" "exit code (stderr: ${stderr_text})")
+  expect_equal("${stderr_text}" "" "成功時の stderr（JSON のときは何も出さない）")
+  string(JSON ok GET "${stdout_text}" ok)
+  expect_equal("${ok}" "ON" "ok")
+  string(JSON width GET "${stdout_text}" width)
+  expect_equal("${width}" "1200" "width")
+  string(JSON height GET "${stdout_text}" height)
+  expect_equal("${height}" "200" "height")
+  string(JSON warning_count LENGTH "${stdout_text}" warnings)
+  expect_equal("${warning_count}" "1" "warnings の件数")
+  string(JSON warning_kind GET "${stdout_text}" warnings 0 kind)
+  expect_equal("${warning_kind}" "content-overflow" "warnings[0].kind")
+  string(JSON edge GET "${stdout_text}" warnings 0 edge)
+  expect_equal("${edge}" "bottom" "warnings[0].edge")
+  string(JSON overflow_px GET "${stdout_text}" warnings 0 overflow_px)
+  expect_equal("${overflow_px}" "430" "warnings[0].overflow_px")
+  file(READ "${output}" signature LIMIT 8 HEX)
+  expect_equal("${signature}" "89504e470d0a1a0a" "PNG signature")
+
+  # --strict と組み合わせると errors 側に移り、元の警告の種類が warning に残る
+  execute_process(
+    COMMAND "${CLI}" "${SOURCE_DIR}/examples/og_card.html" --font "${font}"
+            --image "icon=${SOURCE_DIR}/examples/icon.png" -o "${WORK_DIR}/never.png"
+            --width 1200 --height 200 --strict --diagnostics json
+    RESULT_VARIABLE status OUTPUT_VARIABLE stdout_text ERROR_VARIABLE stderr_text)
+  expect_equal("${status}" "1" "exit code with --strict")
+  string(JSON promoted_kind GET "${stdout_text}" errors 0 kind)
+  expect_equal("${promoted_kind}" "warning-as-error" "errors[0].kind")
+  string(JSON promoted_warning GET "${stdout_text}" errors 0 warning)
+  expect_equal("${promoted_warning}" "content-overflow" "errors[0].warning")
+  string(JSON promoted_warnings LENGTH "${stdout_text}" warnings)
+  expect_equal("${promoted_warnings}" "0" "格上げしたものは warnings に残さない")
+
+  # エスケープ: `"` と `\` を逃がし、非 ASCII は UTF-8 のまま出す。
+  # string(JSON …) が読めた時点で JSON として壊れていないことの検査になる。
+  set(escape_html "${WORK_DIR}/json_escape.html")
+  file(WRITE "${escape_html}" "<img src=\"ア&quot;イ\\コン\">\n")
+  execute_process(
+    COMMAND "${CLI}" "${escape_html}" --font "${font}" -o "${WORK_DIR}/never.png"
+            --diagnostics json
+    RESULT_VARIABLE status OUTPUT_VARIABLE stdout_text ERROR_VARIABLE stderr_text)
+  expect_equal("${status}" "1" "exit code for the escaping case")
+  string(JSON escaped_kind GET "${stdout_text}" errors 0 kind)
+  expect_equal("${escaped_kind}" "image-not-found" "errors[0].kind")
+  string(JSON escaped_message GET "${stdout_text}" errors 0 message)
+  string(FIND "${escaped_message}" "ア\"イ\\コン" found)
+  if(found EQUAL -1)
+    message(FATAL_ERROR "JSON の文字列が元に戻りません: ${escaped_message}")
+  endif()
+
+  # 使い方の誤りは終了コード 2（-o が要る / --dump-stage と併用できない）
+  execute_process(
+    COMMAND "${CLI}" "${SOURCE_DIR}/examples/hello.html" --font "${font}" --diagnostics json
+    RESULT_VARIABLE bad_status ERROR_VARIABLE bad_stderr)
+  expect_equal("${bad_status}" "2" "exit code without -o")
+  execute_process(
+    COMMAND "${CLI}" "${SOURCE_DIR}/examples/hello.html" --font "${font}"
+            -o "${WORK_DIR}/never.png" --diagnostics json --dump-stage box
+    RESULT_VARIABLE bad_status ERROR_VARIABLE bad_stderr)
+  expect_equal("${bad_status}" "2" "exit code with --dump-stage")
+  execute_process(
+    COMMAND "${CLI}" "${SOURCE_DIR}/examples/hello.html" --font "${font}"
+            -o "${WORK_DIR}/never.png" --diagnostics yaml
+    RESULT_VARIABLE bad_status ERROR_VARIABLE bad_stderr)
+  expect_equal("${bad_status}" "2" "exit code for --diagnostics yaml")
 
 elseif(CASE STREQUAL "dump_box")
   execute_process(

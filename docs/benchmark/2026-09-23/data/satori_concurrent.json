@@ -1,0 +1,205 @@
+{
+  "target": "satori+resvg",
+  "env": {
+    "cpu": "Intel(R) Core(TM) i9-14900KF",
+    "logical_cpus": 32,
+    "cores_per_socket": 16,
+    "threads_per_core": 2,
+    "os": "Linux 5.15.167.4-microsoft-standard-WSL2 (WSL2)",
+    "ram_total_mb": 32017,
+    "shashoku_commit": "c157766",
+    "shashoku_build": "release (-O3 -DNDEBUG, clang-18 + libc++-18), bench.cpp は -O2",
+    "shashoku_png_compression_level": 6,
+    "node": "v20.18.1",
+    "satori": "0.33.5",
+    "satori_html": "0.3.2",
+    "resvg_js": "2.6.2",
+    "resvg_png_compression": "asPng() に圧縮レベルの指定口が無い（index.d.ts: asPng(): Buffer）ので既定のまま",
+    "date": "2026-09-23"
+  },
+  "method": "(a) promise: 1 プロセスで N 本の並行チェーンを Promise.all。各チェーンが 10 ケースを 5 周（50 枚）。(b) worker: worker_threads で N 本、各ワーカーが自分でフォントを読み 10 ケースを 5 周。どちらも 1 枚ごとに setImmediate で譲る。ウォームアップ（10 ケース 1 周）を全員が終えてから計測開始。N ごとに別プロセスで 3 回測って中央値。VmHWM はプロセス全体",
+  "runs": {
+    "promise": [
+      {
+        "n": 1,
+        "rounds": 5,
+        "pages_per_run": 50,
+        "pages_per_sec_median": 55.127620054532905,
+        "pages_per_sec_all": [
+          53.47226568700486,
+          55.127620054532905,
+          55.36675927425247
+        ],
+        "wall_s_median": 0.9069863699999999,
+        "vmhwm_bytes_median": 257388544,
+        "vmhwm_bytes_all": [
+          290877440,
+          257388544,
+          253820928
+        ],
+        "rss_after_warm_bytes_median": 232652800
+      },
+      {
+        "n": 4,
+        "rounds": 5,
+        "pages_per_run": 200,
+        "pages_per_sec_median": 56.70653324313861,
+        "pages_per_sec_all": [
+          58.41719160863762,
+          56.586853266976036,
+          56.70653324313861
+        ],
+        "wall_s_median": 3.526930471,
+        "vmhwm_bytes_median": 351092736,
+        "vmhwm_bytes_all": [
+          298962944,
+          351092736,
+          365867008
+        ],
+        "rss_after_warm_bytes_median": 226463744
+      },
+      {
+        "n": 8,
+        "rounds": 5,
+        "pages_per_run": 400,
+        "pages_per_sec_median": 59.27949366015019,
+        "pages_per_sec_all": [
+          55.938188841692835,
+          59.27949366015019,
+          59.78326509559611
+        ],
+        "wall_s_median": 6.747695962,
+        "vmhwm_bytes_median": 377339904,
+        "vmhwm_bytes_all": [
+          423567360,
+          372420608,
+          377339904
+        ],
+        "rss_after_warm_bytes_median": 226349056
+      },
+      {
+        "n": 16,
+        "rounds": 5,
+        "pages_per_run": 800,
+        "pages_per_sec_median": 58.96193237274095,
+        "pages_per_sec_all": [
+          58.96193237274095,
+          59.16209380725635,
+          58.42551030117477
+        ],
+        "wall_s_median": 13.568076347,
+        "vmhwm_bytes_median": 452026368,
+        "vmhwm_bytes_all": [
+          456249344,
+          444084224,
+          452026368
+        ],
+        "rss_after_warm_bytes_median": 226553856
+      }
+    ],
+    "worker": [
+      {
+        "n": 1,
+        "rounds": 5,
+        "pages_per_run": 50,
+        "pages_per_sec_median": 55.26381590644973,
+        "pages_per_sec_all": [
+          53.83534740232852,
+          55.26381590644973,
+          55.58536197068207
+        ],
+        "wall_s_median": 0.904751132,
+        "vmhwm_bytes_median": 284069888,
+        "vmhwm_bytes_all": [
+          315080704,
+          284069888,
+          274907136
+        ],
+        "rss_after_warm_bytes_median": 253779968
+      },
+      {
+        "n": 4,
+        "rounds": 5,
+        "pages_per_run": 200,
+        "pages_per_sec_median": 200.21101199567082,
+        "pages_per_sec_all": [
+          202.48647683433924,
+          198.54590597314407,
+          200.21101199567082
+        ],
+        "wall_s_median": 0.998946052,
+        "vmhwm_bytes_median": 902340608,
+        "vmhwm_bytes_all": [
+          815439872,
+          917086208,
+          902340608
+        ],
+        "rss_after_warm_bytes_median": 705335296
+      },
+      {
+        "n": 8,
+        "rounds": 5,
+        "pages_per_run": 400,
+        "pages_per_sec_median": 280.4778928748261,
+        "pages_per_sec_all": [
+          310.43924607718105,
+          280.4778928748261,
+          277.182964502143
+        ],
+        "wall_s_median": 1.426137354,
+        "vmhwm_bytes_median": 1545801728,
+        "vmhwm_bytes_all": [
+          1661530112,
+          1545801728,
+          1512665088
+        ],
+        "rss_after_warm_bytes_median": 1295163392
+      },
+      {
+        "n": 16,
+        "rounds": 5,
+        "pages_per_run": 800,
+        "pages_per_sec_median": 395.39395538367097,
+        "pages_per_sec_all": [
+          396.2111985191591,
+          395.39395538367097,
+          369.2324056687912
+        ],
+        "wall_s_median": 2.023298508,
+        "vmhwm_bytes_median": 2742910976,
+        "vmhwm_bytes_all": [
+          2742910976,
+          2701271040,
+          2800717824
+        ],
+        "rss_after_warm_bytes_median": 2408247296
+      }
+    ]
+  },
+  "sources": [
+    "/tmp/claude-1000/-home-junya-src-github-com-junyaU-shashoku/94c9fae6-a9a0-40c9-ac43-94fa14abccb2/scratchpad/exp/perf2/raw/sa_promise_1_1.json",
+    "/tmp/claude-1000/-home-junya-src-github-com-junyaU-shashoku/94c9fae6-a9a0-40c9-ac43-94fa14abccb2/scratchpad/exp/perf2/raw/sa_promise_1_2.json",
+    "/tmp/claude-1000/-home-junya-src-github-com-junyaU-shashoku/94c9fae6-a9a0-40c9-ac43-94fa14abccb2/scratchpad/exp/perf2/raw/sa_promise_1_3.json",
+    "/tmp/claude-1000/-home-junya-src-github-com-junyaU-shashoku/94c9fae6-a9a0-40c9-ac43-94fa14abccb2/scratchpad/exp/perf2/raw/sa_promise_4_1.json",
+    "/tmp/claude-1000/-home-junya-src-github-com-junyaU-shashoku/94c9fae6-a9a0-40c9-ac43-94fa14abccb2/scratchpad/exp/perf2/raw/sa_promise_4_2.json",
+    "/tmp/claude-1000/-home-junya-src-github-com-junyaU-shashoku/94c9fae6-a9a0-40c9-ac43-94fa14abccb2/scratchpad/exp/perf2/raw/sa_promise_4_3.json",
+    "/tmp/claude-1000/-home-junya-src-github-com-junyaU-shashoku/94c9fae6-a9a0-40c9-ac43-94fa14abccb2/scratchpad/exp/perf2/raw/sa_promise_8_1.json",
+    "/tmp/claude-1000/-home-junya-src-github-com-junyaU-shashoku/94c9fae6-a9a0-40c9-ac43-94fa14abccb2/scratchpad/exp/perf2/raw/sa_promise_8_2.json",
+    "/tmp/claude-1000/-home-junya-src-github-com-junyaU-shashoku/94c9fae6-a9a0-40c9-ac43-94fa14abccb2/scratchpad/exp/perf2/raw/sa_promise_8_3.json",
+    "/tmp/claude-1000/-home-junya-src-github-com-junyaU-shashoku/94c9fae6-a9a0-40c9-ac43-94fa14abccb2/scratchpad/exp/perf2/raw/sa_promise_16_1.json",
+    "/tmp/claude-1000/-home-junya-src-github-com-junyaU-shashoku/94c9fae6-a9a0-40c9-ac43-94fa14abccb2/scratchpad/exp/perf2/raw/sa_promise_16_2.json",
+    "/tmp/claude-1000/-home-junya-src-github-com-junyaU-shashoku/94c9fae6-a9a0-40c9-ac43-94fa14abccb2/scratchpad/exp/perf2/raw/sa_promise_16_3.json",
+    "/tmp/claude-1000/-home-junya-src-github-com-junyaU-shashoku/94c9fae6-a9a0-40c9-ac43-94fa14abccb2/scratchpad/exp/perf2/raw/sa_worker_1_1.json",
+    "/tmp/claude-1000/-home-junya-src-github-com-junyaU-shashoku/94c9fae6-a9a0-40c9-ac43-94fa14abccb2/scratchpad/exp/perf2/raw/sa_worker_1_2.json",
+    "/tmp/claude-1000/-home-junya-src-github-com-junyaU-shashoku/94c9fae6-a9a0-40c9-ac43-94fa14abccb2/scratchpad/exp/perf2/raw/sa_worker_1_3.json",
+    "/tmp/claude-1000/-home-junya-src-github-com-junyaU-shashoku/94c9fae6-a9a0-40c9-ac43-94fa14abccb2/scratchpad/exp/perf2/raw/sa_worker_4_1.json",
+    "/tmp/claude-1000/-home-junya-src-github-com-junyaU-shashoku/94c9fae6-a9a0-40c9-ac43-94fa14abccb2/scratchpad/exp/perf2/raw/sa_worker_4_2.json",
+    "/tmp/claude-1000/-home-junya-src-github-com-junyaU-shashoku/94c9fae6-a9a0-40c9-ac43-94fa14abccb2/scratchpad/exp/perf2/raw/sa_worker_4_3.json",
+    "/tmp/claude-1000/-home-junya-src-github-com-junyaU-shashoku/94c9fae6-a9a0-40c9-ac43-94fa14abccb2/scratchpad/exp/perf2/raw/sa_worker_8_1.json",
+    "/tmp/claude-1000/-home-junya-src-github-com-junyaU-shashoku/94c9fae6-a9a0-40c9-ac43-94fa14abccb2/scratchpad/exp/perf2/raw/sa_worker_8_2.json",
+    "/tmp/claude-1000/-home-junya-src-github-com-junyaU-shashoku/94c9fae6-a9a0-40c9-ac43-94fa14abccb2/scratchpad/exp/perf2/raw/sa_worker_8_3.json",
+    "/tmp/claude-1000/-home-junya-src-github-com-junyaU-shashoku/94c9fae6-a9a0-40c9-ac43-94fa14abccb2/scratchpad/exp/perf2/raw/sa_worker_16_1.json",
+    "/tmp/claude-1000/-home-junya-src-github-com-junyaU-shashoku/94c9fae6-a9a0-40c9-ac43-94fa14abccb2/scratchpad/exp/perf2/raw/sa_worker_16_2.json",
+    "/tmp/claude-1000/-home-junya-src-github-com-junyaU-shashoku/94c9fae6-a9a0-40c9-ac43-94fa14abccb2/scratchpad/exp/perf2/raw/sa_worker_16_3.json"
+  ]
+}

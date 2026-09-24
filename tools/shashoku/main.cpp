@@ -14,11 +14,13 @@
 #include <cstdint>
 #include <exception>
 #include <expected>
+#include <format>
 #include <fstream>
 #include <ios>
 #include <iostream>
 #include <iterator>
 #include <optional>
+#include <ostream>
 #include <span>
 #include <string>
 #include <string_view>
@@ -61,6 +63,9 @@ void print_usage(std::ostream& out) {
   --overflow <policy>     あふれ処理 oidashi | oikomi | burasage（既定 oidashi）
   --line-break <mode>     行分割の厳しさ strict | normal | loose（既定 strict）
   --dump-stage <stage>    中間表現を出す dom | style | box | display-list | svg
+  --strict                警告（豆腐・紙面からのはみ出し）もエラーにする。PNG は作らない
+  --diagnostics <format>  診断の出し方 human | json（既定 human）。
+                          json は標準出力に 1 オブジェクト（-o が必須。--dump-stage と併用不可）
   --version               版を表示する（shashoku・依存ライブラリ・既定フォント）
   --license               ライセンスを表示する（shashoku の MIT と第三者ソフトウェア）
   -h, --help              この使い方を表示する
@@ -95,6 +100,7 @@ struct Arguments {
   std::string output;
   shashoku::RenderOptions options;
   std::optional<shashoku::DumpStage> stage;
+  bool json = false;  // --diagnostics json（診断を標準出力に JSON で出す）
   bool help = false;
   bool version = false;
   bool license = false;
@@ -215,18 +221,23 @@ class Parser {
     return std::unexpected(ArgumentError{std::move(message)});
   }
 
-  // 値を取るオプションの一覧（shashoku の CLI に旗だけのオプションは無い）。
+  // 値を取るオプションの一覧（旗だけのものは kFlags）。
   static bool takes_value(std::string_view name) {
     using namespace std::string_view_literals;
     static constexpr std::array kWithValue{"--font"sv,       "--image"sv,       "-o"sv,
                                            "--output"sv,     "--width"sv,       "--height"sv,
                                            "--scale"sv,      "--compression"sv, "--overflow"sv,
-                                           "--line-break"sv, "--dump-stage"sv};
+                                           "--line-break"sv, "--dump-stage"sv,  "--diagnostics"sv};
     return std::ranges::find(kWithValue, name) != kWithValue.end();
   }
 
   // 値を取らないオプション（約物の空きの切り替え）。
   static std::expected<void, ArgumentError> apply_flag(std::string_view name, Arguments& parsed) {
+    if (name == "--strict") {
+      // 警告（豆腐・紙面からのはみ出し）を失敗にする（A46）。判定は render() の中。
+      parsed.options.warnings_as_errors = true;
+      return {};
+    }
     shashoku::LineBreakConfig& config = parsed.options.line_break;
     if (name == "--trim-line-start") {
       config.trim_line_start = true;
@@ -241,7 +252,7 @@ class Parser {
   static bool is_flag(std::string_view name) {
     using namespace std::string_view_literals;
     static constexpr std::array kFlags{"--trim-line-start"sv, "--no-trim-line-end"sv,
-                                       "--no-collapse-punctuation"sv};
+                                       "--no-collapse-punctuation"sv, "--strict"sv};
     return std::ranges::find(kFlags, name) != kFlags.end();
   }
 
@@ -298,6 +309,9 @@ class Parser {
     }
     if (name == "--line-break") {
       return apply_strictness(value, parsed);
+    }
+    if (name == "--diagnostics") {
+      return apply_diagnostics(value, parsed);
     }
     return apply_stage(value, parsed);  // --dump-stage
   }
@@ -366,6 +380,20 @@ class Parser {
     return {};
   }
 
+  // 診断の出し方（A46）。human は今までどおりの stderr、json は §3.10 の 1 オブジェクト。
+  static std::expected<void, ArgumentError> apply_diagnostics(std::string_view value,
+                                                              Arguments& parsed) {
+    if (value == "human") {
+      parsed.json = false;
+      return {};
+    }
+    if (value == "json") {
+      parsed.json = true;
+      return {};
+    }
+    return error("--diagnostics は human | json のいずれかです: " + std::string(value));
+  }
+
   static std::expected<void, ArgumentError> apply_stage(std::string_view value, Arguments& parsed) {
     const std::optional<shashoku::DumpStage> stage = parse_stage(value);
     if (!stage) {
@@ -388,6 +416,14 @@ class Parser {
     }
     if (!parsed.stage && parsed.output.empty()) {
       return error("PNG の出力先を -o で指定してください（標準出力には書きません）");
+    }
+    // --diagnostics json は標準出力を占有するので、ダンプとは併用できず、PNG の出力先が要る
+    // （ARCHITECTURE.md §3.10）。
+    if (parsed.json && parsed.stage) {
+      return error("--diagnostics json は --dump-stage と併用できません");
+    }
+    if (parsed.json && parsed.output.empty()) {
+      return error("--diagnostics json のときは PNG の出力先を -o で指定してください");
     }
     return parsed;
   }
@@ -438,6 +474,125 @@ bool write_binary(const std::string& path, std::span<const std::uint8_t> bytes) 
                static_cast<std::streamsize>(bytes.size()));
   output.close();
   return output.good();
+}
+
+// ---------------------------------------------------------------------------
+// 診断 JSON（`--diagnostics json`。ARCHITECTURE.md §3.10）
+//
+// 機械が読む出口。安定した契約は識別子（`kind` / `warning` / `edge`）と入力位置で、
+// `message` / `detail` / `hint` の文面は人向けなので版で変わりうる（A46）。
+// CLI は `src/` のヘッダを見ない約束なので、内部の JsonWriter は使わず、ここに
+// 必要なだけのエスケープを置く（出すのは 1 オブジェクト・1 行だけ）。
+// ---------------------------------------------------------------------------
+
+// `"` `\` と制御文字（< 0x20）をエスケープする。非 ASCII は UTF-8 のバイト列のまま出す。
+void write_json_string(std::ostream& out, std::string_view text) {
+  static constexpr std::string_view kHexDigits = "0123456789abcdef";
+  out << '"';
+  for (const char c : text) {
+    const auto byte = static_cast<unsigned char>(c);
+    if (c == '"') {
+      out << R"(\")";
+    } else if (c == '\\') {
+      out << R"(\\)";
+    } else if (c == '\n') {
+      out << R"(\n)";
+    } else if (c == '\r') {
+      out << R"(\r)";
+    } else if (c == '\t') {
+      out << R"(\t)";
+    } else if (byte < 0x20U) {
+      out << R"(\u00)" << kHexDigits[byte >> 4U] << kHexDigits[byte & 0x0FU];
+    } else {
+      out << c;
+    }
+  }
+  out << '"';
+}
+
+// `"line"` / `"column"` / `"offset"`。位置が分からなければ 3 つとも null（§3.10）。
+void write_json_location(std::ostream& out,
+                         const std::optional<shashoku::SourceLocation>& location) {
+  if (!location) {
+    out << R"("line": null, "column": null, "offset": null)";
+    return;
+  }
+  out << R"("line": )" << location->line << R"(, "column": )" << location->column
+      << R"(, "offset": )" << location->offset;
+}
+
+// 成功でも失敗でも同じ形の 1 オブジェクトを出すための入れ物。
+struct JsonReport {
+  bool ok = false;
+  std::optional<int> width;   // 成功時だけ。失敗時は null
+  std::optional<int> height;  // 同上
+  bool truncated = false;
+  std::vector<shashoku::RenderError> errors;
+  std::vector<shashoku::Warning> warnings;
+};
+
+void write_json_error(std::ostream& out, const shashoku::RenderError& error) {
+  out << R"({"kind": )";
+  write_json_string(out, shashoku::to_string(error.kind));
+  out << R"(, "message": )";
+  write_json_string(out, error.message);
+  out << R"(, "hint": )";
+  write_json_string(out, error.hint);  // 無ければ ""
+  out << ", ";
+  write_json_location(out, error.location);
+  out << R"(, "warning": )";
+  if (error.warning) {  // --strict で格上げしたものだけ、元の警告の種類を持つ
+    write_json_string(out, shashoku::to_string(*error.warning));
+  } else {
+    out << "null";
+  }
+  out << '}';
+}
+
+void write_json_warning(std::ostream& out, const shashoku::Warning& warning) {
+  out << R"({"kind": )";
+  write_json_string(out, shashoku::to_string(warning.kind));
+  out << R"(, "detail": )";
+  write_json_string(out, warning.detail);
+  out << R"(, "codepoint": )" << static_cast<std::uint32_t>(warning.codepoint) << ", ";
+  write_json_location(out, warning.location);
+  // overflow_px は CSS px（A50）。float は元の値に戻せる最短表現で書く。
+  out << R"(, "overflow_px": )" << std::format("{}", warning.overflow_px) << R"(, "edge": )";
+  if (warning.overflow_edge == shashoku::OverflowEdge::None) {
+    out << "null";  // content-overflow 以外（豆腐）には辺が無い
+  } else {
+    write_json_string(out, shashoku::to_string(warning.overflow_edge));
+  }
+  out << '}';
+}
+
+void print_diagnostics_json(std::ostream& out, const JsonReport& report) {
+  const auto write_int_or_null = [&out](const std::optional<int>& value) {
+    if (value) {
+      out << *value;
+    } else {
+      out << "null";
+    }
+  };
+  out << R"({"ok": )" << (report.ok ? "true" : "false") << R"(, "width": )";
+  write_int_or_null(report.width);
+  out << R"(, "height": )";
+  write_int_or_null(report.height);
+  out << R"(, "truncated": )" << (report.truncated ? "true" : "false") << R"(, "errors": [)";
+  for (std::size_t i = 0; i < report.errors.size(); ++i) {
+    if (i != 0) {
+      out << ", ";
+    }
+    write_json_error(out, report.errors[i]);
+  }
+  out << R"(], "warnings": [)";
+  for (std::size_t i = 0; i < report.warnings.size(); ++i) {
+    if (i != 0) {
+      out << ", ";
+    }
+    write_json_warning(out, report.warnings[i]);
+  }
+  out << "]}\n";
 }
 
 int fail_with(std::string_view message) {
@@ -496,17 +651,45 @@ int run(const Arguments& arguments) {
 
   const auto result = shashoku::render(html, fonts, images, arguments.options);
   if (!result) {
-    std::cerr << shashoku::to_string(result.error()) << '\n';
+    // **失敗したときは出力ファイルを作らない・上書きしない**（A46）。-o を開くのは
+    // render() が成功してからなので、既存のファイルはそのまま残る。
+    if (arguments.json) {
+      print_diagnostics_json(std::cout, JsonReport{.ok = false,
+                                                   .width = std::nullopt,
+                                                   .height = std::nullopt,
+                                                   .truncated = result.error().truncated,
+                                                   .errors = result.error().errors,
+                                                   .warnings = result.error().warnings});
+    } else {
+      // 1 行 1 件（hint は "  hint: …" の行）。--strict で格上げした警告もここに並ぶ。
+      std::cerr << shashoku::to_string(result.error()) << '\n';
+    }
     return kExitError;
   }
-  // 警告は stderr（PNG は stdout / ファイル）。detail には入力位置が入っている
-  // （"… at L:C"。to_string(RenderError) と同じ書式。ARCHITECTURE.md A31）
-  for (const shashoku::Warning& warning : result->warnings) {
-    std::cerr << "warning[" << shashoku::to_string(warning.kind) << "]: " << warning.detail << '\n';
+  if (!arguments.json) {
+    // 警告は stderr（PNG は stdout / ファイル）。detail には入力位置が入っている
+    // （"… at L:C"。to_string(RenderError) と同じ書式。ARCHITECTURE.md A31 / A46）
+    for (const shashoku::Warning& warning : result->warnings) {
+      std::cerr << "warning[" << shashoku::to_string(warning.kind) << "]: " << warning.detail
+                << '\n';
+    }
   }
   if (!write_binary(arguments.output, result->png)) {
+    // 入出力の失敗は入力の診断ではないので、JSON のときも stderr に出す（JSON は出さない）。
     return fail_with("出力を書けません: " + arguments.output);
   }
+  if (arguments.json) {
+    print_diagnostics_json(std::cout, JsonReport{.ok = true,
+                                                 .width = result->width,
+                                                 .height = result->height,
+                                                 .truncated = result->diagnostics_truncated,
+                                                 .errors = {},
+                                                 .warnings = result->warnings});
+    return kExitOk;
+  }
+  // 成功したことと実際の寸法を 1 行で（--height を省いたときの高さが分かる）。
+  std::cerr << "wrote " << arguments.output << " (" << result->width << 'x' << result->height
+            << ")\n";
   return kExitOk;
 }
 

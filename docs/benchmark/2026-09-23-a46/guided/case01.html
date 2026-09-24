@@ -1,0 +1,58 @@
+<style>
+  .wrap  { background: #ffffff; }
+  .cap   { margin: 0 0 12px 0; font-size: 18px; font-weight: bold; color: #1b2733; line-height: 1.6; }
+  .tbl   { border: 1px solid #ccd3dd; background: #ffffff; font-size: 14px; }
+  .tr    { display: flex; }
+  .head  { background: #2f3b52; }
+  .odd   { background: #f5f7fb; }
+  .key   { flex: none; width: 116px; padding: 12px 14px; color: #1b2733;
+           font-weight: bold; line-height: 1.7; }
+  .td    { flex: 1 1 0; padding: 12px 14px; color: #1b2733; line-height: 1.7; }
+  .thc   { color: #ffffff; font-weight: bold; }
+  .rule  { height: 1px; background: #e3e8ef; }
+</style>
+<div class="wrap">
+  <p class="cap">データストア比較（技術選定資料・2026 年度）</p>
+  <div class="tbl">
+    <div class="tr head">
+      <div class="key thc">項目</div>
+      <div class="td thc">RDB（PostgreSQL）</div>
+      <div class="td thc">KVS（Redis）</div>
+      <div class="td thc">ドキュメント DB（MongoDB）</div>
+    </div>
+    <div class="tr">
+      <div class="key">得意なデータ</div>
+      <div class="td">正規化した業務データ。型と制約をスキーマ側で守りたいものに向く。</div>
+      <div class="td">短命で小さい値。セッションや順位表など、捨ててよい状態の置き場。</div>
+      <div class="td">形のそろわない文書。案件ごとに項目が増えるデータを丸ごと持てる。</div>
+    </div>
+    <div class="rule"></div>
+    <div class="tr odd">
+      <div class="key">トランザクション</div>
+      <div class="td">複数テーブルにまたがる ACID を標準で持ち、整合性の担保が楽。</div>
+      <div class="td">単一コマンドは原子的だが、複数キーをまたぐ整合は保証されない。</div>
+      <div class="td">単一文書は原子的。複数文書にまたがる更新は制約つきで使える。</div>
+    </div>
+    <div class="rule"></div>
+    <div class="tr">
+      <div class="key">スケール</div>
+      <div class="td">まず垂直に伸ばす。読み取りはレプリカへ逃がすのが定石になる。</div>
+      <div class="td">クラスタで水平に伸びる。分割の良否はキーの設計で決まる。</div>
+      <div class="td">シャーディングで水平に伸びるが、キー選定を誤ると偏りが出る。</div>
+    </div>
+    <div class="rule"></div>
+    <div class="tr odd">
+      <div class="key">運用の手間</div>
+      <div class="td">バックアップと版上げの手順が確立していて、事故の予測が立つ。</div>
+      <div class="td">単体は軽いが、クラスタの運用と容量の見張りに手が要る。</div>
+      <div class="td">スキーマ変更は楽な反面、索引とシャードの設計に手間がかかる。</div>
+    </div>
+    <div class="rule"></div>
+    <div class="tr">
+      <div class="key">うちでの用途</div>
+      <div class="td">注文・課金など、整合性が必要な中核データの置き場として採用。</div>
+      <div class="td">セッション、レート制限、ジョブの待ち行列に限って使う。</div>
+      <div class="td">監査ログと外部 API の生の応答を、加工せず貯める用途に使う。</div>
+    </div>
+  </div>
+</div>

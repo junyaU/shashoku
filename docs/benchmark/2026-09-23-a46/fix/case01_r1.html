@@ -1,0 +1,173 @@
+<style>
+  .page {
+    padding: 40px 20px;
+    background: #f4f6f8;
+    font-family: "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, sans-serif;
+    color: #1f2933;
+  }
+  .wrap {
+    width: 900px;
+    margin: 0 auto;
+    background: #ffffff;
+    border-radius: 12px;
+  }
+  .head {
+    padding: 28px 32px 20px;
+  }
+  .head-title {
+    margin: 0 0 6px;
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+  }
+  .head-sub {
+    margin: 0;
+    font-size: 13px;
+    color: #7b8794;
+  }
+  .rule-head { height: 1px; background: #e4e7eb; }
+  .tbl {
+    font-size: 13.5px;
+    line-height: 1.75;
+  }
+  .tr { display: flex; }
+  .thead-row {
+    background: #2f5d8f;
+    color: #ffffff;
+  }
+  .th {
+    flex: 1 1 0;
+    font-weight: 500;
+    text-align: left;
+    padding: 14px 16px;
+    font-size: 14px;
+    letter-spacing: 0.04em;
+  }
+  .th-corner {
+    flex: none;
+    width: 118px;
+    background: #24496e;
+    font-weight: 500;
+    text-align: left;
+    padding: 14px 16px;
+    font-size: 14px;
+    letter-spacing: 0.04em;
+  }
+  .vr-head { flex: none; width: 1px; background: rgba(255, 255, 255, 0.18); }
+  .rowhead {
+    flex: none;
+    width: 118px;
+    text-align: left;
+    font-weight: 500;
+    padding: 16px;
+    background: #eef2f6;
+    color: #334e68;
+  }
+  .rowhead-even {
+    flex: none;
+    width: 118px;
+    text-align: left;
+    font-weight: 500;
+    padding: 16px;
+    background: #e7edf3;
+    color: #334e68;
+  }
+  .vr-rowhead { flex: none; width: 1px; background: #dfe6ed; }
+  .td {
+    flex: 1 1 0;
+    padding: 16px;
+    color: #3e4c59;
+  }
+  .td-even {
+    flex: 1 1 0;
+    padding: 16px;
+    color: #3e4c59;
+    background: #f7f9fb;
+  }
+  .vr { flex: none; width: 1px; background: #edf0f3; }
+  .rule { height: 1px; background: #edf0f3; }
+  .engine {
+    font-size: 11px;
+    color: #ffffffbf;
+    font-weight: 400;
+    letter-spacing: 0.06em;
+    margin-top: 2px;
+  }
+  .foot {
+    padding: 16px 32px 24px;
+    font-size: 12px;
+    color: #9aa5b1;
+  }
+  .rule-foot { height: 1px; background: #e4e7eb; }
+</style>
+<div class="page">
+  <div class="wrap">
+    <div class="head">
+      <h1 class="head-title">データストア比較：RDB / KVS / ドキュメント DB</h1>
+      <p class="head-sub">技術選定資料 2026-09 版 ／ 対象: PostgreSQL・Redis・MongoDB</p>
+    </div>
+    <div class="rule-head"></div>
+    <div class="tbl">
+      <div class="tr thead-row">
+        <div class="th-corner">比較項目</div>
+        <div class="vr-head"></div>
+        <div class="th">RDB<div class="engine">PostgreSQL</div></div>
+        <div class="vr-head"></div>
+        <div class="th">KVS<div class="engine">Redis</div></div>
+        <div class="vr-head"></div>
+        <div class="th">ドキュメント DB<div class="engine">MongoDB</div></div>
+      </div>
+      <div class="tr">
+        <div class="rowhead">得意なデータ</div>
+        <div class="vr-rowhead"></div>
+        <div class="td">関係が固定的で、結合して集計したい正規化済みの業務データ。</div>
+        <div class="vr"></div>
+        <div class="td">寿命が短く単純な値。セッションやカウンタ、一時的なキャッシュ。</div>
+        <div class="vr"></div>
+        <div class="td">項目が案件ごとに揺れる半構造データ。入れ子の JSON をそのまま持てる。</div>
+      </div>
+      <div class="rule"></div>
+      <div class="tr">
+        <div class="rowhead-even">トランザクション</div>
+        <div class="vr-rowhead"></div>
+        <div class="td-even">複数テーブルにまたがる ACID を標準で持つ。会計処理でも安心して使える。</div>
+        <div class="vr"></div>
+        <div class="td-even">MULTI で原子実行はできるが、ロールバックのない単純な一括実行に近い。</div>
+        <div class="vr"></div>
+        <div class="td-even">単一文書は原子的。複数文書のトランザクションは使えるが代償が大きい。</div>
+      </div>
+      <div class="rule"></div>
+      <div class="tr">
+        <div class="rowhead">スケール</div>
+        <div class="vr-rowhead"></div>
+        <div class="td">まず垂直に伸ばす。読み取りはレプリカ、書き込みは分割の設計が必要。</div>
+        <div class="vr"></div>
+        <div class="td">Cluster で水平に伸びる。メモリ量が上限なので容量設計が効いてくる。</div>
+        <div class="vr"></div>
+        <div class="td">シャーディング前提の設計。キー選びを誤ると偏って効果が出ない。</div>
+      </div>
+      <div class="rule"></div>
+      <div class="tr">
+        <div class="rowhead-even">運用の手間</div>
+        <div class="vr-rowhead"></div>
+        <div class="td-even">知見も道具も揃っている。VACUUM と長時間トランザクションだけ要注意。</div>
+        <div class="vr"></div>
+        <div class="td-even">運用は軽いが、永続化とフェイルオーバーの設定は事前に詰めておきたい。</div>
+        <div class="vr"></div>
+        <div class="td-even">スキーマ変更は楽な反面、実質の形はアプリ側の規律に依存してしまう。</div>
+      </div>
+      <div class="rule"></div>
+      <div class="tr">
+        <div class="rowhead">うちでの用途</div>
+        <div class="vr-rowhead"></div>
+        <div class="td">注文・請求・ユーザーなど、整合性が売上に直結する中核データを置く。</div>
+        <div class="vr"></div>
+        <div class="td">ログイン情報と API のレート制限、重い集計結果の一時保存に使う。</div>
+        <div class="vr"></div>
+        <div class="td">審査ログや外部 API の生レスポンスなど、形の定まらない記録の置き場。</div>
+      </div>
+    </div>
+    <div class="rule-foot"></div>
+    <div class="foot">※ 評価は当チームの現行ワークロード（1 日あたり書き込み 300 万件規模）を前提とした相対比較です。</div>
+  </div>
+</div>

@@ -1,9 +1,9 @@
 # shashoku（写植）
 
-**日本語の文章を絶対に破綻させずに、HTML から PNG を一発で生成する組版エンジン。**
+**AI とアプリのための、ブラウザ不要の HTML→PNG エンジン。文章主体のカード・図解・資料画像を生成し、問題は修正できる形で伝える。日本語組版にも強い。**
 
-禁則処理・縦書き・ルビ・フォントフォールバックを備え、関数 1 個で PNG バイト列を返す C++23 ライブラリ。
-OG 画像のように「任意の日本語文字列を流し込んでも組版が壊れない」ことを保証するのが目的。
+禁則処理・両端揃え・約物の詰め・縦書き・ルビ・フォントフォールバックを備え、関数 1 個で PNG バイト列を返す C++23 ライブラリ。
+OG 画像や通知カードのように「流し込んだ文章が読める組版になり、対応外や欠落は黙って通さない」ことが目的。対応外のものは入力位置つきのエラーになり、見つかった分が**一度に全部**出ます（直し方が分かるものには `hint:` の行つき）。豆腐や紙面からのはみ出しは警告で、`--strict` を付ければ失敗にできます。診断は `--diagnostics json` で機械が読める形でも出せます（docs/ARCHITECTURE.md A46）。
 
 ## 試す（ビルドもフォントの用意も要りません）
 
@@ -130,6 +130,8 @@ const auto result = shashoku::render(html, *fonts, *images, options);
 ./shashoku input.html --trim-line-start -o out.png        # 行頭の括弧を天付きに
 ./shashoku input.html --dump-stage box                    # 中間表現を見る
 ./shashoku input.html --font A.otf --font B.otf -o out.png  # フォントを自分で指定する
+./shashoku input.html -o out.png --strict                 # 警告も失敗にする（PNG を作らない）
+./shashoku input.html -o out.png --diagnostics json       # 診断を JSON で（機械向け）
 ```
 
 主なオプション:
@@ -146,15 +148,59 @@ const auto result = shashoku::render(html, *fonts, *images, options);
 | `--no-trim-line-end` | 行末の終わり括弧・句読点の後ろの空きを詰めない（既定は詰める） |
 | `--no-collapse-punctuation` | 連続する約物の間の空きを詰めない（既定は詰める。JLREQ 3.1.4） |
 | `--dump-stage` | `dom \| style \| box \| display-list \| svg` で中間表現を出す |
+| `--strict` | 警告（豆腐・紙面からのはみ出し）も失敗にする。PNG は作らない |
+| `--diagnostics` | 診断の出し方 `human`（既定）\| `json`。`json` は `-o` が必須で `--dump-stage` と併用不可 |
 | `--version` | 版を出す（shashoku・zlib・FreeType・HarfBuzz・**既定フォント**） |
 | `--license` | ライセンスを出す（MIT と第三者ソフトウェア） |
 
 終了コードは 0 成功 / 1 レンダリングエラー・入出力エラー / 2 引数の誤り。
+診断（エラー・警告）と成功時の `wrote` の行は**標準エラー**に出ます（標準出力は `--dump-stage` と
+`--diagnostics json` のためのもの）。
 
 配布している実行ファイルには既定フォント（Noto Sans JP Regular / Bold）が入っていて、
 `--font` を書かなければそれを Regular → Bold の順に使います。**同じ OTF を
 `--font` で明示したときとバイト単位で同じ PNG** が出ます。既定フォントは CLI だけの
 機能で、ライブラリ（`render()`）は今までどおりバイト列しか受け取りません。
+
+#### 診断（エラーと警告）
+
+見つかった問題は**一度に全部**出ます。1 行 1 件で、直し方が分かるものには `  hint: …` の行が続きます。
+
+```
+$ ./shashoku card.html -o out.png
+error[unsupported-property] at 1:6: `float` is not a supported property
+  hint: no floats: use `display: flex` to put boxes side by side
+error[unsupported-attribute] at 3:6: `onclick` is not supported on `<div>` (supported attributes: class, id, style)
+```
+
+豆腐（どのフォントにもグリフが無い文字）と、固定した紙面からのはみ出しは**警告**で、描画は続きます。
+
+```
+$ ./shashoku card.html -o out.png --height 200
+warning[content-overflow]: content overflows the canvas by 430.0px (bottom) at 19:1
+wrote out.png (1200x200)
+```
+
+`--strict` を付けると警告も失敗になり、**PNG は作られません**（既にあるファイルも上書きしません）。
+サーバーで「検出した問題のある画像は配らない」判断に使えます。
+
+`--diagnostics json` は標準出力に 1 オブジェクトを出します（成功でも失敗でも。人向けの出力は出ません）。
+
+```json
+{"ok": false, "width": null, "height": null, "truncated": false,
+ "errors": [{"kind": "unsupported-property", "message": "…", "hint": "…",
+             "line": 1, "column": 6, "offset": 5, "warning": null}],
+ "warnings": []}
+```
+
+機械が頼ってよいのは `kind` / `warning` / `edge` の識別子と入力位置（`line` / `column` / `offset`。
+分からなければ `null`）で、`message` / `detail` / `hint` の文面は版で変わりえます。
+`warnings` の要素は `kind` `detail` `codepoint` 位置 `overflow_px` `edge` を持ち、
+`--strict` で格上げしたものは `errors` 側に `kind: "warning-as-error"` として移ります
+（元の種類は `warning`）。`truncated` は `RenderLimits::max_diagnostics`（既定 100 件）に達して
+記録を打ち切ったことを表します。
+
+サーバーから呼ぶ側の書き方（AI に HTML を書かせ、診断 JSON を読んで直し、上限つきで再試行する）は [examples/server/](examples/server/) にあります。
 
 ## 速さ
 
@@ -210,6 +256,11 @@ OOM killer にプロセスごと殺されることがあります。**メモリ�
 ## 対応している HTML / CSS
 
 対応表にないタグ・属性・プロパティ・値は、**黙って無視せずエラーになります**（fail loudly）。
+エラーは**見つかった分が一度に全部**出るので、1 回直すたびに走らせ直す必要はありません。
+確かめた代替があるものには `hint:` の行が付きます。豆腐と紙面からのはみ出しは警告で描画は続き、
+`--strict`（`RenderOptions::warnings_as_errors`）で失敗に格上げできます。
+
+**HTML を書く（AI に書かせる）ときは [docs/guide/writing-html-for-shashoku.md](docs/guide/writing-html-for-shashoku.md)（[English](docs/guide/writing-html-for-shashoku.en.md) / [skill](docs/guide/SKILL.md)）を見てください** — 対応範囲に加えて、定石の最小例・代替表・エラーの直し方があります。
 
 ### タグ
 

@@ -10,9 +10,11 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include "core/diagnostics.hpp"
 #include "core/result.hpp"
 #include "html/dom.hpp"
 #include "shashoku/error.hpp"
+#include "shashoku/limits.hpp"
 
 namespace shashoku::html {
 namespace {
@@ -20,7 +22,8 @@ namespace {
 using ::testing::HasSubstr;
 
 Node parsed(std::string_view source) {
-  Result<Node> result = parse(source);
+  Diagnostics diagnostics{RenderLimits{}.max_diagnostics};
+  Result<Node> result = parse(source, diagnostics);
   if (!result) {
     ADD_FAILURE() << "parse failed: " << to_string(result.error());
     return Node{};
@@ -29,12 +32,24 @@ Node parsed(std::string_view source) {
 }
 
 Error parse_failure(std::string_view source) {
-  Result<Node> result = parse(source);
+  Diagnostics diagnostics{RenderLimits{}.max_diagnostics};
+  Result<Node> result = parse(source, diagnostics);
   if (result) {
     ADD_FAILURE() << "parse unexpectedly succeeded: " << dump_json(*result);
     return Error{};
   }
   return std::move(result).error();
+}
+
+// A46: 「集めて続行する」もの（UnsupportedTag / UnsupportedAttribute）を取り出す。
+// parse は成功し、診断は文書順（足した順）に並ぶ。
+std::vector<Error> collected(std::string_view source) {
+  Diagnostics diagnostics{RenderLimits{}.max_diagnostics};
+  Result<Node> result = parse(source, diagnostics);
+  if (!result) {
+    ADD_FAILURE() << "parse failed: " << to_string(result.error());
+  }
+  return diagnostics.errors();
 }
 
 Node element(std::string tag, std::vector<Node> children = {}, std::vector<Attribute> attrs = {}) {
@@ -366,27 +381,7 @@ struct ErrorCase {
 
 TEST(HtmlParseError, Table) {
   const std::vector<ErrorCase> cases = {
-      // 未対応タグ
-      {"table", "<table></table>", ErrorKind::UnsupportedTag, 1, 1, "`<table>` is not supported"},
-      {"script", "<div><script></script></div>", ErrorKind::UnsupportedTag, 1, 6, "`<script>`"},
-      {"html", "<html><body></body></html>", ErrorKind::UnsupportedTag, 1, 1, "`<html>`"},
-      {"body", "<div>\n<body></body></div>", ErrorKind::UnsupportedTag, 2, 1, "`<body>`"},
-      {"anchor", "<p>a<a href=\"x\">b</a></p>", ErrorKind::UnsupportedTag, 1, 5, "`<a>`"},
-      {"custom element", "<my-widget></my-widget>", ErrorKind::UnsupportedTag, 1, 1,
-       "`<my-widget>`"},
-      {"unsupported end tag", "</table>", ErrorKind::UnsupportedTag, 1, 1, "`</table>`"},
-      {"supported tag list", "<table>", ErrorKind::UnsupportedTag, 1, 1,
-       "supported tags: br, div, h1, h2, h3, h4, h5, h6, img, p, rp, rt, ruby, span, style"},
-
-      // 未対応属性
-      {"href on div", "<div href=\"x\"></div>", ErrorKind::UnsupportedAttribute, 1, 6,
-       "`href` is not supported on `<div>`"},
-      {"src on div", "<div src=\"x\"></div>", ErrorKind::UnsupportedAttribute, 1, 6,
-       "supported attributes: class, id, style"},
-      {"title on img", R"(<img alt="a" title="t">)", ErrorKind::UnsupportedAttribute, 1, 14,
-       "supported attributes: alt, class, height, id, src, style, width"},
-      {"width on div", "<div width=\"1\"></div>", ErrorKind::UnsupportedAttribute, 1, 6,
-       "`width` is not supported on `<div>`"},
+      // 未対応のタグ・属性は「集めて続行する」ので、ここには無い（HtmlDiagnostics を見よ。A46）
 
       // 属性の重複
       {"duplicate class", R"(<div class="a" class="b"></div>)", ErrorKind::HtmlParse, 1, 16,
@@ -474,8 +469,6 @@ TEST(HtmlParseError, Table) {
        "unknown character reference `&bogus;`"},
 
       // 位置が 2 行目以降 / 日本語を含む入力
-      {"error after japanese", "<p>日本語</p>\n<p>あ<b></b></p>", ErrorKind::UnsupportedTag, 2, 5,
-       "`<b>`"},
       {"error column counts code points", "<p>日本語&bad;</p>", ErrorKind::HtmlParse, 1, 7,
        "unknown character reference"},
   };
@@ -559,10 +552,11 @@ TEST(HtmlParseError, NestingDepthIsAParameter) {
     return source;
   };
 
-  const Result<Node> exact = parse(nested(4), 4);
+  Diagnostics diagnostics{RenderLimits{}.max_diagnostics};
+  const Result<Node> exact = parse(nested(4), diagnostics, 4);
   ASSERT_TRUE(exact.has_value()) << to_string(exact.error());
 
-  Result<Node> over = parse(nested(5), 4);
+  Result<Node> over = parse(nested(5), diagnostics, 4);
   ASSERT_FALSE(over.has_value());
   const Error error = std::move(over).error();
   EXPECT_EQ(error.kind, ErrorKind::LimitExceeded);
@@ -573,8 +567,380 @@ TEST(HtmlParseError, NestingDepthIsAParameter) {
 }
 
 TEST(HtmlParseError, FormattedErrorMentionsKindAndLocation) {
-  const Error error = parse_failure("<div>\n  <table>\n</div>");
-  EXPECT_EQ(to_string(error).substr(0, 32), "error[unsupported-tag] at 2:3: `");
+  const std::vector<Error> errors = collected("<div>\n  <table></table>\n</div>");
+  ASSERT_EQ(errors.size(), 1U);
+  EXPECT_EQ(to_string(errors.front()).substr(0, 32), "error[unsupported-tag] at 2:3: `");
+}
+
+// ---- A46: 集めて続行する（対応外のタグ・属性）-----------------------------
+//
+// 文面は契約ではない（A46-6）ので、kind と位置だけを見る。
+
+struct DiagnosticCase {
+  std::string_view name;
+  std::string_view source;
+  ErrorKind kind;
+  std::uint32_t line;
+  std::uint32_t column;
+};
+
+TEST(HtmlDiagnostics, Table) {
+  const std::vector<DiagnosticCase> cases = {
+      // 対応外のタグ（位置は開始タグの `<`）
+      {"table", "<table></table>", ErrorKind::UnsupportedTag, 1, 1},
+      {"script", "<div><script></script></div>", ErrorKind::UnsupportedTag, 1, 6},
+      {"html", "<html></html>", ErrorKind::UnsupportedTag, 1, 1},
+      {"body", "<div>\n<body></body></div>", ErrorKind::UnsupportedTag, 2, 1},
+      {"custom element", "<my-widget></my-widget>", ErrorKind::UnsupportedTag, 1, 1},
+      {"self closing", "<section/>", ErrorKind::UnsupportedTag, 1, 1},
+      // 対応する開始タグの無い終了タグ（位置は `</`）
+      {"stray end tag", "</table>", ErrorKind::UnsupportedTag, 1, 1},
+      {"end tag after text", "<div>a</table></div>", ErrorKind::UnsupportedTag, 1, 7},
+      // 位置は行と**コードポイント**で数える
+      {"after japanese", "<p>日本語</p>\n<p>あ<b></b></p>", ErrorKind::UnsupportedTag, 2, 5},
+
+      // 対応外の属性（位置は属性名の先頭）。要素は残る
+      {"href on div", R"(<div href="x"></div>)", ErrorKind::UnsupportedAttribute, 1, 6},
+      {"src on div", R"(<div src="x"></div>)", ErrorKind::UnsupportedAttribute, 1, 6},
+      {"title on img", R"(<img alt="a" title="t">)", ErrorKind::UnsupportedAttribute, 1, 14},
+      {"width on div", R"(<div width="1"></div>)", ErrorKind::UnsupportedAttribute, 1, 6},
+      {"valueless", "<div hidden></div>", ErrorKind::UnsupportedAttribute, 1, 6},
+      {"unquoted value", "<div data-x=1></div>", ErrorKind::UnsupportedAttribute, 1, 6},
+  };
+
+  for (const DiagnosticCase& test_case : cases) {
+    SCOPED_TRACE(test_case.name);
+    const std::vector<Error> errors = collected(test_case.source);
+    ASSERT_EQ(errors.size(), 1U);
+    EXPECT_EQ(errors.front().kind, test_case.kind);
+    ASSERT_TRUE(errors.front().location.has_value());
+    const SourceLocation location = errors.front().location.value_or(SourceLocation{});
+    EXPECT_EQ(location.line, test_case.line);
+    EXPECT_EQ(location.column, test_case.column);
+  }
+}
+
+// 受け入れ例（A46 の作業指示）: 1 回の解析で対応外のものが全部集まり、
+// 木には ② が診断を続けられるもの（`<style>` とその中身、`style` 属性）が残る。
+TEST(HtmlDiagnostics, CollectsEveryUnsupportedTagAndAttributeInOnePass) {
+  constexpr std::string_view kSource =
+      R"(<html><head><meta charset="utf-8"><title>t</title><style>p{float:left}</style></head>)"
+      R"(<body><section><p style="position:absolute">x</p></section></body></html>)";
+
+  Diagnostics diagnostics{RenderLimits{}.max_diagnostics};
+  Result<Node> result = parse(kSource, diagnostics);
+  ASSERT_TRUE(result.has_value()) << to_string(result.error());
+
+  // 順序は「足した順 = 文書順」（整列するのは api）
+  struct Expected {
+    ErrorKind kind;
+    std::string_view at;  // 入力の中のこの綴りの先頭を指す
+  };
+  // 透過する要素の属性（`<meta charset>`）は報告しない（A49）
+  const std::vector<Expected> expected = {
+      {ErrorKind::UnsupportedTag, "<html>"}, {ErrorKind::UnsupportedTag, "<head>"},
+      {ErrorKind::UnsupportedTag, "<meta"},  {ErrorKind::UnsupportedTag, "<title>"},
+      {ErrorKind::UnsupportedTag, "<body>"}, {ErrorKind::UnsupportedTag, "<section>"},
+  };
+  const std::vector<Error>& errors = diagnostics.errors();
+  ASSERT_EQ(errors.size(), expected.size());
+  for (std::size_t i = 0; i < expected.size(); ++i) {
+    SCOPED_TRACE(expected[i].at);
+    EXPECT_EQ(errors[i].kind, expected[i].kind);
+    ASSERT_TRUE(errors[i].location.has_value());
+    const SourceLocation location = errors[i].location.value_or(SourceLocation{});
+    const std::size_t at = kSource.find(expected[i].at);
+    ASSERT_NE(at, std::string_view::npos);
+    EXPECT_EQ(location.offset, static_cast<std::uint32_t>(at));
+    EXPECT_EQ(location.line, 1U);  // 入力は 1 行
+    EXPECT_EQ(location.column, static_cast<std::uint32_t>(at) + 1U);
+  }
+  EXPECT_FALSE(diagnostics.truncated());
+
+  // 木: 透過した要素は消え、その子は親の子になる（`</section>` は HtmlParse にならない）。
+  // `<title>` は対応外の生テキスト要素なので、中身ごと消える（A49）
+  const Node root = std::move(*result);
+  ASSERT_EQ(root.children.size(), 2U);
+  EXPECT_EQ(root.children[0].tag, "style");
+  ASSERT_EQ(root.children[0].children.size(), 1U);
+  EXPECT_EQ(root.children[0].children.front().text, "p{float:left}");
+  EXPECT_EQ(root.children[1].tag, "p");
+  const Attribute* style_attr = root.children[1].find_attr("style");
+  ASSERT_NE(style_attr, nullptr);
+  EXPECT_EQ(style_attr->value, "position:absolute");
+}
+
+// 透過する要素の属性は報告しない（A49）: 「`<a>` が対応外」の 1 件で足り、
+// `href` に対して「class / id / style なら使える」と読める報告を並べても雑音になる。
+TEST(HtmlDiagnostics, TransparentElementDoesNotReportItsAttributes) {
+  const std::vector<Error> errors = collected(R"(<p>a<a href="x" target="_blank">b</a></p>)");
+  ASSERT_EQ(errors.size(), 1U);
+  EXPECT_EQ(errors[0].kind, ErrorKind::UnsupportedTag);
+  EXPECT_EQ(errors[0].location.value_or(SourceLocation{}).column, 5U);
+}
+
+// 対応済みの要素の対応外の属性は今までどおり報告する（その要素は描画に残るので、
+// 「その属性だけが効かない」ことを知らせないと直せない）。
+TEST(HtmlDiagnostics, SupportedElementStillReportsItsUnsupportedAttributes) {
+  const std::vector<Error> errors = collected(R"(<p onclick="run" class="c" data-id="1">b</p>)");
+  ASSERT_EQ(errors.size(), 2U);
+  EXPECT_EQ(errors[0].kind, ErrorKind::UnsupportedAttribute);
+  EXPECT_EQ(errors[0].location.value_or(SourceLocation{}).column, 4U);
+  EXPECT_EQ(errors[1].kind, ErrorKind::UnsupportedAttribute);
+  EXPECT_EQ(errors[1].location.value_or(SourceLocation{}).column, 28U);
+}
+
+// 上限に達したら記録をやめ、解析は続ける（truncated を立てる）
+TEST(HtmlDiagnostics, StopsRecordingAtTheLimit) {
+  Diagnostics diagnostics{2};
+  const Result<Node> result =
+      parse("<section><article><aside>x</aside></article></section>", diagnostics);
+  ASSERT_TRUE(result.has_value()) << to_string(result.error());
+  EXPECT_EQ(diagnostics.errors().size(), 2U);
+  EXPECT_TRUE(diagnostics.truncated());
+}
+
+struct FatalCase {
+  std::string_view name;
+  std::string_view source;
+  ErrorKind kind;
+  std::size_t collected_count;
+};
+
+// 「その場で止めるもの」は今までどおり unexpected。止まるまでに集めた分は Diagnostics に残る
+// （api が合わせて 1 つの RenderFailure にする）。
+TEST(HtmlDiagnostics, FatalErrorsStopParsingButKeepWhatWasCollected) {
+  const std::vector<FatalCase> cases = {
+      {"unclosed transparent element", "<table>", ErrorKind::HtmlParse, 1},
+      {"unclosed inside a transparent element", "<section><div>", ErrorKind::HtmlParse, 1},
+      {"mismatched end tag", "<section><div></section>", ErrorKind::HtmlParse, 1},
+      {"unknown character reference", "<section>&bogus;</section>", ErrorKind::HtmlParse, 1},
+      // 重複を見るのは**残す**属性だけ（透過する要素の属性は検査せずに捨てる。A49）
+      {"duplicate attribute", R"(<div class="a" class="b"></div>)", ErrorKind::HtmlParse, 0},
+      {"unterminated start tag", "<section", ErrorKind::HtmlParse, 1},
+      {"invalid utf-8", "<section>\xFF</section>", ErrorKind::InvalidUtf8, 0},
+  };
+
+  for (const FatalCase& test_case : cases) {
+    SCOPED_TRACE(test_case.name);
+    Diagnostics diagnostics{RenderLimits{}.max_diagnostics};
+    Result<Node> result = parse(test_case.source, diagnostics);
+    ASSERT_FALSE(result.has_value()) << dump_json(*result);
+    EXPECT_EQ(std::move(result).error().kind, test_case.kind);
+    EXPECT_EQ(diagnostics.errors().size(), test_case.collected_count);
+  }
+}
+
+// ---- A46: 透過（対応外の要素は無いものとして読む）-------------------------
+
+TEST(HtmlTransparent, EndTagOfAnUnsupportedElementIsConsumed) {
+  expect_shape("<div><section>a</section></div>", nodes(element("div", nodes(text("a")))));
+}
+
+TEST(HtmlTransparent, ChildrenBecomeChildrenOfTheParent) {
+  expect_shape("<div>a<section>b<p>c</p></section>d</div>",
+               nodes(element(
+                   "div", nodes(text("a"), text("b"), element("p", nodes(text("c"))), text("d")))));
+}
+
+TEST(HtmlTransparent, UnsupportedVoidElementsNeedNoEndTag) {
+  // HTML の空要素（`<meta>` `<link>` `<hr>` `<input>` …）は閉じタグを待たない。
+  // 積んでしまうと直後の `</head>` が入れ子の誤りになる（A49）。
+  const std::vector<Error> errors = collected(R"(<div><hr><meta charset="utf-8"><input></div>)");
+  ASSERT_EQ(errors.size(), 3U);                          // `charset` は報告しない（A49）
+  EXPECT_EQ(errors[0].kind, ErrorKind::UnsupportedTag);  // <hr>
+  EXPECT_EQ(errors[1].kind, ErrorKind::UnsupportedTag);  // <meta>
+  EXPECT_EQ(errors[2].kind, ErrorKind::UnsupportedTag);  // <input>
+  expect_shape(R"(<div><hr><meta charset="utf-8"><input></div>)", nodes(element("div")));
+}
+
+TEST(HtmlTransparent, UnsupportedAttributeIsDroppedAndTheElementStays) {
+  const std::vector<Error> errors = collected(R"(<div onclick="x" class="c" data-id="1">a</div>)");
+  ASSERT_EQ(errors.size(), 2U);
+  EXPECT_EQ(errors[0].kind, ErrorKind::UnsupportedAttribute);
+  EXPECT_EQ(errors[1].kind, ErrorKind::UnsupportedAttribute);
+  expect_shape(R"(<div onclick="x" class="c" data-id="1">a</div>)",
+               nodes(element("div", nodes(text("a")), {attribute("class", "c")})));
+}
+
+// 透過した要素も「開いている要素のスタック」には積むので、上限は木の深さより厳しくなる
+// （対応外のタグを並べた入力で解析器のメモリが伸びないようにするため。A49）。
+TEST(HtmlTransparent, NestingDepthCountsTransparentElements) {
+  Diagnostics diagnostics{RenderLimits{}.max_diagnostics};
+  const Result<Node> ok = parse("<section><div></div></section>", diagnostics, 2);
+  ASSERT_TRUE(ok.has_value()) << to_string(ok.error());
+
+  Result<Node> over = parse("<section><section><div></div></section></section>", diagnostics, 2);
+  ASSERT_FALSE(over.has_value());
+  const Error error = std::move(over).error();
+  EXPECT_EQ(error.kind, ErrorKind::LimitExceeded);
+  ASSERT_TRUE(error.location.has_value());
+  // 3 つ目の要素（`<div>`）の位置
+  EXPECT_EQ(error.location.value_or(SourceLocation{}).column, 19U);
+}
+
+// ---- A49（W1b）: 捨てる属性の値と、対応外の生テキスト要素 ------------------
+
+// 捨てる属性の値は生のまま読み飛ばす（文字参照を検証しない）。AI が書く HTML の
+// `<link href="…?family=Noto+Sans+JP&display=swap">` が致命エラーにならないこと。
+TEST(HtmlRawAttributeValue, DroppedValuesAreNotCheckedForCharacterReferences) {
+  struct Case {
+    std::string_view name;
+    std::string_view source;
+    ErrorKind kind;
+    std::size_t count;
+  };
+  const std::vector<Case> cases = {
+      // 透過する要素の属性（Google Fonts の URL）
+      {"link href", R"(<link href="https://x/css2?family=Noto&display=swap" rel="stylesheet">)",
+       ErrorKind::UnsupportedTag, 1},
+      {"unknown name", R"(<section data-x="&bogus;">a</section>)", ErrorKind::UnsupportedTag, 1},
+      {"bare numeric", R"(<section data-x="&#zz">a</section>)", ErrorKind::UnsupportedTag, 1},
+      {"unquoted", "<section data-x=a&b>c</section>", ErrorKind::UnsupportedTag, 1},
+      // 対応済みの要素の対応外の属性
+      {"onclick", R"(<div onclick="a &lt b && c">x</div>)", ErrorKind::UnsupportedAttribute, 1},
+      {"data on img", R"(<img src="a.png" data-q="?a=1&b=2">)", ErrorKind::UnsupportedAttribute, 1},
+  };
+
+  for (const Case& test_case : cases) {
+    SCOPED_TRACE(test_case.name);
+    const std::vector<Error> errors = collected(test_case.source);
+    ASSERT_EQ(errors.size(), test_case.count);
+    EXPECT_EQ(errors.front().kind, test_case.kind);
+  }
+}
+
+// 残す属性（style / class / id、img の src など）の値は今までどおり検証する。
+TEST(HtmlRawAttributeValue, KeptValuesAreStillChecked) {
+  struct Case {
+    std::string_view name;
+    std::string_view source;
+  };
+  const std::vector<Case> cases = {
+      {"class", R"(<div class="a&bogus;">x</div>)"},
+      {"style", R"(<div style="color:red&">x</div>)"},
+      {"id", R"(<div id="a&#zz">x</div>)"},
+      {"img src", R"(<img src="a.png?x=1&y=2">)"},
+  };
+
+  for (const Case& test_case : cases) {
+    SCOPED_TRACE(test_case.name);
+    EXPECT_EQ(parse_failure(test_case.source).kind, ErrorKind::HtmlParse);
+  }
+}
+
+// 残す属性でも `A & B` の形（`&` の直後が空白）は今までどおり通る。
+TEST(HtmlRawAttributeValue, KeptValueStillAllowsABareAmpersandBeforeWhitespace) {
+  expect_shape(R"(<div id="a & b">x</div>)",
+               nodes(element("div", nodes(text("x")), {attribute("id", "a & b")})));
+}
+
+// 対応外の生テキスト要素は、対応する終了タグまでを生テキストとして読み飛ばす。
+// 中の `<` `&` `</` は解釈しないので、JS や CSS を書いたままでも致命にならない（A49）。
+TEST(HtmlRawText, UnsupportedRawTextElementsAreSkippedWhole) {
+  struct Case {
+    std::string_view name;
+    std::string_view source;
+  };
+  const std::vector<Case> cases = {
+      {"script", R"(<script>if (a < b && c) { el.innerHTML = "</div>"; }</script>)"},
+      {"textarea", "<textarea>a < b & c</textarea>"},
+      {"title", "<title>a &amp b < c</title>"},
+      {"xmp", "<xmp><div>&</div></xmp>"},
+      {"iframe", "<iframe srcdoc=\"<p>&</p>\"><p>&</iframe>"},
+      {"noembed", "<noembed>a < b</noembed>"},
+      {"noframes", "<noframes>a & b</noframes>"},
+      {"uppercase", "<SCRIPT>a < b</SCRIPT>"},
+      {"attributes", R"(<script src="a.js?x=1&y=2" defer>a < b</script>)"},
+      {"whitespace in end tag", "<script>a < b</script >"},
+  };
+
+  for (const Case& test_case : cases) {
+    SCOPED_TRACE(test_case.name);
+    const std::vector<Error> errors = collected(test_case.source);
+    ASSERT_EQ(errors.size(), 1U);  // 対応外のタグ 1 件だけ（中身も属性も報告しない）
+    EXPECT_EQ(errors.front().kind, ErrorKind::UnsupportedTag);
+    EXPECT_EQ(errors.front().location.value_or(SourceLocation{}).column, 1U);
+    expect_shape(test_case.source, nodes());  // 子は作らない
+  }
+}
+
+// 中身は木に残らず、前後のテキストは分かれる（透過した要素と同じ）。
+TEST(HtmlRawText, UnsupportedRawTextElementLeavesNoChild) {
+  expect_shape("<div>a<script>var x = 1;</script>b</div>",
+               nodes(element("div", nodes(text("a"), text("b")))));
+}
+
+// `</script>` の別名を終了タグと取り違えない（`<style>` と同じ規則）。
+TEST(HtmlRawText, SimilarEndTagNameDoesNotEndTheElement) {
+  const std::vector<Error> errors = collected("<script>a</scripts>b</script>c");
+  ASSERT_EQ(errors.size(), 1U);
+  EXPECT_EQ(errors.front().kind, ErrorKind::UnsupportedTag);
+  expect_shape("<script>a</scripts>b</script>c", nodes(text("c")));
+}
+
+// 終了タグが無ければ HtmlParse（致命）。位置は開始タグの `<`。
+TEST(HtmlRawText, UnterminatedRawTextElementIsFatal) {
+  const Error error = parse_failure("<div>a</div>\n<script>var x = 1;");
+  EXPECT_EQ(error.kind, ErrorKind::HtmlParse);
+  ASSERT_TRUE(error.location.has_value());
+  EXPECT_EQ(error.location.value_or(SourceLocation{}).line, 2U);
+  EXPECT_EQ(error.location.value_or(SourceLocation{}).column, 1U);
+}
+
+// `/>` で閉じた対応外の要素はその場で終わる（A49）。生テキスト要素も同じで、
+// 続きは通常のマークアップとして読む。
+TEST(HtmlRawText, SelfClosedRawTextElementEndsImmediately) {
+  const std::vector<Error> errors = collected(R"(<script src="a.js"/><div>x</div>)");
+  ASSERT_EQ(errors.size(), 1U);
+  EXPECT_EQ(errors.front().kind, ErrorKind::UnsupportedTag);
+  expect_shape(R"(<script src="a.js"/><div>x</div>)", nodes(element("div", nodes(text("x")))));
+}
+
+// 受け入れ例（W1b）: AI が普段どおりに書く HTML の `<head>`。① で致命にならず、
+// 対応外のタグが 1 回で全部出て、`<style>` と本体は木に残る。
+TEST(HtmlRawText, TypicalAiWrittenHeadIsCollectedInOnePass) {
+  constexpr std::string_view kSource =
+      "<!DOCTYPE html>\n"
+      R"(<html lang="ja">)"
+      "\n<head>\n"
+      R"(<meta charset="UTF-8">)"
+      "\n<title>用語カード：冪等性</title>\n"
+      R"(<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">)"
+      "\n<script>if (w < 640 && dark) { document.body.className = \"s\"; }</script>\n"
+      "<style>p{float:left}</style>\n</head>\n<body>\n"
+      R"(<div class="card">あ</div>)"
+      "\n</body>\n</html>";
+
+  Diagnostics diagnostics{RenderLimits{}.max_diagnostics};
+  const Result<Node> result = parse(kSource, diagnostics);
+  ASSERT_TRUE(result.has_value()) << to_string(result.error());
+
+  const std::vector<Error>& errors = diagnostics.errors();
+  ASSERT_EQ(errors.size(), 7U);  // html / head / meta / title / link / script / body
+  for (const Error& error : errors) {
+    EXPECT_EQ(error.kind, ErrorKind::UnsupportedTag);
+    EXPECT_TRUE(error.location.has_value());
+  }
+
+  // `<style>` とその中身、本体の `<div class="card">` は残る（② が診断を続けられる形）
+  const Node& root = *result;
+  const Node* style = nullptr;
+  const Node* card = nullptr;
+  for (const Node& child : root.children) {
+    if (child.tag == "style") {
+      style = &child;
+    } else if (child.tag == "div") {
+      card = &child;
+    }
+  }
+  ASSERT_NE(style, nullptr);
+  ASSERT_EQ(style->children.size(), 1U);
+  EXPECT_EQ(style->children.front().text, "p{float:left}");
+  ASSERT_NE(card, nullptr);
+  const Attribute* class_attr = card->find_attr("class");
+  ASSERT_NE(class_attr, nullptr);
+  EXPECT_EQ(class_attr->value, "card");
 }
 
 }  // namespace

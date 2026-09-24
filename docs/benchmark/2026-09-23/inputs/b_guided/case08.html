@@ -1,0 +1,36 @@
+<style>
+.card { width: 736px; padding: 32px; background-color: #ffffff; border: 1px solid #dfe4ec; border-radius: 12px; }
+.title { font-size: 24px; font-weight: bold; color: #17223b; line-height: 1.6em; margin: 0 0 4px 0; }
+.sub { font-size: 13px; color: #6b7891; line-height: 1.7em; margin: 0 0 22px 0; }
+.metrics { display: flex; gap: 16px; align-items: stretch; margin: 0 0 20px 0; }
+.metric { flex-grow: 1; flex-shrink: 1; flex-basis: 0; padding: 18px; background-color: #f6f8fc; border-radius: 10px; }
+.mname { font-size: 13px; color: #5d6b85; line-height: 1.6em; margin: 0 0 6px 0; }
+.mvalue { font-size: 40px; font-weight: bold; color: #17223b; line-height: 1.4em; }
+.munit { font-size: 16px; font-weight: bold; color: #17223b; }
+.up { font-size: 15px; font-weight: bold; color: #1d8a4e; line-height: 1.7em; }
+.down { font-size: 15px; font-weight: bold; color: #c23b3b; line-height: 1.7em; }
+.flat { font-size: 15px; font-weight: bold; color: #7b8698; line-height: 1.7em; }
+.msg { padding: 14px 16px; background-color: #fff6e5; border: 1px solid #f0dcb0; border-radius: 8px; font-size: 15px; color: #6b5220; line-height: 1.8em; }
+</style>
+<div class="card">
+  <div class="title">今週のチーム活動（9/14〜9/20）</div>
+  <div class="sub">週次レポート / 自動投稿</div>
+  <div class="metrics">
+    <div class="metric">
+      <div class="mname">マージした PR</div>
+      <div class="mvalue">42<span class="munit"> 件</span></div>
+      <div class="up">前週比 +8</div>
+    </div>
+    <div class="metric">
+      <div class="mname">レビューコメント</div>
+      <div class="mvalue">156<span class="munit"> 件</span></div>
+      <div class="down">前週比 −12</div>
+    </div>
+    <div class="metric">
+      <div class="mname">デプロイ</div>
+      <div class="mvalue">9<span class="munit"> 回</span></div>
+      <div class="flat">前週比 ±0</div>
+    </div>
+  </div>
+  <div class="msg">来週はリリース週です。木曜までに PR を出してください。</div>
+</div>

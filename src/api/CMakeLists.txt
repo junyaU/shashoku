@@ -7,8 +7,7 @@ add_library(shashoku STATIC
   loaded_fonts.cpp
   loaded_images.cpp
   render.cpp
-  version.cpp
-  warning.cpp)
+  version.cpp)
 add_library(shashoku::shashoku ALIAS shashoku)
 
 target_include_directories(shashoku

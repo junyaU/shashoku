@@ -1,0 +1,57 @@
+<style>
+  .doc    { padding: 28px; background: #ffffff; }
+  .h      { margin: 0 0 6px 0; font-size: 24px; font-weight: bold; color: #1b2733; line-height: 1.5; }
+  .lead   { margin: 0 0 22px 0; font-size: 14px; color: #6b7a90; line-height: 1.6; }
+  .step   { display: flex; align-items: flex-start; gap: 16px; margin: 0 0 18px 0; }
+  .last   { margin: 0; }
+  .badge  { flex: none; width: 40px; height: 40px; border-radius: 20px; background: #2f6fd0;
+            color: #ffffff; font-size: 18px; font-weight: bold;
+            text-align: center; line-height: 40px; }
+  .body   { flex: 1 1 0; }
+  .stitle { margin: 0 0 4px 0; font-size: 17px; font-weight: bold; color: #1b2733; line-height: 1.7; }
+  .sdesc  { margin: 0; font-size: 14px; color: #44546a; line-height: 1.8; }
+</style>
+<div class="doc">
+  <p class="h">開発環境セットアップ手順</p>
+  <p class="lead">新しく参加した人が最初に行う 5 つの作業です。上から順に進めてください。</p>
+
+  <div class="step">
+    <div class="badge">1</div>
+    <div class="body">
+      <div class="stitle">リポジトリを clone する</div>
+      <div class="sdesc">社内 GitHub の main リポジトリを手元に複製します。SSH 鍵の登録が先に必要です。</div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="badge">2</div>
+    <div class="body">
+      <div class="stitle">ツールチェーンを導入する</div>
+      <div class="sdesc">指定のコンパイラとビルドツールを入れます。版は README に固定してあります。</div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="badge">3</div>
+    <div class="body">
+      <div class="stitle">依存ライブラリを取得する</div>
+      <div class="sdesc">初回だけ時間がかかります。取得が終わるまでネットワークを切らないでください。</div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="badge">4</div>
+    <div class="body">
+      <div class="stitle">ビルドする</div>
+      <div class="sdesc">まず Debug 構成で通してください。警告はエラー扱いなので、出たらその場で直します。</div>
+    </div>
+  </div>
+
+  <div class="step last">
+    <div class="badge">5</div>
+    <div class="body">
+      <div class="stitle">テストを実行する</div>
+      <div class="sdesc">全件が緑になれば準備完了です。落ちたら環境の問題なので、チームに声をかけてください。</div>
+    </div>
+  </div>
+</div>

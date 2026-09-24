@@ -1,0 +1,16 @@
+<!-- OG 画像 1200x630 の骨格。box-sizing は content-box だけなので、
+     width / height には padding と border を引いた値を書く:
+     1200 - 64*2 = 1072、630 - 64*2 = 502。
+     shashoku docs/guide/examples/og-card.html -o og-card.png --width 1200 --height 630 -->
+<style>
+  .card  { display: flex; flex-direction: column; width: 1072px; height: 502px;
+           padding: 64px; background: #12263f; color: #f1f3f5; }
+  .site  { font-size: 30px; color: #a5d8ff; }
+  .title { flex: 1 1 0; margin: 32px 0 0 0; font-size: 62px; font-weight: bold; line-height: 1.35; }
+  .foot  { display: flex; justify-content: space-between; font-size: 26px; color: #adb5bd; }
+</style>
+<div class="card">
+  <div class="site">junya.dev</div>
+  <div class="title">Rust で書き直したら速くなった、と言うために測ったこと</div>
+  <div class="foot"><div>2026年9月23日</div><div>計測・ベンチマーク</div></div>
+</div>

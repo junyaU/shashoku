@@ -187,6 +187,18 @@ std::string dump_json(const BoxTree& tree) {
     }
     writer.end_array();
   }
+  // 紙面からのはみ出し（A46）。1 件も無ければキーごと省く（豆腐と同じ流儀）
+  if (!tree.overflows.empty()) {
+    writer.key("overflows").begin_array();
+    for (const ContentOverflow& overflow : tree.overflows) {
+      writer.begin_object();
+      writer.key("location").value(location_text(overflow.location));
+      writer.key("overflow_px").value(overflow.overflow_px);
+      writer.key("edge").value(to_string(overflow.edge));
+      writer.end_object();
+    }
+    writer.end_array();
+  }
   writer.end_object();
   return std::move(writer).str();
 }

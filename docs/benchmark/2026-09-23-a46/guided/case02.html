@@ -1,0 +1,52 @@
+<style>
+  .sheet { padding: 24px; background: #ffffff; }
+  .cap   { margin: 0 0 16px 0; font-size: 18px; font-weight: bold; color: #1b2733; line-height: 1.6; }
+  .flow  { display: flex; }
+  .step  { flex: none; width: 142px; padding: 14px; border: 1px solid #ccd3dd;
+           border-radius: 8px; background: #f7f9fc; }
+  .stitle { margin: 0 0 6px 0; font-size: 15px; font-weight: bold; color: #1b2733; line-height: 1.5; }
+  .sdesc  { margin: 0; font-size: 13px; color: #44546a; line-height: 1.7; }
+  .arrow { flex: none; width: 23px; display: flex; align-items: center; justify-content: center; }
+  .amark { font-size: 18px; color: #6b7a90; }
+  .noterow { display: flex; margin: 10px 0 0 0; }
+  .spacer  { flex: none; width: 585px; }
+  .note    { flex: 1 1 0; }
+  .up      { font-size: 16px; color: #6b7a90; line-height: 1.3; }
+  .notetext { font-size: 13px; color: #44546a; line-height: 1.7; }
+</style>
+<div class="sheet">
+  <p class="cap">登録処理のフロー（設計レビュー）</p>
+  <div class="flow">
+    <div class="step">
+      <div class="stitle">ユーザー</div>
+      <div class="sdesc">ブラウザから登録内容を送る</div>
+    </div>
+    <div class="arrow"><div class="amark">→</div></div>
+    <div class="step">
+      <div class="stitle">API サーバー</div>
+      <div class="sdesc">入力を検証し、受付済みとして即座に応答する</div>
+    </div>
+    <div class="arrow"><div class="amark">→</div></div>
+    <div class="step">
+      <div class="stitle">キュー</div>
+      <div class="sdesc">処理待ちのジョブを順番に保持する</div>
+    </div>
+    <div class="arrow"><div class="amark">→</div></div>
+    <div class="step">
+      <div class="stitle">ワーカー</div>
+      <div class="sdesc">ジョブを取り出し、本体の処理を実行する</div>
+    </div>
+    <div class="arrow"><div class="amark">→</div></div>
+    <div class="step">
+      <div class="stitle">DB</div>
+      <div class="sdesc">結果を永続化し、状態を完了に更新する</div>
+    </div>
+  </div>
+  <div class="noterow">
+    <div class="spacer"></div>
+    <div class="note">
+      <div class="up">↑</div>
+      <div class="notetext">失敗時は 3 回まで再試行し、それでも失敗したら dead letter に送る</div>
+    </div>
+  </div>
+</div>

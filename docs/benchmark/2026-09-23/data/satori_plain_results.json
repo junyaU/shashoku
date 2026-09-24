@@ -1,0 +1,564 @@
+[
+  {
+    "case": "case01",
+    "title": "比較表（技術選定資料）",
+    "html": "../../a_plain/case01.html（読むだけ。書き換えていない）",
+    "png": null,
+    "cli_args": "--stage=3 a_plain/case01.html 940 640 plain/case01.png",
+    "first_try": {
+      "exit": 1,
+      "status": "fail",
+      "visual": null,
+      "error": "Error: Expected <div> to have explicit \"display: flex\", \"display: contents\", or \"display: none\" if it has more than one child node.",
+      "note": "前処理なし・入力そのまま。PNG は 1 枚も出ていない"
+    },
+    "iterations": [
+      {
+        "n": 1,
+        "status": "fail",
+        "exit": 1,
+        "error": "Error: Expected <div> to have explicit \"display: flex\", \"display: contents\", or \"display: none\" if it has more than one child node.",
+        "category": "property",
+        "fix": "前処理なしで入力そのまま。satori-html は <style> の規則を要素の style に畳むが、セレクタに :: があると例外を投げる"
+      },
+      {
+        "n": 2,
+        "status": "fail",
+        "exit": 1,
+        "error": "Error: Expected <div> to have explicit \"display: flex\", ... if it has more than one child node.",
+        "category": "property",
+        "fix": "<style> からセレクタに :: を含む規則だけを機械的に落とした（stage2）。次の関門に進んだだけで PNG は出ない"
+      },
+      {
+        "n": 3,
+        "status": "fail",
+        "exit": 134,
+        "error": "thread '<unnamed>' panicked at resvg/src/geom.rs:27: called `Option::unwrap()` on a `None` value / fatal runtime error: failed to initiate panic → SIGABRT (コアダンプ)",
+        "category": "other",
+        "fix": "stage2 に加えて一律の書き換え: display grid/inline-block/inline-flex→flex、要素の子を持つのに display が無い要素に display:flex+flex-direction:column、z-index を削除、相対パスの <img src> を data URL に置換（stage3）"
+      }
+    ],
+    "final": "fail",
+    "gave_up_reason": "resvg が Rust の panic で異常終了（SIGABRT）。反復の上限 3 回に達したのでここで止めた",
+    "fidelity": 1,
+    "first_try_exit": 1,
+    "first_try_visual": null,
+    "final_exit": 134,
+    "final_visual": "fail",
+    "dropped": [],
+    "warnings": [],
+    "broke": [
+      "resvg が panic してプロセスが異常終了（PNG なし）"
+    ],
+    "notes": "satori() は SVG を作れた（plain/case01.svg は 471 KB で残っている）が、その SVG を resvg に渡した時点で **Rust の panic で プロセスごと落ちた**。exit 134、コアダンプ。エラーを返すのではなく異常終了する。10 件で唯一 <table> を使っているケース。"
+  },
+  {
+    "case": "case02",
+    "title": "処理フロー図（設計レビュー資料）",
+    "html": "../../a_plain/case02.html（読むだけ。書き換えていない）",
+    "png": "case02.png",
+    "cli_args": "--stage=3 a_plain/case02.html 1040 400 plain/case02.png",
+    "first_try": {
+      "exit": 1,
+      "status": "fail",
+      "visual": null,
+      "error": "Error: Unhandled selector: pseudo-element",
+      "note": "前処理なし・入力そのまま。PNG は 1 枚も出ていない"
+    },
+    "iterations": [
+      {
+        "n": 1,
+        "status": "fail",
+        "exit": 1,
+        "error": "Error: Unhandled selector: pseudo-element",
+        "category": "wrapper",
+        "fix": "前処理なしで入力そのまま。satori-html は <style> の規則を要素の style に畳むが、セレクタに :: があると例外を投げる"
+      },
+      {
+        "n": 2,
+        "status": "fail",
+        "exit": 1,
+        "error": "Error: Expected <div> to have explicit \"display: flex\", ... if it has more than one child node.",
+        "category": "property",
+        "fix": "<style> からセレクタに :: を含む規則だけを機械的に落とした（stage2）。次の関門に進んだだけで PNG は出ない"
+      },
+      {
+        "n": 3,
+        "status": "pass",
+        "exit": 0,
+        "error": null,
+        "category": null,
+        "fix": "stage2 に加えて一律の書き換え: display grid/inline-block/inline-flex→flex、要素の子を持つのに display が無い要素に display:flex+flex-direction:column、z-index を削除、相対パスの <img src> を data URL に置換（stage3）"
+      }
+    ],
+    "final": "pass",
+    "gave_up_reason": null,
+    "fidelity": 3,
+    "first_try_exit": 1,
+    "first_try_visual": null,
+    "final_exit": 0,
+    "final_visual": "broken",
+    "dropped": [],
+    "warnings": [],
+    "broke": [
+      "title が本文として左上に描かれる",
+      "絵文字が豆腐",
+      "::after の矢印が消えた",
+      "注記が高さから溢れて消えた"
+    ],
+    "notes": "骨格（5 段の箱・見出し・本文）は Chrome とよく似た位置に出た。しかし (1) <title> の『非同期処理フロー - 設計レビュー』が画像の左上に本文として描かれる、(2) 各段のアイコン絵文字がすべて豆腐、(3) 段の間の矢印が消え、細い線だけが箱の下端に横たわる（三角は ::after なので落とした）、(4) 『再試行ポリシー』の破線枠の注記が高さに入りきらず消えた。"
+  },
+  {
+    "case": "case03",
+    "title": "用語カード（社内 wiki）",
+    "html": "../../a_plain/case03.html（読むだけ。書き換えていない）",
+    "png": "case03.png",
+    "cli_args": "--stage=3 a_plain/case03.html 760 430 plain/case03.png",
+    "first_try": {
+      "exit": 1,
+      "status": "fail",
+      "visual": null,
+      "error": "Error: Unhandled selector: pseudo-element",
+      "note": "前処理なし・入力そのまま。PNG は 1 枚も出ていない"
+    },
+    "iterations": [
+      {
+        "n": 1,
+        "status": "fail",
+        "exit": 1,
+        "error": "Error: Unhandled selector: pseudo-element",
+        "category": "wrapper",
+        "fix": "前処理なしで入力そのまま。satori-html は <style> の規則を要素の style に畳むが、セレクタに :: があると例外を投げる"
+      },
+      {
+        "n": 2,
+        "status": "fail",
+        "exit": 1,
+        "error": "Error: Invalid value for CSS property \"display\". ... Received: \"inline-block\".",
+        "category": "property",
+        "fix": "<style> からセレクタに :: を含む規則だけを機械的に落とした（stage2）。次の関門に進んだだけで PNG は出ない"
+      },
+      {
+        "n": 3,
+        "status": "pass",
+        "exit": 0,
+        "error": null,
+        "category": null,
+        "fix": "stage2 に加えて一律の書き換え: display grid/inline-block/inline-flex→flex、要素の子を持つのに display が無い要素に display:flex+flex-direction:column、z-index を削除、相対パスの <img src> を data URL に置換（stage3）"
+      }
+    ],
+    "final": "pass",
+    "gave_up_reason": null,
+    "fidelity": 3,
+    "first_try_exit": 1,
+    "first_try_visual": null,
+    "final_exit": 0,
+    "final_visual": "broken",
+    "dropped": [],
+    "warnings": [],
+    "broke": [
+      "title が左上に",
+      "::before のグラデーション帯が消えた",
+      "inline-block の pill が全幅に伸びた",
+      "強調色が失われた",
+      "関連語タグが溢れて消えた"
+    ],
+    "notes": "見出し・読み・定義・具体例までは Chrome に近い。ただし (1) title『用語カード：冪等性』が左上に出る、(2) 上端のグラデーション帯（::before）が消えた、(3) 明朝体（Noto Serif JP）が無いのでゴシックになった、(4) 『社内用語集 / ENGINEERING』のラベルが inline-block→flex の読み替えで横いっぱいに伸びた、(5) 本文中の色付き強調が黒一色になった、(6) 下の関連語タグが高さから溢れて消えた。"
+  },
+  {
+    "case": "case04",
+    "title": "手順カード（オンボーディング）",
+    "html": "../../a_plain/case04.html（読むだけ。書き換えていない）",
+    "png": "case04.png",
+    "cli_args": "--stage=3 a_plain/case04.html 840 860 plain/case04.png",
+    "first_try": {
+      "exit": 1,
+      "status": "fail",
+      "visual": null,
+      "error": "Error: Unhandled selector: pseudo-element",
+      "note": "前処理なし・入力そのまま。PNG は 1 枚も出ていない"
+    },
+    "iterations": [
+      {
+        "n": 1,
+        "status": "fail",
+        "exit": 1,
+        "error": "Error: Unhandled selector: pseudo-element",
+        "category": "wrapper",
+        "fix": "前処理なしで入力そのまま。satori-html は <style> の規則を要素の style に畳むが、セレクタに :: があると例外を投げる"
+      },
+      {
+        "n": 2,
+        "status": "fail",
+        "exit": 1,
+        "error": "`z-index` is currently not supported.",
+        "category": "property",
+        "fix": "<style> からセレクタに :: を含む規則だけを機械的に落とした（stage2）。次の関門に進んだだけで PNG は出ない"
+      },
+      {
+        "n": 3,
+        "status": "pass",
+        "exit": 0,
+        "error": null,
+        "category": null,
+        "fix": "stage2 に加えて一律の書き換え: display grid/inline-block/inline-flex→flex、要素の子を持つのに display が無い要素に display:flex+flex-direction:column、z-index を削除、相対パスの <img src> を data URL に置換（stage3）"
+      }
+    ],
+    "final": "pass",
+    "gave_up_reason": null,
+    "fidelity": 2,
+    "first_try_exit": 1,
+    "first_try_visual": null,
+    "final_exit": 0,
+    "final_visual": "broken",
+    "dropped": [],
+    "warnings": [],
+    "broke": [
+      "文中の <code> が別行に落ち、1 行が 3 行に割れた",
+      "縦に伸びてステップ 4・5 と脚注が消えた",
+      "li::before の縦線が消えた",
+      "title が左上に"
+    ],
+    "notes": "**いちばん分かりやすい壊れ方**。Chrome では『社内 GitHub の SSH 鍵を登録したうえで [git clone] します。』が 1 行だが、Satori では <code> が行から追い出され『社内 GitHub の…うえで』/『[git clone]（横長の箱）』/『します。』の 3 行に割れる。Satori にインライン整形文脈が無いため。結果として全体が 2 倍近く縦に伸び、ステップ 4・5 と脚注が高さから消えた。バッジ同士をつなぐ縦線（li::before）も消えた。"
+  },
+  {
+    "case": "case05",
+    "title": "読書メモの引用カード（SNS）",
+    "html": "../../a_plain/case05.html（読むだけ。書き換えていない）",
+    "png": "case05.png",
+    "cli_args": "--stage=3 a_plain/case05.html 1080 1080 plain/case05.png",
+    "first_try": {
+      "exit": 1,
+      "status": "fail",
+      "visual": null,
+      "error": "Error: Unhandled selector: pseudo-element",
+      "note": "前処理なし・入力そのまま。PNG は 1 枚も出ていない"
+    },
+    "iterations": [
+      {
+        "n": 1,
+        "status": "fail",
+        "exit": 1,
+        "error": "Error: Unhandled selector: pseudo-element",
+        "category": "wrapper",
+        "fix": "前処理なしで入力そのまま。satori-html は <style> の規則を要素の style に畳むが、セレクタに :: があると例外を投げる"
+      },
+      {
+        "n": 2,
+        "status": "fail",
+        "exit": 1,
+        "error": "Error: Expected <div> to have explicit \"display: flex\", ... if it has more than one child node.",
+        "category": "property",
+        "fix": "<style> からセレクタに :: を含む規則だけを機械的に落とした（stage2）。次の関門に進んだだけで PNG は出ない"
+      },
+      {
+        "n": 3,
+        "status": "pass",
+        "exit": 0,
+        "error": null,
+        "category": null,
+        "fix": "stage2 に加えて一律の書き換え: display grid/inline-block/inline-flex→flex、要素の子を持つのに display が無い要素に display:flex+flex-direction:column、z-index を削除、相対パスの <img src> を data URL に置換（stage3）"
+      }
+    ],
+    "final": "pass",
+    "gave_up_reason": null,
+    "fidelity": 3,
+    "first_try_exit": 1,
+    "first_try_visual": null,
+    "final_exit": 0,
+    "final_visual": "broken",
+    "dropped": [],
+    "warnings": [],
+    "broke": [
+      "title が左上に",
+      "::before/::after の鉤括弧が消えた",
+      "inset の内枠が消えた",
+      "明朝体が出ない",
+      "書名・著者が右寄せにならず左に来た"
+    ],
+    "notes": "10 件で 2 番目に健闘した。本文の組みは Chrome とほぼ同じ 4 行で、行頭に 、。 は来ていない。失ったのは (1) title『読書メモ｜文章の呼吸』が左上に出る、(2) ::before/::after の大きな鉤括弧「」が消えた、(3) 内側の細罫（inset の枠）が消えた、(4) 明朝体でなくゴシック、(5) **書名・著者が右下でなく左下に来た**（text-align:right が効いていない）。"
+  },
+  {
+    "case": "case06",
+    "title": "OG 画像（ブログ記事）",
+    "html": "../../a_plain/case06.html（読むだけ。書き換えていない）",
+    "png": "case06.png",
+    "cli_args": "--stage=3 a_plain/case06.html 1200 630 plain/case06.png",
+    "first_try": {
+      "exit": 1,
+      "status": "fail",
+      "visual": null,
+      "error": "Error: Unhandled selector: pseudo-element",
+      "note": "前処理なし・入力そのまま。PNG は 1 枚も出ていない"
+    },
+    "iterations": [
+      {
+        "n": 1,
+        "status": "fail",
+        "exit": 1,
+        "error": "Error: Unhandled selector: pseudo-element",
+        "category": "wrapper",
+        "fix": "前処理なしで入力そのまま。satori-html は <style> の規則を要素の style に畳むが、セレクタに :: があると例外を投げる"
+      },
+      {
+        "n": 2,
+        "status": "fail",
+        "exit": 1,
+        "error": "Error: Image source must be an absolute URL: avatar.png",
+        "category": "property",
+        "fix": "<style> からセレクタに :: を含む規則だけを機械的に落とした（stage2）。次の関門に進んだだけで PNG は出ない"
+      },
+      {
+        "n": 3,
+        "status": "pass",
+        "exit": 0,
+        "error": null,
+        "category": null,
+        "fix": "stage2 に加えて一律の書き換え: display grid/inline-block/inline-flex→flex、要素の子を持つのに display が無い要素に display:flex+flex-direction:column、z-index を削除、相対パスの <img src> を data URL に置換（stage3）"
+      }
+    ],
+    "final": "pass",
+    "gave_up_reason": null,
+    "fidelity": 4,
+    "first_try_exit": 1,
+    "first_try_visual": null,
+    "final_exit": 0,
+    "final_visual": "broken",
+    "dropped": [],
+    "warnings": [],
+    "broke": [
+      "title が左上に",
+      "background-clip:text のグラデーション文字が単色に",
+      "多重グラデーションの背景グリッドが消えた",
+      "h1 内の span が別行に落ちた"
+    ],
+    "notes": "**10 件でいちばん健闘した**。濃色グラデーション背景、タグ pill、丸いアイコン、日付までほぼ Chrome どおり。失ったのは (1) title『OG 画像 - junya.dev』が左上に出る、(2) タイトル後半の background-clip:text のグラデーション文字が**単色オレンジ**になった、(3) 背景の薄いグリッド（linear-gradient 2 枚重ね）が消えた（backgroundImage は単一値のみ）、(4) **後半のオレンジ部分が別行に落ちた**（h1 の中の span が縦に積まれたため。Chrome は同じ行から続く）。アイコンは前処理で data URL に置き換えたので出た。**素の HTML のままなら 'Image source must be an absolute URL: avatar.png' で落ちる**。"
+  },
+  {
+    "case": "case07",
+    "title": "イベント告知（勉強会）",
+    "html": "../../a_plain/case07.html（読むだけ。書き換えていない）",
+    "png": "case07.png",
+    "cli_args": "--stage=3 a_plain/case07.html 1080 1080 plain/case07.png",
+    "first_try": {
+      "exit": 1,
+      "status": "fail",
+      "visual": null,
+      "error": "Error: Unhandled selector: pseudo-element",
+      "note": "前処理なし・入力そのまま。PNG は 1 枚も出ていない"
+    },
+    "iterations": [
+      {
+        "n": 1,
+        "status": "fail",
+        "exit": 1,
+        "error": "Error: Unhandled selector: pseudo-element",
+        "category": "wrapper",
+        "fix": "前処理なしで入力そのまま。satori-html は <style> の規則を要素の style に畳むが、セレクタに :: があると例外を投げる"
+      },
+      {
+        "n": 2,
+        "status": "fail",
+        "exit": 1,
+        "error": "`z-index` is currently not supported.",
+        "category": "property",
+        "fix": "<style> からセレクタに :: を含む規則だけを機械的に落とした（stage2）。次の関門に進んだだけで PNG は出ない"
+      },
+      {
+        "n": 3,
+        "status": "pass",
+        "exit": 0,
+        "error": null,
+        "category": null,
+        "fix": "stage2 に加えて一律の書き換え: display grid/inline-block/inline-flex→flex、要素の子を持つのに display が無い要素に display:flex+flex-direction:column、z-index を削除、相対パスの <img src> を data URL に置換（stage3）"
+      }
+    ],
+    "final": "pass",
+    "gave_up_reason": null,
+    "fidelity": 2,
+    "first_try_exit": 1,
+    "first_try_visual": null,
+    "final_exit": 0,
+    "final_visual": "broken",
+    "dropped": [],
+    "warnings": [],
+    "broke": [
+      "<ruby> が縦に分解し名前が 4 行に",
+      "申込セクションが登壇者カードに重なった（z-index 削除の副作用）",
+      "絵文字が豆腐",
+      "radial-gradient の光が消えた",
+      "title が左上に"
+    ],
+    "notes": "**読めない画像になった**。(1) <ruby> が縦に分解し、登壇者名が『高橋 / たかはし / 遥 / はるか』の 4 行に積まれた（Chrome は親文字の上に小さくルビ）、(2) 最下部の申込セクションが登壇者カードに重なった（z-index を削ったため）、(3) 参加無料バッジの絵文字が豆腐、(4) 右上の radial-gradient の光が消えた、(5) title が左上に出る。"
+  },
+  {
+    "case": "case08",
+    "title": "通知画像（週次レポート）",
+    "html": "../../a_plain/case08.html（読むだけ。書き換えていない）",
+    "png": "case08.png",
+    "cli_args": "--stage=3 a_plain/case08.html 840 480 plain/case08.png",
+    "first_try": {
+      "exit": 1,
+      "status": "fail",
+      "visual": null,
+      "error": "Error: Invalid value for CSS property \"display\". Allowed values: \"flex\" | \"block\" | \"contents\" | \"none\" | \"-webkit-box\". Received: \"grid\".",
+      "note": "前処理なし・入力そのまま。PNG は 1 枚も出ていない"
+    },
+    "iterations": [
+      {
+        "n": 1,
+        "status": "fail",
+        "exit": 1,
+        "error": "Error: Invalid value for CSS property \"display\". Allowed values: \"flex\" | \"block\" | \"contents\" | \"none\" | \"-webkit-box\". Received: \"grid\".",
+        "category": "property",
+        "fix": "前処理なしで入力そのまま。satori-html は <style> の規則を要素の style に畳むが、セレクタに :: があると例外を投げる"
+      },
+      {
+        "n": 2,
+        "status": "fail",
+        "exit": 1,
+        "error": "Error: Invalid value for CSS property \"display\". ... Received: \"grid\".",
+        "category": "property",
+        "fix": "<style> からセレクタに :: を含む規則だけを機械的に落とした（stage2）。次の関門に進んだだけで PNG は出ない"
+      },
+      {
+        "n": 3,
+        "status": "pass",
+        "exit": 0,
+        "error": null,
+        "category": null,
+        "fix": "stage2 に加えて一律の書き換え: display grid/inline-block/inline-flex→flex、要素の子を持つのに display が無い要素に display:flex+flex-direction:column、z-index を削除、相対パスの <img src> を data URL に置換（stage3）"
+      }
+    ],
+    "final": "pass",
+    "gave_up_reason": null,
+    "fidelity": 3,
+    "first_try_exit": 1,
+    "first_try_visual": null,
+    "final_exit": 0,
+    "final_visual": "broken",
+    "dropped": [],
+    "warnings": [],
+    "broke": [
+      "grid→flex で列幅が崩れ右 1/3 が空白",
+      "数値と単位が縦に割れた",
+      "中央寄せが失われた",
+      "絵文字が豆腐",
+      "title が左上に"
+    ],
+    "notes": "(1) grid→flex に読み替えたため 3 列が左寄せの固定幅になり、**右 1/3 が空白**（Chrome は 1fr ずつで全幅）、(2) **数値と単位が縦に割れた**（Chrome は『42件』が横並び、Satori は『42』の下に『件』）、(3) 指標名が中央寄せでなく左寄せ、(4) 一言の絵文字 📣 が豆腐、(5) 下端の集計期間が切れかけ、(6) title が左上に出る。"
+  },
+  {
+    "case": "case09",
+    "title": "要約カード（ニュース）",
+    "html": "../../a_plain/case09.html（読むだけ。書き換えていない）",
+    "png": "case09.png",
+    "cli_args": "--stage=3 a_plain/case09.html 840 400 plain/case09.png",
+    "first_try": {
+      "exit": 1,
+      "status": "fail",
+      "visual": null,
+      "error": "Error: Unhandled selector: pseudo-element",
+      "note": "前処理なし・入力そのまま。PNG は 1 枚も出ていない"
+    },
+    "iterations": [
+      {
+        "n": 1,
+        "status": "fail",
+        "exit": 1,
+        "error": "Error: Unhandled selector: pseudo-element",
+        "category": "wrapper",
+        "fix": "前処理なしで入力そのまま。satori-html は <style> の規則を要素の style に畳むが、セレクタに :: があると例外を投げる"
+      },
+      {
+        "n": 2,
+        "status": "fail",
+        "exit": 1,
+        "error": "Error: Expected <div> to have explicit \"display: flex\", ... if it has more than one child node.",
+        "category": "property",
+        "fix": "<style> からセレクタに :: を含む規則だけを機械的に落とした（stage2）。次の関門に進んだだけで PNG は出ない"
+      },
+      {
+        "n": 3,
+        "status": "pass",
+        "exit": 0,
+        "error": null,
+        "category": null,
+        "fix": "stage2 に加えて一律の書き換え: display grid/inline-block/inline-flex→flex、要素の子を持つのに display が無い要素に display:flex+flex-direction:column、z-index を削除、相対パスの <img src> を data URL に置換（stage3）"
+      }
+    ],
+    "final": "pass",
+    "gave_up_reason": null,
+    "fidelity": 4,
+    "first_try_exit": 1,
+    "first_try_visual": null,
+    "final_exit": 0,
+    "final_visual": "broken",
+    "dropped": [],
+    "warnings": [],
+    "broke": [
+      "title が左上に",
+      "li::before の箇条書きの点が全部消えた",
+      "強調色が失われた",
+      "出典行が溢れて消えた"
+    ],
+    "notes": "見出し・要点 3 つ・タグまで Chrome に近い。失ったのは (1) title『ニュース要約カード』が左上に出る、(2) 箇条書きの点（li::before の 45 度回転した四角）が全部消えて字下げだけが残った、(3) 本文中の色付き強調が黒一色に、(4) 出典行が高さから溢れて消えた。見出しの折り返しは Chrome とほぼ同じ位置。"
+  },
+  {
+    "case": "case10",
+    "title": "短歌（縦書き、SNS）",
+    "html": "../../a_plain/case10.html（読むだけ。書き換えていない）",
+    "png": "case10.png",
+    "cli_args": "--stage=3 a_plain/case10.html 800 1200 plain/case10.png",
+    "first_try": {
+      "exit": 1,
+      "status": "fail",
+      "visual": null,
+      "error": "Error: Unhandled selector: pseudo-element",
+      "note": "前処理なし・入力そのまま。PNG は 1 枚も出ていない"
+    },
+    "iterations": [
+      {
+        "n": 1,
+        "status": "fail",
+        "exit": 1,
+        "error": "Error: Unhandled selector: pseudo-element",
+        "category": "wrapper",
+        "fix": "前処理なしで入力そのまま。satori-html は <style> の規則を要素の style に畳むが、セレクタに :: があると例外を投げる"
+      },
+      {
+        "n": 2,
+        "status": "fail",
+        "exit": 1,
+        "error": "Error: Expected <div> to have explicit \"display: flex\", ... if it has more than one child node.",
+        "category": "property",
+        "fix": "<style> からセレクタに :: を含む規則だけを機械的に落とした（stage2）。次の関門に進んだだけで PNG は出ない"
+      },
+      {
+        "n": 3,
+        "status": "pass",
+        "exit": 0,
+        "error": null,
+        "category": null,
+        "fix": "stage2 に加えて一律の書き換え: display grid/inline-block/inline-flex→flex、要素の子を持つのに display が無い要素に display:flex+flex-direction:column、z-index を削除、相対パスの <img src> を data URL に置換（stage3）"
+      }
+    ],
+    "final": "pass",
+    "gave_up_reason": null,
+    "fidelity": 1,
+    "first_try_exit": 1,
+    "first_try_visual": null,
+    "final_exit": 0,
+    "final_visual": "broken",
+    "dropped": [],
+    "warnings": [],
+    "broke": [
+      "writing-mode が無視され横書きに",
+      "本文が版面から溢れ、最後の 1 文字が画像の外に落ちた",
+      "::before の朱印の文字が消えた",
+      "多重グラデーションの和紙背景が消えた",
+      "title が左上に"
+    ],
+    "notes": "**縦書きが完全に失われた**。writing-mode: vertical-rl は無警告で捨てられ、歌が横書きで出た。しかも 1 行目が版面からはみ出して『立ちつく』で切れ、**『し』が画像の外に落ちている**。朱印は枠だけ残り中の『歌』の字（::before）が消えた。和紙風の多重グラデーションも消えた。title『短歌｜ゆふぐれの』が左上に出る。Chrome の参照画像とは別物。"
+  }
+]

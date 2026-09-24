@@ -1,0 +1,132 @@
+[
+ {
+  "case": "case01",
+  "exit": 0,
+  "wall_ms_median": 20.0,
+  "wall_ms_all": [
+   20.0,
+   20.0,
+   20.0
+  ],
+  "max_rss_kb": 40168,
+  "png_bytes": 142653,
+  "args": "--width 900"
+ },
+ {
+  "case": "case02",
+  "exit": 0,
+  "wall_ms_median": 10.0,
+  "wall_ms_all": [
+   10.0,
+   10.0,
+   10.0
+  ],
+  "max_rss_kb": 36704,
+  "png_bytes": 41543,
+  "args": "--width 1000"
+ },
+ {
+  "case": "case03",
+  "exit": 0,
+  "wall_ms_median": 10.0,
+  "wall_ms_all": [
+   20.0,
+   10.0,
+   10.0
+  ],
+  "max_rss_kb": 37720,
+  "png_bytes": 50312,
+  "args": "--width 720"
+ },
+ {
+  "case": "case04",
+  "exit": 0,
+  "wall_ms_median": 20.0,
+  "wall_ms_all": [
+   20.0,
+   20.0,
+   20.0
+  ],
+  "max_rss_kb": 39472,
+  "png_bytes": 90060,
+  "args": "--width 800"
+ },
+ {
+  "case": "case05",
+  "exit": 0,
+  "wall_ms_median": 20.0,
+  "wall_ms_all": [
+   30.0,
+   20.0,
+   20.0
+  ],
+  "max_rss_kb": 46596,
+  "png_bytes": 63986,
+  "args": "--width 1080 --height 1080"
+ },
+ {
+  "case": "case06",
+  "exit": 1,
+  "wall_ms_median": 0.0,
+  "wall_ms_all": [
+   0.0,
+   0.0,
+   0.0
+  ],
+  "max_rss_kb": 20824,
+  "png_bytes": null,
+  "args": "--width 1200 --height 630 --image avatar=EXP/bin/assets/avatar.png"
+ },
+ {
+  "case": "case07",
+  "exit": 0,
+  "wall_ms_median": 30.0,
+  "wall_ms_all": [
+   30.0,
+   30.0,
+   30.0
+  ],
+  "max_rss_kb": 47048,
+  "png_bytes": 80353,
+  "args": "--width 1080 --height 1080"
+ },
+ {
+  "case": "case08",
+  "exit": 0,
+  "wall_ms_median": 10.0,
+  "wall_ms_all": [
+   10.0,
+   10.0,
+   10.0
+  ],
+  "max_rss_kb": 36936,
+  "png_bytes": 35739,
+  "args": "--width 800"
+ },
+ {
+  "case": "case09",
+  "exit": 0,
+  "wall_ms_median": 10.0,
+  "wall_ms_all": [
+   10.0,
+   10.0,
+   10.0
+  ],
+  "max_rss_kb": 37224,
+  "png_bytes": 66499,
+  "args": "--width 800"
+ },
+ {
+  "case": "case10",
+  "exit": 0,
+  "wall_ms_median": 20.0,
+  "wall_ms_all": [
+   20.0,
+   20.0,
+   20.0
+  ],
+  "max_rss_kb": 44100,
+  "png_bytes": 33821,
+  "args": "--width 800 --height 1200"
+ }
+]

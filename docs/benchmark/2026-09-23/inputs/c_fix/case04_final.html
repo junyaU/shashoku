@@ -1,0 +1,159 @@
+<style>
+  * {
+  }
+  body {
+    margin: 0;
+    padding: 44px 20px;
+    background: #f5f7fa;
+    font-family: "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, sans-serif;
+    color: #1f2933;
+  }
+  .card {
+    width: 720px;
+    margin: 0 auto;
+    background: #fff;
+    border-radius: 16px;
+    padding: 36px 40px 40px;
+  }
+  header {
+    padding-bottom: 22px;
+    margin-bottom: 8px;
+  }
+  .g1 {
+    font-size: 11px;
+    letter-spacing: 0.2em;
+    color: #4c9aff;
+    font-weight: 500;
+    margin-bottom: 8px;
+  }
+  .g1 {
+    margin: 0 0 6px;
+    font-size: 26px;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+  }
+  .g1 {
+    margin: 0;
+    font-size: 13px;
+    color: #7b8794;
+  }
+  .ol {
+    margin: 0;
+    padding: 0;
+  }
+  .li {
+    display: flex;
+    gap: 20px;
+    padding: 22px 0 22px 0;
+  }
+  .g4 {
+  }
+  .g5 {
+    width: 2px;
+    background: #e8edf3;
+  }
+  .g6 {
+  }
+  .g7 {
+  }
+  .badge {
+    flex: 0 0 44px;
+    width: 44px;
+    height: 44px;
+    border-radius: 22px;
+    background: #4c9aff;
+    color: #fff;
+    font-size: 19px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .body {
+    padding-top: 2px;
+  }
+  .g1 {
+    margin: 0 0 6px;
+    font-size: 17px;
+    font-weight: 700;
+    color: #243b53;
+  }
+  .g2 {
+    margin: 0 0 8px;
+    font-size: 13.5px;
+    line-height: 1.85;
+    color: #52606d;
+  }
+  .g3 {
+    margin-bottom: 0;
+  }
+  .code {
+    font-family: "JetBrains Mono", Consolas, monospace;
+    font-size: 12.5px;
+    background: #f2f5f8;
+    color: #334e68;
+  }
+  .footer {
+    margin-top: 26px;
+    padding: 14px 18px;
+    background: #f7f9fc;
+    border-radius: 8px;
+    font-size: 12.5px;
+    color: #7b8794;
+    line-height: 1.7;
+  }
+</style>
+<div class="card">
+    
+      <div class="eyebrow">ONBOARDING</div>
+      <h1>開発環境セットアップ手順</h1>
+      <p>はじめての方はこの 5 ステップを上から順に進めてください（所要 30〜40 分）</p>
+    
+
+    <div class="ol">
+      <div class="li"><span class="g6"></span><div class="g5"></div>
+        <div class="badge">1</div>
+        <div class="body">
+          <h2 class="g1">リポジトリを clone する</h2>
+          <p class="g2">社内 GitHub の SSH 鍵を登録したうえで <span class="code">git clone</span> します。</p>
+          <p class="g2 g3">作業ディレクトリはホーム直下の <span class="code">~/src/</span> に揃えておくと、後の手順のパスがそのまま使えます。</p>
+        </div>
+      </div>
+      <div class="li g4"><div class="g5"></div>
+        <div class="badge">2</div>
+        <div class="body">
+          <h2 class="g1">ツールチェーンを導入する</h2>
+          <p class="g2">コンパイラとビルドツールを、リポジトリ同梱のバージョン指定に合わせて入れます。</p>
+          <p class="g2 g3">バージョンがずれると後続のビルドが落ちるので、<span class="code">--version</span> で必ず確認してください。</p>
+        </div>
+      </div>
+      <div class="li g4"><div class="g5"></div>
+        <div class="badge">3</div>
+        <div class="body">
+          <h2 class="g1">依存ライブラリを取得する</h2>
+          <p class="g2">初回のみネットワーク経由で外部ライブラリを取りに行きます。回線によっては 10 分ほどかかります。</p>
+          <p class="g2 g3">社内プロキシ環境の場合は、先に環境変数の設定が必要です。</p>
+        </div>
+      </div>
+      <div class="li g4"><div class="g5"></div>
+        <div class="badge">4</div>
+        <div class="body">
+          <h2 class="g1">ビルドする</h2>
+          <p class="g2">設定（configure）とビルドの 2 段階です。警告はすべてエラー扱いになっています。</p>
+          <p class="g2 g3">失敗したら、まずステップ 2 のバージョンを疑ってください。</p>
+        </div>
+      </div>
+      <div class="li g4"><span class="g7"></span><div class="g5"></div>
+        <div class="badge">5</div>
+        <div class="body">
+          <h2 class="g1">テストを実行する</h2>
+          <p class="g2">全テストが緑になれば環境構築は完了です。お疲れさまでした 🎉</p>
+          <p class="g2 g3">赤が出た場合は、ログを添えて #dev-help チャンネルに投げてください。</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer">
+      困ったときは：社内 wiki の「開発環境 FAQ」→ それでも解決しなければ #dev-help へ。メンターが必ず拾います。
+    </div>
+  </div>

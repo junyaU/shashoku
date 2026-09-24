@@ -1,0 +1,24 @@
+{
+  "mode": "longrun",
+  "case": "case07",
+  "iters": 1000,
+  "samples": [
+    {"n": 1, "rss_bytes": 30552064, "vmhwm_bytes": 37277696},
+    {"n": 100, "rss_bytes": 30552064, "vmhwm_bytes": 37277696},
+    {"n": 200, "rss_bytes": 30552064, "vmhwm_bytes": 37277696},
+    {"n": 300, "rss_bytes": 30552064, "vmhwm_bytes": 37277696},
+    {"n": 400, "rss_bytes": 30552064, "vmhwm_bytes": 37277696},
+    {"n": 500, "rss_bytes": 30552064, "vmhwm_bytes": 37277696},
+    {"n": 600, "rss_bytes": 30552064, "vmhwm_bytes": 37277696},
+    {"n": 700, "rss_bytes": 30552064, "vmhwm_bytes": 37277696},
+    {"n": 800, "rss_bytes": 30552064, "vmhwm_bytes": 37277696},
+    {"n": 900, "rss_bytes": 30552064, "vmhwm_bytes": 37277696},
+    {"n": 1000, "rss_bytes": 30552064, "vmhwm_bytes": 37277696}
+  ],
+  "median_ms": 29.8386,
+  "total_s": 29.8676,
+  "rss_start_bytes": 1789952,
+  "rss_after_prepare_bytes": 15327232,
+  "rss_end_bytes": 30552064,
+  "vmhwm_bytes": 37277696
+}

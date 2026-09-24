@@ -1,0 +1,13 @@
+<!-- 左右の位置合わせ。position は無いので justify-content: space-between を使う。
+     真ん中を空けたいときは flex: 1 1 0 の空の div を挟む。
+     shashoku docs/guide/examples/space-between.html -o space-between.png --width 640 -->
+<style>
+  .bar   { display: flex; justify-content: space-between; align-items: center;
+           padding: 14px 18px; background: #2f3b52; color: #ffffff; font-size: 15px; }
+  .right { color: #a9c4ee; }
+  .foot  { display: flex; align-items: center; padding: 14px 18px;
+           background: #ffffff; font-size: 14px; color: #44546a; }
+  .grow  { flex: 1 1 0; }
+</style>
+<div class="bar"><div>週次レポート</div><div class="right">9/14〜9/20</div></div>
+<div class="foot"><div>架空新聞</div><div class="grow"></div><div>2026-09-22</div></div>

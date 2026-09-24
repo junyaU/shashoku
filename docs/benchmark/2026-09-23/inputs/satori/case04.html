@@ -1,0 +1,44 @@
+<div style="display:flex;flex-direction:column;width:800px;height:100%;background-color:#ffffff;font-family:'Noto Sans JP';padding:36px 40px;box-sizing:border-box">
+  <div style="display:flex;font-size:24px;font-weight:700;color:#14213d;margin-bottom:4px">開発環境セットアップ手順</div>
+  <div style="display:flex;font-size:13px;color:#6b7280;margin-bottom:24px">新しく入った人が最初にやること（上から順に）</div>
+
+  <div style="display:flex;flex-direction:row;align-items:flex-start;margin-bottom:16px">
+    <div style="display:flex;width:44px;height:44px;border-radius:999px;background-color:#14213d;color:#ffffff;font-size:18px;font-weight:700;align-items:center;justify-content:center;margin-right:18px">1</div>
+    <div style="display:flex;flex-direction:column;padding-top:4px">
+      <div style="display:flex;font-size:17px;font-weight:700;color:#14213d;margin-bottom:4px">リポジトリを clone する</div>
+      <div style="display:flex;font-size:13px;color:#4b5563;line-height:1.8">GitHub の Organization に招待されていることを確認してから、SSH で clone してください。</div>
+    </div>
+  </div>
+
+  <div style="display:flex;flex-direction:row;align-items:flex-start;margin-bottom:16px">
+    <div style="display:flex;width:44px;height:44px;border-radius:999px;background-color:#14213d;color:#ffffff;font-size:18px;font-weight:700;align-items:center;justify-content:center;margin-right:18px">2</div>
+    <div style="display:flex;flex-direction:column;padding-top:4px">
+      <div style="display:flex;font-size:17px;font-weight:700;color:#14213d;margin-bottom:4px">ツールチェーンを入れる</div>
+      <div style="display:flex;font-size:13px;color:#4b5563;line-height:1.8">CMake 3.22 以上、Ninja、clang-18 が必要です。版がずれると後の手順で必ず詰まります。</div>
+    </div>
+  </div>
+
+  <div style="display:flex;flex-direction:row;align-items:flex-start;margin-bottom:16px">
+    <div style="display:flex;width:44px;height:44px;border-radius:999px;background-color:#14213d;color:#ffffff;font-size:18px;font-weight:700;align-items:center;justify-content:center;margin-right:18px">3</div>
+    <div style="display:flex;flex-direction:column;padding-top:4px">
+      <div style="display:flex;font-size:17px;font-weight:700;color:#14213d;margin-bottom:4px">依存ライブラリを取得する</div>
+      <div style="display:flex;font-size:13px;color:#4b5563;line-height:1.8">初回の configure でネットワークから取得します。社内プロキシ配下では環境変数の設定が要ります。</div>
+    </div>
+  </div>
+
+  <div style="display:flex;flex-direction:row;align-items:flex-start;margin-bottom:16px">
+    <div style="display:flex;width:44px;height:44px;border-radius:999px;background-color:#14213d;color:#ffffff;font-size:18px;font-weight:700;align-items:center;justify-content:center;margin-right:18px">4</div>
+    <div style="display:flex;flex-direction:column;padding-top:4px">
+      <div style="display:flex;font-size:17px;font-weight:700;color:#14213d;margin-bottom:4px">ビルドする</div>
+      <div style="display:flex;font-size:13px;color:#4b5563;line-height:1.8">まず Debug 構成で通してください。8 並列でおよそ 3 分、二回目以降は 30 秒ほどです。</div>
+    </div>
+  </div>
+
+  <div style="display:flex;flex-direction:row;align-items:flex-start">
+    <div style="display:flex;width:44px;height:44px;border-radius:999px;background-color:#14213d;color:#ffffff;font-size:18px;font-weight:700;align-items:center;justify-content:center;margin-right:18px">5</div>
+    <div style="display:flex;flex-direction:column;padding-top:4px">
+      <div style="display:flex;font-size:17px;font-weight:700;color:#14213d;margin-bottom:4px">テストを実行する</div>
+      <div style="display:flex;font-size:13px;color:#4b5563;line-height:1.8">全部通れば環境は完成です。落ちたら Slack の #dev-setup に落ちた名前を貼ってください。</div>
+    </div>
+  </div>
+</div>

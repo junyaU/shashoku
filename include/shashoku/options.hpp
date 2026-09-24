@@ -57,6 +57,13 @@ struct RenderOptions {
   // レベルを変えるとファイルのバイト列は変わるが、デコードした画素は 1 ビットも変わらない。
   int compression_level = 6;
 
+  // 警告（豆腐・紙面からのはみ出し）を失敗にする（ARCHITECTURE.md A46）。true
+  // のとき、描画が終わって 警告が 1 件以上あれば PNG を返さず `RenderFailure` を返す。errors
+  // には警告 1 件につき `ErrorKind::WarningAsError`
+  // のエラーが入り、元の種類・位置・詳細を保つ。サーバーで
+  // 「検出した問題のある画像は配らない」判断に使う。既定は false（警告つきで PNG を返す）。
+  bool warnings_as_errors = false;
+
   bool operator==(const RenderOptions&) const = default;
 };
 

@@ -4,6 +4,7 @@
 #include <string>
 #include <string_view>
 
+#include "core/diagnostics.hpp"
 #include "core/result.hpp"
 #include "html/dom.hpp"
 
@@ -37,14 +38,40 @@ inline constexpr std::size_t kMaxSourceBytes = 0xFFFFFFFFU;
 //   - タグ名・属性名の前後（`=` の周り）の空白は許すが、属性どうしの間の空白は必須
 //   - 引用符なしの属性値に `"` `'` `=` `<` `` ` `` `/` は書けない（`<img src=a/>` の
 //     解釈が曖昧になるため。引用符で囲めば通る）
-//   - `<style>` の中身は `</style>`（後ろに空白か `>` が続くもの）までの生テキスト
+//   - `<style>` の中身は `</style>`（後ろに空白か `>` が続くもの）までの生テキスト。
+//     対応外の生テキスト要素（`script` `textarea` `title` `xmp` `iframe` `noembed`
+//     `noframes`）も同じ読み方で、中身は捨てる
 //
 // 位置（SourceLocation）の付け方: タグ全体に関するエラー（未対応タグ、閉じ忘れ、
 // 空要素の終了タグ、非空要素の自己閉じ）はその `<` の位置、個々の文字・属性・
 // 文字参照に関するエラーはその先頭の位置を指す。
 //
 // max_nesting_depth を超える入れ子と、kMaxSourceBytes を超える入力は LimitExceeded。
-Result<Node> parse(std::string_view source, std::size_t max_nesting_depth = kMaxNestingDepth);
+//
+// diagnostics（A46）: 「安全に解析を続けられる問題」（UnsupportedTag / UnsupportedAttribute）は
+// ここに**文書順で**足して解析を続ける。致命的な問題（InvalidUtf8 / HtmlParse / LimitExceeded）は
+// 今までどおり unexpected で返す（集めた分は diagnostics に残るので、api が合わせて
+// 1 つの RenderFailure にする）。整列するのは api で、ここでは並べ替えない。
+//
+//   - 対応外の**要素は透過**: 開始タグ・終了タグを無いものとし、子は親の子として読む。
+//     終了タグの対応は取る（`<section>…</section>` の `</section>` は HtmlParse にしない）。
+//     HTML の空要素（`<meta>` `<link>` `<hr>` `<input>` など）は終了タグを待たない。
+//     `/>` で閉じた対応外の要素もその場で終わる。対応する開始タグの無い終了タグ
+//     （`</table>` 単独）は UnsupportedTag として読み飛ばす
+//   - 対応外の**生テキスト要素**（`<script>` `<textarea>` `<title>` `<xmp>` `<iframe>`
+//     `<noembed>` `<noframes>`）は、対応する終了タグまでを生テキストとして読み飛ばす
+//     （中の `<` と `&` を解釈しない。子は作らない）。終了タグが無ければ HtmlParse
+//   - 対応外の**属性は捨てて要素は残す**（値は読み切ってから捨てる）。**透過した要素の
+//     属性は報告しない**（「そのタグが対応外」の 1 件で足りる）。捨てる属性の値は
+//     文字参照を検証せず生のまま読み飛ばす（`href="…&display=swap"` を通すため）
+//   - 透過した要素も開いている要素のスタックには積むので、max_nesting_depth の判定は
+//     透過を含むスタックの深さで行う（木の深さより厳しい。ARCHITECTURE.md A49）
+//
+// 返る木は、errors があっても ② が診断を続けられる形（`<style>` とその中身、
+// `style` / `class` / `id` 属性はそのまま残る）。errors が 1 件でもあれば api が
+// 描画せずに失敗させるので、透過の意味論は診断を網羅するためだけにある。
+Result<Node> parse(std::string_view source, Diagnostics& diagnostics,
+                   std::size_t max_nesting_depth = kMaxNestingDepth);
 
 // --dump-stage=dom の出力。キー順は固定（element: type / tag / attrs / location / children、
 // text: type / text / location）。

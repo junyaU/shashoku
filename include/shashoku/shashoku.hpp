@@ -1,6 +1,6 @@
 #pragma once
 
-// shashoku（写植）— 日本語組版特化の HTML→PNG レンダリングエンジン。
+// shashoku（写植）— AI とアプリのための、ブラウザ不要の HTML→PNG レンダリングエンジン。
 // これ 1 つを include すれば公開 API がすべて揃う（DESIGN.md §8）。
 //
 //   #include <shashoku/shashoku.hpp>
@@ -9,6 +9,7 @@
 //   fonts.add(noto_sans_jp_bytes);              // 追加順がフォールバック順
 //   const auto result = shashoku::render("<p>こんにちは、世界。</p>", fonts);
 //   if (!result) { std::cerr << shashoku::to_string(result.error()) << '\n'; return 1; }
+//   // 失敗は RenderFailure。to_string() で全診断が 1 行 1 件で出る（ARCHITECTURE.md A46）
 //   write_file("out.png", result->png);
 //
 // 連続生成では、バイト列の解釈と画像のデコードを 1 回だけ済ませて使い回せる（A34）:
@@ -27,5 +28,6 @@
 #include "shashoku/loaded_images.hpp"
 #include "shashoku/options.hpp"
 #include "shashoku/render.hpp"
+#include "shashoku/source_location.hpp"
 #include "shashoku/version.hpp"
 #include "shashoku/warning.hpp"

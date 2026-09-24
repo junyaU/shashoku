@@ -16,6 +16,7 @@
 #include "api/out_of_memory.hpp"
 #include "core/bitmap.hpp"
 #include "core/color.hpp"
+#include "core/diagnostics.hpp"
 #include "core/ids.hpp"
 #include "core/number_text.hpp"
 #include "core/result.hpp"
@@ -411,6 +412,58 @@ class ResourceSource {
 };
 
 // ---------------------------------------------------------------------------
+// 失敗の組み立て（ARCHITECTURE.md A46）
+// ---------------------------------------------------------------------------
+
+// 段が返した 1 件の失敗を、①② で集めた診断と合わせて RenderFailure にする。
+std::unexpected<RenderFailure> to_failure(Diagnostics& diagnostics, RenderError error) {
+  diagnostics.sort();
+  return std::unexpected(std::move(diagnostics).into_failure({std::move(error)}));
+}
+
+// ①② が集めた診断だけで失敗にする（致命的な失敗は無いが、対応外のものが 1 件以上ある）。
+std::unexpected<RenderFailure> to_failure(Diagnostics& diagnostics) {
+  diagnostics.sort();
+  return std::unexpected(std::move(diagnostics).into_failure());
+}
+
+// strict（`warnings_as_errors`）の格上げ（A46）。警告 1 件につき WarningAsError の
+// エラーを 1 件作り、識別子（`RenderError::warning`）・位置・詳細をそのまま保つ。
+// 格上げしたものは errors 側にだけ残す（`RenderFailure::warnings` は空）。
+// 並べ替えは into_failure() に任せる: errors の契約（位置 → kind → message）は
+// 警告の並び（位置 → kind → コードポイント → detail）と同じとは限らない。
+// 格上げした `RenderError::message`: 警告の detail から末尾の " at L:C" を落としたもの。
+// 位置は `RenderError::location` にあり、`to_string(RenderError)` が同じ書式で付け直すので、
+// detail をそのまま使うと 1 行に位置が二重に出る（error.hpp の契約）。付けたのは
+// `to_warning()`（位置があるときだけ）なので、同じ書式を組み立てて末尾から外す。
+std::string message_of(const Warning& warning) {
+  if (!warning.location) {
+    return warning.detail;  // 位置が無ければ detail にも付いていない
+  }
+  const std::string suffix =
+      std::format(" at {}:{}", warning.location->line, warning.location->column);
+  if (warning.detail.size() > suffix.size() && warning.detail.ends_with(suffix)) {
+    return warning.detail.substr(0, warning.detail.size() - suffix.size());
+  }
+  return warning.detail;  // 別の書式で作られた detail は触らない
+}
+
+RenderFailure promote_warnings(Diagnostics&& diagnostics) {
+  std::vector<RenderError> errors;
+  errors.reserve(diagnostics.warnings().size());
+  for (const Warning& warning : diagnostics.warnings()) {
+    errors.push_back(RenderError{.kind = ErrorKind::WarningAsError,
+                                 .message = message_of(warning),
+                                 .location = warning.location,
+                                 .hint = {},
+                                 .warning = warning.kind});
+  }
+  RenderFailure failure = std::move(diagnostics).into_failure(std::move(errors));
+  failure.warnings.clear();
+  return failure;
+}
+
+// ---------------------------------------------------------------------------
 // パイプライン
 // ---------------------------------------------------------------------------
 
@@ -470,65 +523,124 @@ Result<float> output_height(const layout::BoxTree& tree, const RenderOptions& op
 }
 
 // 豆腐の記録（③ レイアウトが集める。A31）→ 公開 API の Warning。
-// 並びは layout が決めている（入力位置の昇順 → コードポイントの昇順。決定的）ので、
-// ここでは並べ替えない。detail には RenderError と同じ書式で位置を添える。
-std::vector<Warning> to_warnings(const std::vector<layout::MissingGlyph>& missing) {
-  std::vector<Warning> warnings;
-  warnings.reserve(missing.size());
-  for (const layout::MissingGlyph& glyph : missing) {
-    // 種類は MissingGlyph のまま。文面だけ理由で分ける（A43。WarningKind は増やさない）。
-    const auto codepoint = static_cast<std::uint32_t>(glyph.codepoint);
-    std::string detail =
-        glyph.reason == text::MissingReason::ColorOnly
-            ? std::format("the glyph for U+{:04X} has only color layers (COLR); drawn as tofu",
-                          codepoint)
-            : std::format("no font has a glyph for U+{:04X}", codepoint);
-    detail += std::format(" at {}:{}", glyph.location.line, glyph.location.column);
-    warnings.push_back(Warning{.kind = WarningKind::MissingGlyph,
-                               .detail = std::move(detail),
-                               .codepoint = glyph.codepoint,
-                               .location = glyph.location});
-  }
-  return warnings;
+// detail には RenderError と同じ書式で位置を添える。
+Warning to_warning(const layout::MissingGlyph& glyph) {
+  // 種類は MissingGlyph のまま。文面だけ理由で分ける（A43。WarningKind は増やさない）。
+  const auto codepoint = static_cast<std::uint32_t>(glyph.codepoint);
+  std::string detail =
+      glyph.reason == text::MissingReason::ColorOnly
+          ? std::format("the glyph for U+{:04X} has only color layers (COLR); drawn as tofu",
+                        codepoint)
+          : std::format("no font has a glyph for U+{:04X}", codepoint);
+  detail += std::format(" at {}:{}", glyph.location.line, glyph.location.column);
+  return Warning{.kind = WarningKind::MissingGlyph,
+                 .detail = std::move(detail),
+                 .codepoint = glyph.codepoint,
+                 .location = glyph.location,
+                 .overflow_px = 0.0F,
+                 .overflow_edge = OverflowEdge::None};
 }
 
-Result<RenderResult> render_impl(std::string_view html, const ResourceSource& source,
-                                 const RenderOptions& options) {
+// ③ の辺（`layout::OverflowEdge`）→ 公開 API の `OverflowEdge`。③ は「はみ出していない」状態を
+// 持たない（記録があれば必ずどれかの辺）ので、`None` に写ることはない。
+OverflowEdge to_public(layout::OverflowEdge edge) {
+  switch (edge) {
+    case layout::OverflowEdge::Right:
+      return OverflowEdge::Right;
+    case layout::OverflowEdge::Bottom:
+      return OverflowEdge::Bottom;
+    case layout::OverflowEdge::Left:
+      return OverflowEdge::Left;
+    case layout::OverflowEdge::Top:
+      return OverflowEdge::Top;
+  }
+  return OverflowEdge::None;
+}
+
+// 紙面からのはみ出しの記録（③ レイアウトが集める。A46 / A50）→ 公開 API の Warning。
+// `overflow_px` は ③ が CSS px で出しているので割らずにそのまま写す（A50）。
+// 文面の辺は公開 API の `to_string(OverflowEdge)`（= 診断 JSON の `edge`）と同じ綴りにする。
+Warning to_warning(const layout::ContentOverflow& overflow) {
+  const OverflowEdge edge = to_public(overflow.edge);
+  return Warning{.kind = WarningKind::ContentOverflow,
+                 .detail = std::format("content overflows the canvas by {:.1f}px ({}) at {}:{}",
+                                       overflow.overflow_px, to_string(edge),
+                                       overflow.location.line, overflow.location.column),
+                 .codepoint = 0,
+                 .location = overflow.location,
+                 .overflow_px = overflow.overflow_px,
+                 .overflow_edge = edge};
+}
+
+// ③ が集めた「続行できた問題」を Diagnostics に通す（A46 / §3.10）。
+// ここを通すことで (1) max_diagnostics の上限が警告にも掛かり (2) エラーと同じ規則で
+// 決定的に整列し (3) 失敗したときの `RenderFailure::warnings` にもそのまま乗る。
+// 上限に達したら記録をやめる（truncated は Diagnostics が立てる）。
+void collect_warnings(const layout::BoxTree& tree, Diagnostics& diagnostics) {
+  for (const layout::MissingGlyph& glyph : tree.missing_glyphs) {
+    if (!diagnostics.add_warning(to_warning(glyph))) {
+      break;  // 一度上限に達したら空きは戻らない
+    }
+  }
+  for (const layout::ContentOverflow& overflow : tree.overflows) {
+    if (!diagnostics.add_warning(to_warning(overflow))) {
+      break;
+    }
+  }
+  // (位置, 種類, コードポイント, detail) の昇順。豆腐だけの列では ③ が決めた順序（A31）と同じ。
+  diagnostics.sort();
+}
+
+std::expected<RenderResult, RenderFailure> render_impl(std::string_view html,
+                                                       const ResourceSource& source,
+                                                       const RenderOptions& options) {
+  // 集める診断（A46）。①② に渡し、段の失敗もここを通して RenderFailure にする。
+  Diagnostics diagnostics{options.limits.max_diagnostics};
   if (const Result<void> ok = validate(options); !ok) {
-    return std::unexpected(ok.error());
+    return to_failure(diagnostics, ok.error());
   }
   if (const Result<void> ok = check_input_limits(html, source.image_count(), options.limits); !ok) {
-    return std::unexpected(ok.error());
+    return to_failure(diagnostics, ok.error());
   }
-  const Result<html::Node> dom = html::parse(html, options.limits.nesting_depth);
+  const Result<html::Node> dom = html::parse(html, diagnostics, options.limits.nesting_depth);
   if (!dom) {
-    return std::unexpected(dom.error());
+    return to_failure(diagnostics, dom.error());
   }
   if (const Result<void> ok = check_dom_limits(*dom, options.limits); !ok) {
-    return std::unexpected(ok.error());
+    return to_failure(diagnostics, ok.error());
   }
   const Result<style::StyledNode> styled =
-      style::resolve(*dom, options.limits.style_rules, options.limits.length_px);
+      style::resolve(*dom, diagnostics, options.limits.style_rules, options.limits.length_px);
   if (!styled) {
-    return std::unexpected(styled.error());
+    return to_failure(diagnostics, styled.error());
   }
   if (const Result<void> ok = check_computed_limits(*styled, options.scale, options.limits); !ok) {
-    return std::unexpected(ok.error());
+    return to_failure(diagnostics, ok.error());
+  }
+  // ②の出口（A46 / §3.10）。①② が集めた問題が 1 件でもあれば、③ に進まずまとめて返す。
+  // style は診断の網羅のために木を最後まで解決するので、ここで止めないと
+  // 「捨てた宣言の分だけ違う絵」が出てしまう。致命的な失敗（LimitExceeded など）は
+  // 上の to_failure(diagnostics, error) が集めたものと合わせる。
+  if (diagnostics.has_errors()) {
+    return to_failure(diagnostics);
   }
   OwnedResources owned;
   const Result<ResourceRefs> resources = source.acquire(owned, options.limits);
   if (!resources) {
-    return std::unexpected(resources.error());
+    return to_failure(diagnostics, resources.error());
   }
 
   text::Shaper shaper(*resources->fonts);
   const Result<layout::BoxTree> tree = run_layout(*styled, options, shaper, *resources);
   if (!tree) {
-    return std::unexpected(tree.error());
+    return to_failure(diagnostics, tree.error());
   }
+  // ③ が集めた「続行できた問題」（豆腐・紙面からのはみ出し）を診断に通す（A46）。
+  // ここから先で失敗したときも、`RenderFailure::warnings` にそのまま乗る。
+  collect_warnings(*tree, diagnostics);
   const Result<float> height = output_height(*tree, options);
   if (!height) {
-    return std::unexpected(height.error());
+    return to_failure(diagnostics, height.error());
   }
 
   const raster::DisplayList list = paint::build_display_list(*tree);
@@ -541,51 +653,91 @@ Result<RenderResult> render_impl(std::string_view html, const ResourceSource& so
   const Result<Bitmap> bitmap = raster::rasterize(list, target, glyphs, *resources->images);
   if (!bitmap) {
     if (bitmap.error().kind == ErrorKind::LimitExceeded) {
-      return fail(ErrorKind::LimitExceeded,
-                  std::format("{} (raise RenderLimits::device_pixels to allow it)",
-                              bitmap.error().message));
+      return to_failure(
+          diagnostics,
+          RenderError{.kind = ErrorKind::LimitExceeded,
+                      .message = std::format("{} (raise RenderLimits::device_pixels to allow it)",
+                                             bitmap.error().message),
+                      .location = std::nullopt,
+                      .hint = {},
+                      .warning = std::nullopt});
     }
-    return std::unexpected(bitmap.error());
+    return to_failure(diagnostics, bitmap.error());
   }
   // 圧縮レベルは必ず明示的に渡す（既定値を 2 か所で別々に持たない。A25 / A33）。
   Result<std::vector<std::uint8_t>> encoded = png::encode(*bitmap, options.compression_level);
   if (!encoded) {
-    return std::unexpected(encoded.error());
+    return to_failure(diagnostics, encoded.error());
+  }
+
+  // strict（A46）: 描画が終わって警告が 1 件以上あれば PNG を返さない。判定を最後に置くのは、
+  // `warnings_as_errors` を立てても ⑤b / ⑥ の失敗（LimitExceeded など）が隠れないようにするため
+  // （strict は診断を増やすだけで、減らさない）。
+  if (options.warnings_as_errors && !diagnostics.warnings().empty()) {
+    return std::unexpected(promote_warnings(std::move(diagnostics)));
   }
 
   RenderResult result;
   result.png = std::move(*encoded);
-  result.warnings = to_warnings(tree->missing_glyphs);
+  result.warnings = diagnostics.warnings();
+  result.diagnostics_truncated = diagnostics.truncated();
   result.width = static_cast<int>(bitmap->width);
   result.height = static_cast<int>(bitmap->height);
   return result;
 }
 
-Result<std::string> dump_impl(std::string_view html, const ResourceSource& source,
-                              const RenderOptions& options, DumpStage stage) {
+// ③ より後ろの段のダンプ。Dom / Style は layout に入る前に返すので、ここに来るのは
+// Box / DisplayList / Svg の 3 つだけ。段の順序は render_impl と同じ。
+Result<std::string> dump_after_layout(const layout::BoxTree& tree, const RenderOptions& options,
+                                      DumpStage stage) {
+  if (stage == DumpStage::Box) {
+    return layout::dump_json(tree);
+  }
+  const raster::DisplayList list = paint::build_display_list(tree);
+  if (stage == DumpStage::DisplayList) {
+    return paint::dump_json(list);
+  }
+  const Result<float> height = output_height(tree, options);
+  if (!height) {
+    return std::unexpected(height.error());
+  }
+  return paint::dump_svg(list, static_cast<float>(options.viewport_width), *height);
+}
+
+std::expected<std::string, RenderFailure> dump_impl(std::string_view html,
+                                                    const ResourceSource& source,
+                                                    const RenderOptions& options, DumpStage stage) {
+  Diagnostics diagnostics{options.limits.max_diagnostics};
   if (const Result<void> ok = validate(options); !ok) {
-    return std::unexpected(ok.error());
+    return to_failure(diagnostics, ok.error());
   }
   if (const Result<void> ok = check_input_limits(html, source.image_count(), options.limits); !ok) {
-    return std::unexpected(ok.error());
+    return to_failure(diagnostics, ok.error());
   }
-  const Result<html::Node> dom = html::parse(html, options.limits.nesting_depth);
+  const Result<html::Node> dom = html::parse(html, diagnostics, options.limits.nesting_depth);
   if (!dom) {
-    return std::unexpected(dom.error());
+    return to_failure(diagnostics, dom.error());
   }
   if (const Result<void> ok = check_dom_limits(*dom, options.limits); !ok) {
-    return std::unexpected(ok.error());
+    return to_failure(diagnostics, ok.error());
   }
   if (stage == DumpStage::Dom) {
     return html::dump_json(*dom);
   }
   const Result<style::StyledNode> styled =
-      style::resolve(*dom, options.limits.style_rules, options.limits.length_px);
+      style::resolve(*dom, diagnostics, options.limits.style_rules, options.limits.length_px);
   if (!styled) {
-    return std::unexpected(styled.error());
+    return to_failure(diagnostics, styled.error());
   }
   if (const Result<void> ok = check_computed_limits(*styled, options.scale, options.limits); !ok) {
-    return std::unexpected(ok.error());
+    return to_failure(diagnostics, ok.error());
+  }
+  // ②の出口（A46 / §3.10）。①② が集めた問題が 1 件でもあれば、③ に進まずまとめて返す。
+  // style は診断の網羅のために木を最後まで解決するので、ここで止めないと
+  // 「捨てた宣言の分だけ違う絵」が出てしまう。致命的な失敗（LimitExceeded など）は
+  // 上の to_failure(diagnostics, error) が集めたものと合わせる。
+  if (diagnostics.has_errors()) {
+    return to_failure(diagnostics);
   }
   if (stage == DumpStage::Style) {
     return style::dump_json(*styled);
@@ -594,26 +746,24 @@ Result<std::string> dump_impl(std::string_view html, const ResourceSource& sourc
   OwnedResources owned;
   const Result<ResourceRefs> resources = source.acquire(owned, options.limits);
   if (!resources) {
-    return std::unexpected(resources.error());
+    return to_failure(diagnostics, resources.error());
   }
   text::Shaper shaper(*resources->fonts);
   const Result<layout::BoxTree> tree = run_layout(*styled, options, shaper, *resources);
   if (!tree) {
-    return std::unexpected(tree.error());
+    return to_failure(diagnostics, tree.error());
   }
-  if (stage == DumpStage::Box) {
-    return layout::dump_json(*tree);
+  // ③ が集めた警告は dump では返す先が無い（戻り値は文字列 1 本）が、診断には通す:
+  // strict の判定と `RenderFailure::warnings` を render() と同じ組み立てにするため（A46）。
+  collect_warnings(*tree, diagnostics);
+  const Result<std::string> dumped = dump_after_layout(*tree, options, stage);
+  if (!dumped) {
+    return to_failure(diagnostics, dumped.error());
   }
-
-  const raster::DisplayList list = paint::build_display_list(*tree);
-  if (stage == DumpStage::DisplayList) {
-    return paint::dump_json(list);
+  if (options.warnings_as_errors && !diagnostics.warnings().empty()) {
+    return std::unexpected(promote_warnings(std::move(diagnostics)));
   }
-  const Result<float> height = output_height(*tree, options);
-  if (!height) {
-    return std::unexpected(height.error());
-  }
-  return paint::dump_svg(list, static_cast<float>(options.viewport_width), *height);
+  return *dumped;
 }
 
 }  // namespace
@@ -621,43 +771,44 @@ Result<std::string> dump_impl(std::string_view html, const ResourceSource& sourc
 // メモリ不足（A26）を捕まえるのは、この 5 本 + prepare() の公開関数の境界だけ
 // （api/out_of_memory.hpp）。
 
-std::expected<RenderResult, RenderError> render(std::string_view html, const FontSet& fonts,
-                                                const RenderOptions& opts) {
+std::expected<RenderResult, RenderFailure> render(std::string_view html, const FontSet& fonts,
+                                                  const RenderOptions& opts) {
   const ImageSet images;
-  return detail::catch_out_of_memory<RenderResult>(
+  return detail::catch_out_of_memory<RenderResult, RenderFailure>(
       [&] { return render_impl(html, ResourceSource::from_sets(fonts, images), opts); });
 }
 
-std::expected<RenderResult, RenderError> render(std::string_view html, const FontSet& fonts,
-                                                const ImageSet& images, const RenderOptions& opts) {
-  return detail::catch_out_of_memory<RenderResult>(
+std::expected<RenderResult, RenderFailure> render(std::string_view html, const FontSet& fonts,
+                                                  const ImageSet& images,
+                                                  const RenderOptions& opts) {
+  return detail::catch_out_of_memory<RenderResult, RenderFailure>(
       [&] { return render_impl(html, ResourceSource::from_sets(fonts, images), opts); });
 }
 
-std::expected<RenderResult, RenderError> render(std::string_view html, const LoadedFonts& fonts,
-                                                const RenderOptions& opts) {
-  return detail::catch_out_of_memory<RenderResult>(
+std::expected<RenderResult, RenderFailure> render(std::string_view html, const LoadedFonts& fonts,
+                                                  const RenderOptions& opts) {
+  return detail::catch_out_of_memory<RenderResult, RenderFailure>(
       [&] { return render_impl(html, ResourceSource::from_loaded(fonts, nullptr), opts); });
 }
 
-std::expected<RenderResult, RenderError> render(std::string_view html, const LoadedFonts& fonts,
-                                                const LoadedImages& images,
-                                                const RenderOptions& opts) {
-  return detail::catch_out_of_memory<RenderResult>(
+std::expected<RenderResult, RenderFailure> render(std::string_view html, const LoadedFonts& fonts,
+                                                  const LoadedImages& images,
+                                                  const RenderOptions& opts) {
+  return detail::catch_out_of_memory<RenderResult, RenderFailure>(
       [&] { return render_impl(html, ResourceSource::from_loaded(fonts, &images), opts); });
 }
 
-std::expected<std::string, RenderError> dump(std::string_view html, const FontSet& fonts,
-                                             const ImageSet& images, const RenderOptions& opts,
-                                             DumpStage stage) {
-  return detail::catch_out_of_memory<std::string>(
+std::expected<std::string, RenderFailure> dump(std::string_view html, const FontSet& fonts,
+                                               const ImageSet& images, const RenderOptions& opts,
+                                               DumpStage stage) {
+  return detail::catch_out_of_memory<std::string, RenderFailure>(
       [&] { return dump_impl(html, ResourceSource::from_sets(fonts, images), opts, stage); });
 }
 
-std::expected<std::string, RenderError> dump(std::string_view html, const LoadedFonts& fonts,
-                                             const LoadedImages& images, const RenderOptions& opts,
-                                             DumpStage stage) {
-  return detail::catch_out_of_memory<std::string>(
+std::expected<std::string, RenderFailure> dump(std::string_view html, const LoadedFonts& fonts,
+                                               const LoadedImages& images,
+                                               const RenderOptions& opts, DumpStage stage) {
+  return detail::catch_out_of_memory<std::string, RenderFailure>(
       [&] { return dump_impl(html, ResourceSource::from_loaded(fonts, &images), opts, stage); });
 }
 

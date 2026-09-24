@@ -9,6 +9,7 @@
 
 #include "integration/integration_support.hpp"
 #include "shashoku/shashoku.hpp"
+#include "support/failure.hpp"
 
 // 計算値が非有限（inf / NaN）になっても警告なしで成功した PNG が返る問題（issue #19）の
 // end-to-end の検査。段の契約は 2 つある（ARCHITECTURE.md A36）:
@@ -42,7 +43,7 @@ RenderError render_failure(std::string_view html, const RenderOptions& options) 
     ADD_FAILURE() << "エラーになるはずが成功した: " << html.substr(0, 96);
     return RenderError{};
   }
-  return result.error();
+  return first_error(result.error());
 }
 
 // ---------------------------------------------------------------------------
@@ -152,7 +153,7 @@ TEST(NonFiniteLengths, SvgDumpDoesNotDisagreeWithThePng) {
   const auto svg = dump(R"(<div style="padding-left:1e38em">A</div>)", japanese_fonts(), ImageSet{},
                         options, DumpStage::Svg);
   ASSERT_FALSE(svg.has_value()) << "SVG ダンプが出てしまった（PNG と食い違う）";
-  EXPECT_EQ(svg.error().kind, ErrorKind::LimitExceeded) << to_string(svg.error());
+  EXPECT_EQ(first_error(svg.error()).kind, ErrorKind::LimitExceeded) << to_string(svg.error());
 }
 
 // ---------------------------------------------------------------------------
@@ -207,7 +208,7 @@ void expect_no_non_finite(std::string_view html, const RenderOptions& options) {
     const auto text = dump(html, shared_fonts(), shared_images(), options, stage);
     if (!text) {
       // エラーになるのは構わない（対応外の値・上限超過）。黙って壊れないことが要件。
-      EXPECT_FALSE(text.error().message.empty()) << html.substr(0, 96);
+      EXPECT_FALSE(first_error(text.error()).message.empty()) << html.substr(0, 96);
       continue;
     }
     // box ダンプの `"viewport_height": null` だけは「指定なし」を表す正当な null
@@ -390,9 +391,10 @@ TEST(NonFiniteLengths, AutoHeightNeverBlamesAZeroContentHeight) {
 TEST(NonFiniteLengths, GenuinelyEmptyContentStillSaysZero) {
   const auto result = render("<div></div>", japanese_fonts(), viewport(300));
   ASSERT_FALSE(result.has_value());
-  EXPECT_EQ(result.error().kind, ErrorKind::InvalidOption) << to_string(result.error());
-  EXPECT_NE(result.error().message.find("content height is 0"), std::string::npos)
-      << result.error().message;
+  EXPECT_EQ(first_error(result.error()).kind, ErrorKind::InvalidOption)
+      << to_string(result.error());
+  EXPECT_NE(first_error(result.error()).message.find("content height is 0"), std::string::npos)
+      << first_error(result.error()).message;
 }
 
 // 常識的な入力が新しく落ちないこと: 座標の上限は「1 要素あたりの長さ x 要素数」で

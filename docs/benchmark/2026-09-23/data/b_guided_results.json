@@ -1,0 +1,225 @@
+[
+  {
+    "case": "case01",
+    "title": "比較表（技術選定資料）",
+    "html": "case01.html",
+    "png": "case01.png",
+    "cli_args": "--width 900",
+    "first_try": {"status": "pass", "error": null},
+    "iterations": [
+      {"n": 1, "status": "pass", "error": null, "category": null, "fix": null}
+    ],
+    "final": "pass",
+    "gave_up_reason": null,
+    "fidelity": 5,
+    "dropped": ["代替: <table> が対応外なので flex の div で表組みを作った（列・行・文言は減らしていない）"],
+    "warnings": [],
+    "skill_gaps": [
+      "line-height に単位なしの数値（1.6）が使えるか書かれていない。『単位は px em と単位なしの 0』とあるので 1.6em にして回避した",
+      "セレクタの『結合』が p.note（タグ+クラス）だけなのか .a.b（クラス+クラス）や子孫セレクタを含むのかが不明。今回は子孫セレクタを使わない前提でクラスを増やして設計した",
+      "flex の align-items の既定が stretch か（= 行内のセルの高さが揃うか）が書かれていない。縞模様の表では重要",
+      "表組みの代替パターン（flex + flex-basis で列を作る）の例が文書にない"
+    ],
+    "error_message_quality": "エラーが 1 件も出なかったため評価できない",
+    "notes": "900px 指定どおり 900x637 で出力。見出し行の白文字・行の縞・セル高さの揃い（align-items 既定の stretch）はすべて意図どおり。組版面では、全 18 セルのどの行頭にも句読点・閉じ括弧は来ておらず禁則は守られている。「PostgreSQL（RDB）」のような欧文＋全角括弧の混植も詰まりすぎていない。セル内の折り返しは語の途中（例『業務／データ』）で切れるが日本語としては許容範囲。"
+  },
+  {
+    "case": "case02",
+    "title": "処理フロー図（設計レビュー資料）",
+    "html": "case02.html",
+    "png": "case02.png",
+    "cli_args": "--width 1000",
+    "first_try": {"status": "pass", "error": null},
+    "iterations": [
+      {"n": 1, "status": "pass", "error": null, "category": null, "fix": null},
+      {"n": 2, "status": "pass", "error": null, "category": "other", "fix": "エラーではなく見た目の修正。注記をワーカーの真下に合わせるため spacer 幅を 620px→588px（箱 160px×3 + 矢印 36px×3 の実測値）にし、注記幅を 306→346px に広げた"}
+    ],
+    "final": "pass",
+    "gave_up_reason": null,
+    "fidelity": 4,
+    "dropped": ["代替: 矢印は図形ではなく文字『→』で描いた（線・図形を描くプロパティが無いため）"],
+    "warnings": [],
+    "skill_gaps": [
+      "position が無いので『ある要素の真下に注記を置く』ができない。spacer 要素の幅を手で計算して合わせる必要がある。padding/border を含めた実寸の計算（content-box）を毎回自分でやる前提であることは書いてあるが、『揃える』用途の書き方の例はない",
+      "margin / padding の 4 値指定（margin: 0 0 0 624px）が使えるかが表から読めない（longhand の margin-left が使えるかも不明）。結果としては 4 値 shorthand が通った",
+      "矢印や罫線のような図形をどう描くか（height:1px の div で線を引く等）の指針がない"
+    ],
+    "error_message_quality": "エラーが 1 件も出なかったため評価できない",
+    "notes": "1 回目から exit 0。5 段・矢印・注記はすべて描けた。align-items: center で矢印が箱の中心に揃う。注記は position が無いため spacer の幅で位置決めしており、箱の padding/border を 1px でも変えると位置がずれる壊れやすい作りになる。組版面の問題なし（注記の折り返しも『それでも失敗／したら』で、行頭に約物は来ていない）。"
+  },
+  {
+    "case": "case03",
+    "title": "用語カード（社内 wiki）",
+    "html": "case03.html",
+    "png": "case03.png",
+    "cli_args": "--width 720",
+    "first_try": {"status": "pass", "error": null},
+    "iterations": [
+      {"n": 1, "status": "pass", "error": null, "category": null, "fix": null}
+    ],
+    "final": "pass",
+    "gave_up_reason": null,
+    "fidelity": 5,
+    "dropped": [],
+    "warnings": [],
+    "skill_gaps": [
+      "ルビを付けた行の行送りをどれだけ取ればルビが上の行に当たらないかの目安が無い（今回は line-height: 1.9em で当たらなかったが試行前提）",
+      "タグ状の小さい要素を作る手段（display:inline-block が無い）の代替が書かれていない。flex の行で作った"
+    ],
+    "error_message_quality": "エラーが 1 件も出なかったため評価できない",
+    "notes": "見出しを <ruby>冪等性<rt>べきとうせい</rt></ruby> にして依頼の『読みも表示』を満たした。ルビは親文字の上に均等に載り、6 文字のルビが 3 文字の親文字からはみ出さずに収まっている（親文字を広げる方向で配られている）。定義文の最終行が『ん。』の 2 文字だけになる（いわゆる泣き別れ）。禁則違反ではないが、見出しの下の 1 行と合わせて多少間延びして見える。"
+  },
+  {
+    "case": "case04",
+    "title": "手順カード（オンボーディング）",
+    "html": "case04.html",
+    "png": "case04.png",
+    "cli_args": "--width 800",
+    "first_try": {"status": "pass", "error": null},
+    "iterations": [
+      {"n": 1, "status": "pass", "error": null, "category": null, "fix": null}
+    ],
+    "final": "pass",
+    "gave_up_reason": null,
+    "fidelity": 5,
+    "dropped": [],
+    "warnings": [],
+    "skill_gaps": [
+      "縦方向の中央揃え（丸バッジの中の数字）に line-height を px で指定する手が使えるかどうかが文書からは分からない。実際は line-height: 38px が効いて中央に入った"
+    ],
+    "error_message_quality": "エラーが 1 件も出なかったため評価できない",
+    "notes": "5 ステップ・丸バッジ（border-radius 19px）・見出し・補足をすべて出せた。バッジ内の数字は line-height: 38px で上下中央に入っている。補足文はどれも 1 行に収まり、行頭約物なし。欧文（clone, CMake 3.22, configure, dev）と日本語の混植部分は前後に適切な空きが入っていて詰まっていない。"
+  },
+  {
+    "case": "case05",
+    "title": "読書メモの引用カード（SNS）",
+    "html": "case05.html",
+    "png": "case05.png",
+    "cli_args": "--width 1080 --height 1080",
+    "first_try": {"status": "pass", "error": null},
+    "iterations": [
+      {"n": 1, "status": "pass", "error": null, "category": null, "fix": null}
+    ],
+    "final": "pass",
+    "gave_up_reason": null,
+    "fidelity": 5,
+    "dropped": [],
+    "warnings": [],
+    "skill_gaps": [
+      "flex-direction: column + justify-content: center が縦方向の中央寄せとして使えることは表から読めるが、height を明示した親が要る点（content-box なので 1080 から padding を引く）は ⚠ の注記が効いた。ここは文書のおかげで 1 回で通った"
+    ],
+    "error_message_quality": "エラーが 1 件も出なかったため評価できない",
+    "notes": "1080x1080 ちょうど。text-align: justify が効いて 4 行のうち 3 行が左右そろい、行末の『、』の後の空きも詰められていて、両端揃えとしてきれいに見える。行頭に句読点は無く、『が、』『のことだ。』のような読点・句点はすべて行中・行末に収まっている。装飾の始め括弧「 を置いたが閉じ括弧を置いていないので、そこだけ非対称に見える（意図的な装飾だが好みが分かれる）。"
+  },
+  {
+    "case": "case06",
+    "title": "OG 画像（ブログ記事）",
+    "html": "case06.html",
+    "png": "case06.png",
+    "cli_args": "--width 1200 --height 630 --image avatar=EXP/bin/assets/avatar.png",
+    "first_try": {"status": "pass", "error": null},
+    "iterations": [
+      {"n": 1, "status": "pass", "error": null, "category": null, "fix": null}
+    ],
+    "final": "pass",
+    "gave_up_reason": null,
+    "fidelity": 5,
+    "dropped": [],
+    "warnings": [],
+    "skill_gaps": [
+      "img に border-radius を付けたとき画像がクリップされるか書かれていない（実際はクリップされ、真円のアイコンになった。PNG をデコードして確認）",
+      "img の src に渡す名前と --image の名前の対応は書いてあるが、alt が必須か・無いとどうなるかは不明"
+    ],
+    "error_message_quality": "エラーが 1 件も出なかったため評価できない",
+    "notes": "1200x630 ちょうど。⚠ の『1040+80*2』の説明があったので padding 72px 込みで width 1056 / height 486 と最初から書けた（この注記が無ければ確実に 1 回落ちていた）。タイトルは 54px で 2 行、『と言うた／めに』で語中改行になるが禁則違反ではない。border-radius が img の中身をクリップするのは期待どおり（アバターが真円になっている）。日時『2026年9月23日』の数字と漢字の混植も詰まりすぎていない。"
+  },
+  {
+    "case": "case07",
+    "title": "イベント告知（勉強会）",
+    "html": "case07.html",
+    "png": "case07.png",
+    "cli_args": "--width 1080 --height 1080",
+    "first_try": {"status": "pass", "error": null},
+    "iterations": [
+      {"n": 1, "status": "pass", "error": null, "category": null, "fix": null}
+    ],
+    "final": "pass",
+    "gave_up_reason": null,
+    "fidelity": 4,
+    "dropped": [],
+    "warnings": [],
+    "skill_gaps": [
+      "ルビの親文字が欧文（Chen Wei）のときの配り方が『既知の制限』からは読み取れない。実際は欧文の上にカタカナが広く配られた",
+      "letter-spacing が半角数字にも 1 文字ずつ入る（『第 12 回』が『第 1 2 回』に見える）ことは書かれていない。日本語見出しの字間調整に使うと数字が崩れる"
+    ],
+    "error_message_quality": "エラーが 1 件も出なかったため評価できない",
+    "notes": "依頼の 7 項目（イベント名・日時・場所・登壇者 3 名とふりがな・参加無料バッジ・申込 URL）をすべて 1080x1080 に収めた。ふりがなはルビで表現。『佐々木』の上の『ささき』が JLREQ の 1:2:…:2:1 で広く配られ、親文字より少しはみ出して見えるが、隣接要素とは重なっていない。難点は kicker の letter-spacing: 0.16em が半角数字にも入り『第 1 2 回』のように見えること（letter-spacing を外せば直るが、今回は再実行していない）。"
+  },
+  {
+    "case": "case08",
+    "title": "通知画像（週次レポート）",
+    "html": "case08.html",
+    "png": "case08.png",
+    "cli_args": "--width 800",
+    "first_try": {"status": "pass", "error": null},
+    "iterations": [
+      {"n": 1, "status": "pass", "error": null, "category": null, "fix": null}
+    ],
+    "final": "pass",
+    "gave_up_reason": null,
+    "fidelity": 5,
+    "dropped": [],
+    "warnings": [],
+    "skill_gaps": [
+      "span（display: inline）の中で font-size を変えたときのベースライン揃えの挙動が書かれていない。実際は下端でなくベースラインで揃い、意図どおりだった"
+    ],
+    "error_message_quality": "エラーが 1 件も出なかったため評価できない",
+    "notes": "800x385（高さは内容追従）。3 指標・前週比の色分け（緑 +8 / 赤 −12 / 灰 ±0）・下の一言をすべて出せた。U+2212（−）と U+00B1（±）は豆腐にならず描けている。数字 40px と単位『件』16px の混植がベースラインで揃っていて破綻なし。行頭約物なし。"
+  },
+  {
+    "case": "case09",
+    "title": "要約カード（ニュース）",
+    "html": "case09.html",
+    "png": "case09.png",
+    "cli_args": "--width 800",
+    "first_try": {"status": "pass", "error": null},
+    "iterations": [
+      {"n": 1, "status": "pass", "error": null, "category": null, "fix": null}
+    ],
+    "final": "pass",
+    "gave_up_reason": null,
+    "fidelity": 4,
+    "dropped": ["代替: <ul>/<li> が対応外なので、flex 行 + 小さい丸 div（border-radius）で箇条書きを作った（3 項目・各 40 字前後は維持）"],
+    "warnings": [],
+    "skill_gaps": [
+      "箇条書きの代替（list-style が無い）の書き方が文書にない。行頭の丸を縦方向のどこに置くかは margin を手で調整するしかない",
+      "見出しで『2027 年度』のような数字＋助数詞が行末で割れるのを避ける手段（改行禁止の指定）があるかどうかが書かれていない"
+    ],
+    "error_message_quality": "エラーが 1 件も出なかったため評価できない",
+    "notes": "800x424。白背景・薄い枠線・タグ・出典まで依頼どおり。見出しが『……検討――2027 年／度の法改正を視野に』と、『2027 年度』の途中（年と度の間）で改行される。禁則違反ではないが日本語としては割りたくない位置で、行分割の粒度を指定する手段が見つからなかった。ダッシュ『――』は豆腐にならず描けている。箇条書きの 3 項目はいずれも 1 行に収まり、行頭約物なし。"
+  },
+  {
+    "case": "case10",
+    "title": "短歌（縦書き、SNS）",
+    "html": "case10.html",
+    "png": "case10.png",
+    "cli_args": "--width 800 --height 1200",
+    "first_try": {"status": "pass", "error": null},
+    "iterations": [
+      {"n": 1, "status": "pass", "error": null, "category": null, "fix": null},
+      {"n": 2, "status": "pass", "error": null, "category": "other", "fix": "エラーではなく見た目の修正。作者名が依頼の『左端』ではなく歌のすぐ左に付いていたので、縦書きの行送り方向（右→左）に押し出すため margin を 40px→506px に、下に下げる padding を 560px→856px にした"}
+    ],
+    "final": "pass",
+    "gave_up_reason": null,
+    "fidelity": 5,
+    "dropped": [],
+    "warnings": [],
+    "skill_gaps": [
+      "縦書きでの margin / padding がどの向きに効くか（padding の第 1 値が『上＝行の先頭』、margin の第 2 値が『右＝前の行との間』）が書かれていない。左端に置くには行送り方向にどれだけ押すかを自分で逆算することになる",
+      "1 行に何文字入るかの計算（height ÷ font-size）と、行の太さ＝line-height の関係が縦書きの節にあると位置決めが早い",
+      "和文の 1 行の高さが字送り方向の height で決まる以上、『歌を 1 行に収める』には font-size を逆算する必要がある。この計算の説明が無い"
+    ],
+    "error_message_quality": "エラーが 1 件も出なかったため評価できない",
+    "notes": "800x1200。--height 必須・writing-mode はトップレベルのみ・縦書きで % 不可、という 3 点が文書にあったので 1 回目から exit 0。歌は 32 文字を 30px で 1 行（1 列）に収めた。全角空白の区切りも縦に空きとして出ている。長音『ー』と句読点の無い歌なので縦書き固有の字形の問題は出ていない。作者名は左端・下寄せ。縦書きは position が無くても margin/padding で位置を作れるが、値はすべて手計算。"
+  }
+]

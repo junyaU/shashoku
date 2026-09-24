@@ -6,6 +6,7 @@
 
 #include <gtest/gtest.h>
 
+#include "layout/counters.hpp"
 #include "layout/test_support.hpp"
 
 // 単一行 flexbox（ARCHITECTURE.md §3.8 / CSS Flexbox Level 1 §9）。
@@ -173,6 +174,176 @@ TEST(LayoutFlex, StretchFillsTheCrossAxis) {
   const auto tree = run_layout(root, 400, measurer);
   ASSERT_TRUE(tree.has_value());
   EXPECT_FLOAT_EQ(item_rects(*tree)[0].block_size, 100);
+}
+
+// ---- stretch で伸ばした交差サイズは definite（A54）------------------------------------
+//
+// CSS Flexbox Level 1 §9.4 step 11（Determine the used cross size of each flex item）:
+// 「align-self: stretch で交差サイズが auto なら、used cross size は行の交差サイズから
+// 交差軸のマージンを引いたもの。**その値を definite として、中身をもう一度組む**」。
+// §9.8（Definite and Indefinite Sizes）も同じ趣旨で、stretch した項目の交差サイズは
+// definite として扱う。伸ばしたあとに箱の高さだけ書き換えると、中の「交差軸の余りに
+// 依存するもの」（入れ子の flex の align-items / column の justify-content / 交差軸の
+// auto マージン）が伸ばす前の高さで解かれてしまう。
+
+// 4 行 × 16 + padding 12 × 2 = 88 の高いカード。行の交差サイズを決める役。
+Tree tall_card() {
+  return block({text("あ"), br(), text("い"), br(), text("う"), br(), text("え")},
+               [](ComputedStyle& style) { style.padding = {12, 12, 12, 12}; });
+}
+constexpr float kTallCard = 88;
+
+// 箱の index 番目の子ブロック。無ければ nullptr。
+const BlockBox* nth_child(const BlockBox& box, std::size_t index) {
+  const std::vector<BlockBox>* blocks = box.blocks();
+  if (blocks == nullptr || index >= blocks->size()) {
+    return nullptr;
+  }
+  return &(*blocks)[index];
+}
+
+// (a) 高さ不定のコンテナで、stretch で伸びた列の中の align-items: center が縦中央に来る。
+// これが直前の実例（docs/benchmark/results_a53_2026-09-24.md §3 の case02）: 矢印の線が
+// 列の上端に張り付いて図として読めなかった。
+TEST(LayoutFlex, StretchedItemCentersItsContentsInTheLineCross) {
+  FakeMeasurer measurer;
+  const auto root =
+      build({flex({tall_card(), flex({block({}, sized(24, 2))}, [](ComputedStyle& style) {
+                     style.width = Dimension::px(40);
+                     style.align_items = AlignItems::Center;
+                     style.justify_content = JustifyContent::Center;
+                   })})});
+  const auto tree = run_layout(root, 400, measurer);
+  ASSERT_TRUE(tree.has_value());
+  const std::vector<LogicalRect> rects = item_rects(*tree);
+  ASSERT_EQ(rects.size(), 2U);
+  EXPECT_FLOAT_EQ(rects[1].block_size, kTallCard);  // stretch で伸びている
+  const BlockBox* column = nth_child(container_of(*tree), 1);
+  ASSERT_NE(column, nullptr);
+  const BlockBox* bar = nth_child(*column, 0);
+  ASSERT_NE(bar, nullptr);
+  EXPECT_FLOAT_EQ(bar->rect.block_start, (kTallCard - 2) / 2);         // 43
+  EXPECT_FLOAT_EQ(bar->rect.inline_start, rects[1].inline_start + 8);  // (40 − 24) / 2
+}
+
+// 高さが確定しているコンテナでも同じ（used cross size は行の交差サイズ = コンテナの高さ）。
+TEST(LayoutFlex, StretchedItemCentersItsContentsWithDefiniteContainerHeight) {
+  FakeMeasurer measurer;
+  const auto root = build({flex({flex({block({}, sized(24, 2))},
+                                      [](ComputedStyle& style) {
+                                        style.width = Dimension::px(40);
+                                        style.align_items = AlignItems::Center;
+                                      })},
+                                [](ComputedStyle& style) { style.height = Dimension::px(100); })});
+  const auto tree = run_layout(root, 400, measurer);
+  ASSERT_TRUE(tree.has_value());
+  EXPECT_FLOAT_EQ(item_rects(*tree)[0].block_size, 100);
+  const BlockBox* column = nth_child(container_of(*tree), 0);
+  ASSERT_NE(column, nullptr);
+  const BlockBox* bar = nth_child(*column, 0);
+  ASSERT_NE(bar, nullptr);
+  EXPECT_FLOAT_EQ(bar->rect.block_start, 49);  // (100 − 2) / 2
+}
+
+// (b) 伸びた項目が column の flex なら、主軸が definite になるので justify-content が効く。
+TEST(LayoutFlex, StretchedColumnItemAppliesJustifyContentInTheStretchedHeight) {
+  FakeMeasurer measurer;
+  const auto root =
+      build({flex({tall_card(), flex({block({}, sized(24, 10))}, [](ComputedStyle& style) {
+                     style.width = Dimension::px(40);
+                     style.flex_direction = FlexDirection::Column;
+                     style.justify_content = JustifyContent::FlexEnd;
+                   })})});
+  const auto tree = run_layout(root, 400, measurer);
+  ASSERT_TRUE(tree.has_value());
+  EXPECT_FLOAT_EQ(item_rects(*tree)[1].block_size, kTallCard);
+  const BlockBox* column = nth_child(container_of(*tree), 1);
+  ASSERT_NE(column, nullptr);
+  const BlockBox* bar = nth_child(*column, 0);
+  ASSERT_NE(bar, nullptr);
+  EXPECT_FLOAT_EQ(bar->rect.block_start, kTallCard - 10);  // 78: 下端に付く
+}
+
+// (c) 伸びた項目の中の交差軸の auto マージン（margin-top: auto）も伸ばした高さで解く。
+TEST(LayoutFlex, StretchedItemResolvesAutoCrossMarginInTheStretchedHeight) {
+  FakeMeasurer measurer;
+  const auto root = build(
+      {flex({tall_card(), flex({block({},
+                                      [](ComputedStyle& style) {
+                                        style.width = Dimension::px(24);
+                                        style.height = Dimension::px(10);
+                                        style.margin.top = Dimension::auto_();
+                                      })},
+                               [](ComputedStyle& style) { style.width = Dimension::px(40); })})});
+  const auto tree = run_layout(root, 400, measurer);
+  ASSERT_TRUE(tree.has_value());
+  const BlockBox* column = nth_child(container_of(*tree), 1);
+  ASSERT_NE(column, nullptr);
+  const BlockBox* bar = nth_child(*column, 0);
+  ASSERT_NE(bar, nullptr);
+  EXPECT_FLOAT_EQ(bar->rect.block_start, kTallCard - 10);  // 78
+}
+
+// (d) 変わらないこと 1: 中身がただの段落なら、伸ばしても行の位置は上詰めのまま。
+// 組み直しもしない（ふつうのブロックは definite な高さを自分の矩形にしか使わないので、
+// 組み直しても 1 ビットも変わらない。A22 / A29 の費用を払わない）。
+TEST(LayoutFlex, StretchedPlainBlockKeepsItsContentAtTheTopAndIsNotReLaidOut) {
+  FakeMeasurer measurer;
+  const auto root = build({flex({tall_card(), block({text("短い")})})});
+  Counters counters;
+  const auto tree = run_layout(root, make_options(400), measurer, counters);
+  ASSERT_TRUE(tree.has_value());
+  const std::vector<LogicalRect> rects = item_rects(*tree);
+  ASSERT_EQ(rects.size(), 2U);
+  EXPECT_FLOAT_EQ(rects[1].block_size, kTallCard);
+  const std::vector<const LineBox*> lines = all_lines(*tree);
+  ASSERT_FALSE(lines.empty());
+  EXPECT_FLOAT_EQ(lines.back()->rect.block_start, 0);  // 上詰め
+  // #root・コンテナ・アイテム 2 つで 4 回。伸びたアイテムを組み直していたら 5 回になる
+  EXPECT_EQ(counters.layout_block, 4U);
+}
+
+// (d) 変わらないこと 2: 高さが確定している項目は stretch の対象外なので組み直さない。
+TEST(LayoutFlex, ItemWithDefiniteHeightIsNotStretchedNorReLaidOut) {
+  FakeMeasurer measurer;
+  const auto root =
+      build({flex({tall_card(), flex({block({}, sized(24, 2))}, [](ComputedStyle& style) {
+                     style.width = Dimension::px(40);
+                     style.height = Dimension::px(20);
+                     style.align_items = AlignItems::Center;
+                   })})});
+  const auto tree = run_layout(root, 400, measurer);
+  ASSERT_TRUE(tree.has_value());
+  EXPECT_FLOAT_EQ(item_rects(*tree)[1].block_size, 20);
+  const BlockBox* column = nth_child(container_of(*tree), 1);
+  ASSERT_NE(column, nullptr);
+  const BlockBox* bar = nth_child(*column, 0);
+  ASSERT_NE(bar, nullptr);
+  EXPECT_FLOAT_EQ(bar->rect.block_start, 9);  // (20 − 2) / 2
+}
+
+// (e) column 方向は今までどおり: 交差軸は幅なので、stretch は組む前に反映されている。
+// 伸びるのは幅だけで、高さ（主軸）は内容のまま = 入れ子の flex の交差サイズも内容のまま。
+TEST(LayoutFlex, ColumnStretchDoesNotMakeTheItemBlockSizeDefinite) {
+  FakeMeasurer measurer;
+  const auto root =
+      build({flex({flex({block({}, sized(24, 2)), block({}, sized(24, 20))},
+                        [](ComputedStyle& style) { style.align_items = AlignItems::Center; })},
+                  [](ComputedStyle& style) {
+                    style.flex_direction = FlexDirection::Column;
+                    style.height = Dimension::px(100);
+                  })});
+  const auto tree = run_layout(root, 400, measurer);
+  ASSERT_TRUE(tree.has_value());
+  const std::vector<LogicalRect> rects = item_rects(*tree);
+  ASSERT_EQ(rects.size(), 1U);
+  EXPECT_FLOAT_EQ(rects[0].inline_size, 400);  // 交差軸（幅）は伸びる
+  EXPECT_FLOAT_EQ(rects[0].block_size, 20);    // 主軸（高さ）は内容のまま
+  const BlockBox* inner = nth_child(container_of(*tree), 0);
+  ASSERT_NE(inner, nullptr);
+  const BlockBox* bar = nth_child(*inner, 0);
+  ASSERT_NE(bar, nullptr);
+  EXPECT_FLOAT_EQ(bar->rect.block_start, 9);  // 自分の行の交差サイズ 20 の中央
 }
 
 // column の stretch は幅を伸ばす（伸ばした幅で中身を組む）。

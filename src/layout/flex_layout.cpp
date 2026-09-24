@@ -460,51 +460,89 @@ void resolve_flexible_lengths(std::vector<Item>& items, bool row, bool main_defi
 
 // ---- 配置 -----------------------------------------------------------------------
 
+Result<void> layout_item(LayoutEngine& engine, Item& item, bool row) {
+  BoxSizing sizing;
+  sizing.margin = item.margin;
+  sizing.padding = item.padding;
+  sizing.border = item.border;
+  if (row) {
+    sizing.content_inline_size = item.target;
+    sizing.content_block_size = item.cross_definite;
+  } else {
+    sizing.content_inline_size = item.cross;
+    sizing.content_block_size = item.target;
+  }
+  // border-box の原点を (0, 0) に置いて組み、あとで最終位置へ平行移動する
+  Result<BlockBox> box =
+      engine.layout_block(item.input, sizing, item.border + item.padding.inline_start, 0);
+  if (!box) {
+    return std::unexpected(box.error());
+  }
+  item.box = std::move(*box);
+  return {};
+}
+
 Result<void> layout_items(LayoutEngine& engine, std::vector<Item>& items, bool row) {
   for (Item& item : items) {
-    BoxSizing sizing;
-    sizing.margin = item.margin;
-    sizing.padding = item.padding;
-    sizing.border = item.border;
-    if (row) {
-      sizing.content_inline_size = item.target;
-      sizing.content_block_size = item.cross_definite;
-    } else {
-      sizing.content_inline_size = item.cross;
-      sizing.content_block_size = item.target;
+    if (const Result<void> laid = layout_item(engine, item, row); !laid) {
+      return laid;
     }
-    // border-box の原点を (0, 0) に置いて組み、あとで最終位置へ平行移動する
-    Result<BlockBox> box =
-        engine.layout_block(item.input, sizing, item.border + item.padding.inline_start, 0);
-    if (!box) {
-      return std::unexpected(box.error());
-    }
-    item.box = std::move(*box);
   }
   return {};
 }
 
-// 単一行なので「行の交差サイズ」= コンテナの交差サイズ。row の stretch はここで適用する。
-float resolve_line_cross(std::vector<Item>& items, bool row, bool cross_definite,
+// 単一行なので「行の交差サイズ」= コンテナの交差サイズ。
+float resolve_line_cross(const std::vector<Item>& items, bool row, bool cross_definite,
                          float cross_size) {
-  float line_cross = cross_size;
-  if (!cross_definite) {
-    line_cross = 0;
-    for (const Item& item : items) {
-      line_cross = std::max(line_cross, box_cross(item, row) + margin_cross_start(item, row) +
-                                            margin_cross_end(item, row));
-    }
+  if (cross_definite) {
+    return cross_size;
   }
-  if (!row) {
-    return line_cross;  // column の stretch は幅なので、組む前に反映ずみ
-  }
-  for (Item& item : items) {
-    if (item.stretch) {  // 箱の高さを伸ばすだけ。中身は上詰めのまま（再レイアウト不要）
-      item.box.rect.block_size =
-          std::max(line_cross - margin_cross_start(item, row) - margin_cross_end(item, row), 0.0F);
-    }
+  float line_cross = 0;
+  for (const Item& item : items) {
+    line_cross = std::max(line_cross, box_cross(item, row) + margin_cross_start(item, row) +
+                                          margin_cross_end(item, row));
   }
   return line_cross;
+}
+
+// 伸ばした交差サイズを知って組み直す必要がある項目か（A54）。
+//
+// 組み直しが要るのは、項目が自分で flex コンテナのときだけ。ふつうのブロックは definite な
+// content_block_size を**自分の矩形にしか使わない**（子の BoxSizing には伝わらない: block
+// 方向の `%` は未対応）ので、組み直しても 1 ビットも変わらない。その矩形は下の
+// apply_cross_stretch() が書き換える。入れ子の深さ d に対して費用が 2^d にならないように、
+// 省けるものは省く（A22 / A29）。
+bool contents_depend_on_cross_size(const Item& item) {
+  return !item.replaced && !item.input.anonymous && item.style != nullptr &&
+         item.style->display == style::Display::Flex;
+}
+
+// row の stretch（CSS Flexbox §9.4 step 11 / §9.8）。伸ばした交差サイズは definite なので、
+// 中身がその値に依存する項目は、その値を与えてもう一度組む。column の stretch は幅なので
+// 組む前に反映ずみ（prepare_cross_column）。
+Result<void> apply_cross_stretch(LayoutEngine& engine, std::vector<Item>& items, bool row,
+                                 float line_cross) {
+  if (!row) {
+    return {};
+  }
+  for (Item& item : items) {
+    if (!item.stretch) {
+      continue;
+    }
+    const float outer =
+        std::max(line_cross - margin_cross_start(item, row) - margin_cross_end(item, row), 0.0F);
+    // 伸び幅が 0（= この項目が行の交差サイズを決めた）なら、組み直しても中身は動かない。
+    // 判定は同じ入力から同じ結果になる（決定性は保たれる）
+    if (contents_depend_on_cross_size(item) && std::abs(outer - box_cross(item, row)) > kEpsilon) {
+      item.cross_definite = std::max(outer - cross_extra(item, row), 0.0F);
+      if (const Result<void> laid = layout_item(engine, item, row); !laid) {
+        return laid;
+      }
+    }
+    // 箱の外形は伸ばした値そのもの（content から足し直すと丸めで 1 ulp ずれうる）
+    item.box.rect.block_size = outer;
+  }
+  return {};
 }
 
 struct MainPlacement {
@@ -691,6 +729,10 @@ Result<BlockBox> layout_flex(LayoutEngine& engine, const BlockInput& input, cons
   }
 
   const float line_cross = resolve_line_cross(items, row, cross_definite, cross_size);
+  if (const Result<void> stretched = apply_cross_stretch(engine, items, row, line_cross);
+      !stretched) {
+    return std::unexpected(stretched.error());
+  }
   const float container_main = main_definite ? main_size : content_main_size(items, row, gap);
   const MainPlacement placement =
       items.empty() ? MainPlacement{}

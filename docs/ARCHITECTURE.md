@@ -1614,6 +1614,53 @@ definite ならその値」で、**`flex-basis` は含まれない**。
 - **残った不整合**: `docs/guide/writing-html-for-shashoku.md` §3-(3)「flex 項目の `span` は block 化されない」は
   この判断で失効する（ガイドは別の作業で直す）
 
+
+**A54. stretch で伸びた flex 項目は、行の交差サイズを definite として中身を組み直す
+（CSS Flexbox 1 §9.4 step 11）。**
+（2026-09-24）
+
+row の flex で `align-items: stretch`（既定）のアイテムは、箱の高さだけ行の交差サイズに伸ばし、
+**中身は伸ばす前の高さで組んだまま**だった。そのため、伸びた列の中の `align-items: center` が
+効かず、矢印の線・アイコン・区切りが列の上端に張り付いた。
+
+- **経緯**: A52 / A53 後の再測定（`docs/benchmark/results_a53_2026-09-24.md` §3）の case02 で、
+  `flex: none; width: 24px; display: flex; align-items: center` の矢印の列が、隣のカードの高さに
+  伸びたのに `→` が上端に残り、**図として読めなかった**（エラーも警告も出ない）。
+  A47 の関門: 依頼集の実例があり（図解・フローは依頼集の主要な形）、修正の手間ではなく
+  「診断に出ない壊れ方」なので、AI は直しようがない
+- **仕様**: §9.4 step 11（Determine the used cross size of each flex item）は「`align-self: stretch` で
+  交差サイズが auto なら、used cross size は行の交差サイズから交差軸のマージンを引いたもの。
+  **その値は definite として扱う**（`%` の子が解決できるように）」。§9.8 も同じ趣旨
+- **決めたこと**: 行の交差サイズ（`line_cross`）を決めたあと、stretch で伸びるアイテムについて
+  `content_block_size = line_cross − 交差軸のマージン − 交差軸の padding − border × 2` を
+  definite として**中身をもう一度組む**（`apply_cross_stretch()`）。伸びないアイテム
+  （`height` がある・`align-items` が stretch でない・交差軸に auto マージンがある・置換要素）は
+  対象外。column 方向は交差軸が幅で、組む前に `prepare_cross_column()` が決めているので**変えない**
+- **組み直しを省く 2 つの条件**（A22 / A29 の費用。入れ子の深さ d に対して 2^d にしないため）:
+  1. **アイテム自身が flex コンテナのときだけ組み直す**。ふつうのブロックは definite な
+     `content_block_size` を**自分の矩形にしか使わない**（子の `BoxSizing` には伝わらない。
+     block 方向の `%` は未対応 = `resolve_box()` がエラーにする）ので、組み直しても 1 ビットも
+     変わらない。矩形は今までどおり伸ばす
+  2. **伸び幅が 0 のアイテム**（= その行の交差サイズを決めたアイテム）は省く。伸ばす前と
+     同じ高さで組むので座標が変わらない。判定は `|outer − 箱の交差サイズ| > 1/1024`（既存の
+     `kEpsilon`）。同じ入力からは同じ判定になる（決定性は保たれる）
+  これで「1 段に 1 アイテムの入れ子の鎖」は今までどおり線形に収まる
+  （`tests/layout/complexity_test.cpp` の `2d² + 32` の予算を通る）。**残る最悪値**は
+  「row の flex が入れ子になり、各段で stretch するアイテムが flex コンテナで、かつ
+  背の高い兄弟がいる」ときの 2^d で、これは未対応（実測は不要と判断。実文書の入れ子は数段）
+- **箱の外形は伸ばした値そのものを書き戻す**。content から足し直すと丸めで 1 ulp ずれうるので、
+  組み直しのあとに `rect.block_size = line_cross − マージン` を入れ直す
+- **コンテナの高さが確定しているときも同じ**（`height` を書いた flex の中でも起きていた）。
+  §9.4 step 11 は行の交差サイズの出どころを区別していない
+- **確かめたこと**: `dev` / `asan` とも全件（dev 1285 件）通り、**ゴールデン画像は 1 枚も変わらない**。
+  `examples/*.html` 5 本と `docs/guide/examples/*.html` 14 本を、修正前後の release バイナリで
+  それぞれの「そのまま貼れる 1 行」の引数で描き、**19 本すべてバイト単位で一致**。
+  依頼集の最終 HTML 25 件（`docs/benchmark/2026-09-24-a53/`）では **2 件だけ変わった**:
+  (1) `guided_ja/case02`（この不具合そのもの。矢印 4 本が列の縦中央に来た = Chrome と同じ）、
+  (2) `fix/case02`（stretch した列が column flex なので主軸が definite になり、
+  `flex: 1 1 auto` の中身が余り 0.23px を吸収した。連絡線と注記が 0.23px 下がる。仕様どおり）。
+  どちらも目視した
+
 ---
 
 ## 2. モジュールと依存
@@ -2126,6 +2173,17 @@ std::string dump_json(const BoxTree&);
     `<img>` は内容サイズより縮めない
   - 配分（§9.7-4d）はこの下限で clamp する。**下限の合計がコンテナを超えればはみ出す**
     （紙面から出れば `content-overflow` の警告。§3.8 のはみ出し検査）
+
+  **row の stretch で伸ばした交差サイズは definite として扱う**（§9.4 step 11 / §9.8。A54）:
+  `align-items: stretch`（既定）で交差サイズ（`height`）が auto の非置換アイテムは、
+  「行の交差サイズ − 交差軸のマージン」を used cross size にし、**その値を与えて中身をもう一度組む**。
+  こうしないと、入れ子の flex の `align-items` / column の `justify-content` / 交差軸の
+  `margin: auto` / `flex-grow` が、伸ばす前の高さで解かれたまま残る。組み直すのは
+  **アイテム自身が flex コンテナのとき**だけで（ふつうのブロックは definite な高さを自分の矩形に
+  しか使わない。block 方向の `%` は未対応なので子には伝わらない）、**伸び幅が 0** のアイテム
+  （= 行の交差サイズを決めたアイテム）も省く。どちらも絵は変わらず、A22 / A29 の費用を払わない。
+  column の交差軸は幅で、組む前に決まっている（`prepare_cross_column()`）ので今までどおり 1 回で組む
+
   アイテムの max-content / min-content は `kUnbounded` と `min_content_width()` で測る
   （`overflow-wrap: break-word` の分割位置は min-content に数えない。A35 = CSS Text 3 §5.4。
   したがって `flex: 1` + `break-word` の子は 1 行ぶんの幅より縮まない。Chrome と同じ）。

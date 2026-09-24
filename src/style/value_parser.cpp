@@ -133,11 +133,16 @@ std::optional<PropertyName> lookup_property(std::string_view name) {
 // 「未対応です」だけでは手がかりがゼロで、試用の最初の 1 枚で詰まるため。
 // A46 以降、この一言は `RenderError::hint` に入れる（message には混ぜない）。
 //
-// 載せてよいのは 2 種類だけ:
+// 載せてよいのは 3 種類だけ:
 //   (1) **shashoku で実際に同じ結果が出せると確かめた**代替
-//       （tests/style/error_test.cpp の検査と、CLI の `--dump-stage box` で 1 つずつ確認済み）
+//       （tests/style/error_test.cpp の検査と、CLI で 1 枚ずつ描いて確認済み）
 //   (2) **削ると危険な組**（A46。宣言を消した結果が「文字が消える」になるもの）の警告。
 //       代替ではないが、黙って消させるほうが害が大きい
+//   (3) **条件つきの代替**（A53）。無条件の置き換えにしない: 見た目が変わる代替
+//       （gradient → 単色、片側の border → 1px の div）は「変わる」と書き、成立条件
+//       （親が既定の flex か、など）を添える。宣言だけから条件を判定できないときは
+//       代替を断定せず、ガイドの節番号（`docs/guide/writing-html-for-shashoku.md §4.3` 等。
+//       英語版も同じ番号）を示す
 // 表に無い名前（綴り間違い・そもそも知らないプロパティ）には何も足さない:
 // 間違った助言をするくらいなら、何も言わないほうがよい。
 // 代替が無いもの（縦中横）は「未実装」とだけ言う。
@@ -146,25 +151,47 @@ struct HintEntry {
   std::string_view hint;
 };
 
+// 複数の名前（と値）が共有する hint。文面を 1 か所にまとめる（A53）。
+constexpr std::string_view kPerSideBorderHint =
+    "no per-side borders. For a divider between boxes, insert a `div` with `height: 1px` (or "
+    "`width: 1px` in a row) and a background color; it takes 1px of layout space (guide §4.3). "
+    "For one edge of a box frame there is no equivalent: use a full `border` or drop it";
+constexpr std::string_view kGridHint =
+    "no grid. For equal-width columns in one row, use `display: flex` on the parent and "
+    "`flex: 1 1 0` on each child (guide §4.3); for several rows, one flex row per line "
+    "(guide §4.2). Unequal or spanning grids have no equivalent";
+constexpr std::string_view kMinMaxSizeHint =
+    "no min/max sizes: use a fixed `width` / `height`, or drop it";
+
 constexpr auto kPropertyHints = std::to_array<HintEntry>({
     // (2) 削ると危険な組（docs/guide/writing-html-for-shashoku.md §5）。
     // `-webkit-background-clip` も接頭辞を外してこの行に当たる
     {"background-clip",
      "no background clipping: if you drop this, also drop `color: transparent` or the text "
      "disappears"},
+    {"background-image",
+     "no background images: use a solid `background-color`, or an `<img>` passed with `--image`"},
     {"box-sizing", "content-box only: subtract padding and border from `width` / `height`"},
     {"flex-wrap", "single-line flex only: use one flex container per row"},
     {"float", "no floats: use `display: flex` to put boxes side by side"},
+    {"grid-area", kGridHint},
     // CSS Box Alignment 3 §8.4 の legacy gap properties。写し先（`gap` / `row-gap` /
     // `column-gap`）は 3 つとも対応しているが、shashoku に grid は無く flex に `grid-gap` と
-    // 書く動機もないので別名そのものは入れない（A35）。案内だけする
+    // 書く動機もないので別名そのものは入れない（A35）。案内だけする。
+    // **grid の hint より先に引く**ので、名前が一致するこの 3 つは legacy の案内のまま
+    {"grid-column", kGridHint},
     {"grid-column-gap", "legacy name: use `column-gap`"},
     {"grid-gap", "legacy name: use `gap`"},
+    {"grid-row", kGridHint},
     {"grid-row-gap", "legacy name: use `row-gap`"},
-    {"max-height", "no min/max resolution: use a fixed `height`"},
-    {"max-width", "no min/max resolution: use a fixed `width`"},
-    {"min-height", "no min/max resolution: use a fixed `height`"},
-    {"min-width", "no min/max resolution: use a fixed `width`"},
+    {"max-height", kMinMaxSizeHint},
+    {"max-width", kMinMaxSizeHint},
+    // `min-height` だけは「削ってよい条件」が宣言の外（親）にあるので、条件を添える（A53）
+    {"min-height",
+     "no min/max sizes. If the parent is a flex container with the default `align-items: "
+     "stretch`, drop it (the item already fills the cross size); if the height is known, use "
+     "`height`; otherwise drop it and let the content decide the height"},
+    {"min-width", kMinMaxSizeHint},
     {"position", "no positioning: use `display: flex` with `justify-content` / `align-items`"},
     {"text-combine-upright", "tate-chu-yoko is not implemented"},
 });
@@ -174,6 +201,39 @@ std::string_view exact_hint_for(std::string_view name) {
     if (entry.name == name) {
       return entry.hint;
     }
+  }
+  return {};
+}
+
+// 片側だけの border（`border-top` `-right` `-bottom` `-left` と、その
+// `-width` / `-style` / `-color` の 16 通り）を接頭辞の一致で 1 つの規則にする（A53）。
+// `border-top-left-radius` のような**角**の指定には当てない: 罫の助言は別物になる。
+std::string_view border_side_hint(std::string_view name) {
+  constexpr auto kSides = std::to_array<std::string_view>(
+      {"border-top", "border-right", "border-bottom", "border-left"});
+  for (const std::string_view side : kSides) {
+    if (!name.starts_with(side)) {
+      continue;
+    }
+    const std::string_view rest = name.substr(side.size());
+    if (rest.empty() || rest == "-width" || rest == "-style" || rest == "-color") {
+      return kPerSideBorderHint;
+    }
+  }
+  return {};
+}
+
+// 名前そのものから引く hint（ベンダー接頭辞は外さない）。無ければ空。
+// 表の完全一致を先に見るので、`grid-column-gap` は grid の接頭辞規則に飲み込まれない。
+std::string_view direct_hint_for(std::string_view name) {
+  if (const std::string_view exact = exact_hint_for(name); !exact.empty()) {
+    return exact;
+  }
+  if (const std::string_view side = border_side_hint(name); !side.empty()) {
+    return side;
+  }
+  if (name.starts_with("grid-template") || name.starts_with("grid-auto-")) {
+    return kGridHint;
   }
   return {};
 }
@@ -194,8 +254,8 @@ std::string_view strip_vendor_prefix(std::string_view name) {
 
 // 対応外のプロパティ名に添える hint。無ければ空。
 std::string hint_for(std::string_view name) {
-  if (const std::string_view exact = exact_hint_for(name); !exact.empty()) {
-    return std::string{exact};
+  if (const std::string_view direct = direct_hint_for(name); !direct.empty()) {
+    return std::string{direct};
   }
   const std::string_view base = strip_vendor_prefix(name);
   if (base.empty()) {
@@ -207,8 +267,8 @@ std::string hint_for(std::string_view name) {
   }
   // 外しても対応外なら、外した名前の助言をそのまま使う
   // （`-webkit-background-clip` → `background-clip` の「削ると危険」）
-  if (const std::string_view exact = exact_hint_for(base); !exact.empty()) {
-    return std::string{exact};
+  if (const std::string_view direct = direct_hint_for(base); !direct.empty()) {
+    return std::string{direct};
   }
   return {};
 }
@@ -241,6 +301,16 @@ std::unexpected<Error> bad_value(const Ctx& ctx, std::string_view detail) {
               ctx.location);
 }
 
+// **値レベルの hint**（A53）。プロパティ名では分からない代替（`display: grid` /
+// `background: linear-gradient(…)`）に使う。message は `bad_value()` と同じで、
+// 代替だけを `RenderError::hint` に入れる（A46。message には混ぜない）。
+std::unexpected<Error> bad_value_with_hint(const Ctx& ctx, std::string_view detail,
+                                           std::string_view hint) {
+  return fail_with_hint(ErrorKind::UnsupportedValue,
+                        std::format("`{}: {}` is not supported ({})", ctx.name, ctx.raw, detail),
+                        ctx.location, std::string{hint});
+}
+
 // float にできない数値（`1e39px` / `1e400px`）。「数値が範囲外」は、em の乗算であふれる
 // `1e38em` と同じ `LimitExceeded` に寄せてある（ARCHITECTURE.md A36）: 利用者から見て
 // この 2 つが別の種類なのは説明しづらい。ここは float の表現範囲なので RenderLimits では
@@ -255,6 +325,9 @@ std::unexpected<Error> out_of_range(const Ctx& ctx) {
 }
 
 constexpr std::string_view kLengthHelp = "supported lengths: <number>px, <number>em, or 0";
+constexpr std::string_view kColorHelp =
+    "supported colors: #rgb, #rgba, #rrggbb, #rrggbbaa, rgb(), rgba(), the 148 CSS color names "
+    "and transparent";
 
 // ---- 値の部品 ----------------------------------------------------------------
 
@@ -360,17 +433,39 @@ std::array<T, 4> expand_sides(const std::vector<T>& values) {
 
 // ---- プロパティごとの値パーサ -------------------------------------------------
 
+// 対応外だと**分かっている** display の値に添える代替（A53 の hint (d)(e)）。
+// 知らない値には何も足さない（間違った助言をしない。A46 / A48 と同じ規則）。
+std::string_view display_value_hint(std::span<const ValueToken> tokens) {
+  constexpr std::string_view kInlineBlockHint =
+      "no inline-block. Inside a flex container the element is already a flex item and takes box "
+      "properties; elsewhere use a flex parent with a `flex: none` child (guide §3-(4))";
+  if (tokens.size() != 1 || tokens[0].kind != ValueToken::Kind::Ident) {
+    return {};
+  }
+  const std::string lower = ascii_lower(tokens[0].text);
+  if (lower == "grid") {
+    return kGridHint;
+  }
+  if (lower == "inline-block") {
+    return kInlineBlockHint;
+  }
+  return {};
+}
+
 Result<void> parse_display(const Ctx& ctx, std::span<const ValueToken> tokens,
                            std::vector<Declaration>& out) {
+  constexpr std::string_view kHelp = "supported: block, flex, inline, none";
   constexpr std::array<KeywordEntry<Display>, 4> kTable = {{
       {"block", Display::Block},
       {"flex", Display::Flex},
       {"inline", Display::Inline},
       {"none", Display::None},
   }};
-  Result<Display> value =
-      single_keyword(ctx, tokens, kTable, "supported: block, flex, inline, none");
+  Result<Display> value = single_keyword(ctx, tokens, kTable, kHelp);
   if (!value) {
+    if (const std::string_view hint = display_value_hint(tokens); !hint.empty()) {
+      return bad_value_with_hint(ctx, kHelp, hint);
+    }
     return std::unexpected(value.error());
   }
   emit(out, ctx, PropertyId::Display, *value);
@@ -669,9 +764,6 @@ Result<void> parse_border(const Ctx& ctx, std::span<const ValueToken> tokens,
 Result<void> parse_color_property(const Ctx& ctx, std::span<const ValueToken> tokens,
                                   PropertyId property, bool allow_current_color,
                                   std::vector<Declaration>& out) {
-  constexpr std::string_view kColorHelp =
-      "supported colors: #rgb, #rgba, #rrggbb, #rrggbbaa, rgb(), rgba(), the 148 CSS color names "
-      "and transparent";
   if (tokens.size() != 1) {
     return bad_value(ctx, kColorHelp);
   }
@@ -880,6 +972,17 @@ Result<void> parse_flex(const Ctx& ctx, std::span<const ValueToken> tokens,
 
 // ---- ディスパッチ ------------------------------------------------------------
 
+// `background` / `background-color` の値にグラデーションが書かれているか（A53 の hint (c)）。
+// `linear-` / `radial-` / `conic-` と `repeating-` 版をまとめて `gradient(` で見る。
+constexpr std::string_view kGradientHint =
+    "no gradients: use one solid `background-color` (the picture becomes flat). If the text uses "
+    "`background-clip: text` with `color: transparent`, drop those too or the text disappears "
+    "(guide §5)";
+
+bool has_gradient(std::string_view raw) {
+  return ascii_lower(raw).find("gradient(") != std::string::npos;
+}
+
 Result<void> parse_by_name(PropertyName property, const Ctx& ctx,
                            std::span<const ValueToken> tokens, std::vector<Declaration>& out) {
   constexpr DimensionOptions kWidthOptions{.allow_percent = true, .allow_negative = false};
@@ -924,6 +1027,11 @@ Result<void> parse_by_name(PropertyName property, const Ctx& ctx,
       return parse_single_length(ctx, tokens, PropertyId::BorderRadius, false, out);
     case PropertyName::Background:
     case PropertyName::BackgroundColor:
+      // 値レベルの hint（A53 の (c)）。linear / radial / conic と `repeating-` 版を
+      // まとめて `gradient(` で見る。message は色の一覧のまま変えない
+      if (has_gradient(ctx.raw)) {
+        return bad_value_with_hint(ctx, kColorHelp, kGradientHint);
+      }
       return parse_color_property(ctx, tokens, PropertyId::BackgroundColor, false, out);
     case PropertyName::FlexDirection:
       return parse_flex_direction(ctx, tokens, out);

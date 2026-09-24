@@ -62,6 +62,9 @@ Outcome collect_sheet(std::string_view css) {
   return collect(test_root(test_style_element(css), test_element("div")));
 }
 
+// 宣言の位置が付くことまで見る（fail loudly は「どこが原因か」まで含めて成り立つ）。
+constexpr SourceLocation kStyleAttribute{.offset = 41, .line = 3, .column = 9};
+
 struct Case {
   std::string_view css;
   ErrorKind kind;
@@ -138,18 +141,37 @@ TEST(StyleError, UnsupportedPropertyMessageNamesTheProperty) {
 // ここが実質的な表の写しなので、表を増やしたらこの配列も増やす。
 constexpr auto kHintedProperties = std::to_array<std::string_view>({
     "background-clip",
+    "background-image",
     "box-sizing",
     "flex-wrap",
     "float",
+    "grid-area",
+    "grid-auto-columns",
+    "grid-auto-flow",
+    "grid-auto-rows",
+    "grid-column",
     "grid-column-gap",
     "grid-gap",
+    "grid-row",
     "grid-row-gap",
+    "grid-template-areas",
+    "grid-template-columns",
+    "grid-template-rows",
     "max-height",
     "max-width",
     "min-height",
     "min-width",
     "position",
     "text-combine-upright",
+    // 片側だけの border は接頭辞の一致で 1 つの規則になっている（A53 の hint (a)）
+    "border-top",
+    "border-right",
+    "border-bottom",
+    "border-left",
+    "border-top-width",
+    "border-right-style",
+    "border-bottom-color",
+    "border-left-width",
 });
 
 TEST(StyleError, KnownUnsupportedPropertiesCarryAHint) {
@@ -172,7 +194,7 @@ TEST(StyleError, HintsNameTheVerifiedAlternative) {
     std::string_view css;
     std::string_view needle;
   };
-  const std::array<Hint, 12> cases{{
+  const std::array<Hint, 13> cases{{
       {"box-sizing: border-box", "content-box"},
       // CSS Box Alignment 3 §8.4 の legacy gap properties。写し先は 3 つとも対応済みだが、
       // shashoku に grid は無く flex に `grid-gap` と書く動機もないので別名は入れない（A35）。
@@ -184,6 +206,7 @@ TEST(StyleError, HintsNameTheVerifiedAlternative) {
       {"min-width: 200px", "`width`"},
       {"max-height: 200px", "`height`"},
       {"min-height: 200px", "`height`"},
+      {"background-image: url(x.png)", "`background-color`"},
       {"float: left", "display: flex"},
       {"position: absolute", "display: flex"},
       {"flex-wrap: wrap", "single-line"},
@@ -240,7 +263,8 @@ TEST(StyleError, BackgroundClipWarnsAboutTheDangerousPair) {
 }
 
 // (c) inline への箱プロパティ。`display: block` でも通るが文の流れが切れるので、
-// **宣言を削る**ほうを勧める（A46 の 2。検証 C の観察）。
+// **宣言を削る**ほうを勧める（A46 の 2。検証 C の観察）。A53 のあとは「独立した箱なら
+// flex アイテムにする」という**成立条件つきの代替**も添える。
 TEST(StyleError, InlineBoxPropertyHintPrefersDroppingTheDeclaration) {
   const Outcome outcome =
       collect(test_root(test_element("span", {test_attr("style", "padding: 4px")})));
@@ -249,16 +273,178 @@ TEST(StyleError, InlineBoxPropertyHintPrefersDroppingTheDeclaration) {
   EXPECT_EQ(error.kind, ErrorKind::UnsupportedLayout);
   EXPECT_NE(error.hint.find("drop the declaration"), std::string::npos) << error.hint;
   EXPECT_NE(error.hint.find("display: block"), std::string::npos) << error.hint;
+  // 条件つきの代替（tag / pill / badge なら flex アイテムにする）とガイドの節番号
+  EXPECT_NE(error.hint.find("display: flex"), std::string::npos) << error.hint;
+  EXPECT_NE(error.hint.find("guide §3-(4)"), std::string::npos) << error.hint;
   // message のほうには代替を書かない
   EXPECT_EQ(error.message.find("drop the declaration"), std::string::npos) << error.message;
+}
+
+// ---- 条件つきの hint（A53 / A48 の追記）---------------------------------------------
+//
+// ユーザーの方針: **hint は無条件の置き換えにしない**。見た目が変わる代替（gradient → 単色、
+// border → 1px の div）と、同じ結果を保てる修正を区別し、成立条件を添える。宣言だけから
+// 条件を判定できないときは代替を断定せず、ガイドの節番号（`docs/guide/…` の §4.3 など）を示す。
+
+// (a) 片側だけの `border-*`。罫は 1px の div で置ける（レイアウトを 1px 食う）が、
+// 箱の枠の一辺には等価な書き方が無い。
+TEST(StyleError, PerSideBorderPropertiesHintAtTheOnePixelDivider) {
+  for (const std::string_view css :
+       {"border-top: 1px solid red", "border-right: 1px solid red", "border-bottom-width: 1px",
+        "border-left-style: solid", "border-top-color: red"}) {
+    SCOPED_TRACE(css);
+    const Outcome outcome = collect_inline(css);
+    ASSERT_EQ(outcome.errors.size(), 1U);
+    const RenderError& error = outcome.errors.front();
+    EXPECT_EQ(error.kind, ErrorKind::UnsupportedProperty);
+    EXPECT_NE(error.hint.find("height: 1px"), std::string::npos) << error.hint;
+    EXPECT_NE(error.hint.find("guide §4.3"), std::string::npos) << error.hint;
+    // 等価でない側は断定しない
+    EXPECT_NE(error.hint.find("no equivalent"), std::string::npos) << error.hint;
+  }
+}
+
+// 角の丸め（`border-top-left-radius`）は別物なので、罫の助言を当てない。
+TEST(StyleError, PerSideBorderHintDoesNotLeakIntoCornerRadius) {
+  for (const std::string_view css :
+       {"border-top-left-radius: 4px", "border-bottom-right-radius: 4px"}) {
+    SCOPED_TRACE(css);
+    const Outcome outcome = collect_inline(css);
+    ASSERT_EQ(outcome.errors.size(), 1U);
+    EXPECT_TRUE(outcome.errors.front().hint.empty()) << outcome.errors.front().hint;
+  }
+}
+
+// (b) min / max。`min-height` だけは「親が既定の flex なら削ってよい」という条件を添える。
+TEST(StyleError, MinHeightHintNamesTheFlexStretchCondition) {
+  const Outcome outcome = collect_inline("min-height: 80px");
+  ASSERT_EQ(outcome.errors.size(), 1U);
+  const RenderError& error = outcome.errors.front();
+  EXPECT_EQ(error.kind, ErrorKind::UnsupportedProperty);
+  EXPECT_NE(error.hint.find("align-items: stretch"), std::string::npos) << error.hint;
+  EXPECT_NE(error.hint.find("`height`"), std::string::npos) << error.hint;
+  EXPECT_NE(error.hint.find("drop it"), std::string::npos) << error.hint;
+}
+
+TEST(StyleError, OtherMinMaxHintsOfferAFixedSizeOrDropping) {
+  for (const std::string_view css : {"max-height: 80px", "min-width: 80px", "max-width: 80px"}) {
+    SCOPED_TRACE(css);
+    const Outcome outcome = collect_inline(css);
+    ASSERT_EQ(outcome.errors.size(), 1U);
+    const RenderError& error = outcome.errors.front();
+    EXPECT_NE(error.hint.find("no min/max sizes"), std::string::npos) << error.hint;
+    EXPECT_NE(error.hint.find("drop it"), std::string::npos) << error.hint;
+    // `min-height` だけの条件はここには出ない
+    EXPECT_EQ(error.hint.find("align-items: stretch"), std::string::npos) << error.hint;
+  }
+}
+
+// (c) グラデーション。プロパティ名では分からないので**値レベルの hint**（A53）。
+TEST(StyleError, GradientValuesCarryAValueLevelHint) {
+  for (const std::string_view css :
+       {"background: linear-gradient(90deg, #fff, #000)",
+        "background-color: radial-gradient(#fff, #000)", "background: conic-gradient(#fff, #000)",
+        "background: repeating-linear-gradient(45deg, #fff, #000)"}) {
+    SCOPED_TRACE(css);
+    const Outcome outcome = collect_inline(css, kStyleAttribute);
+    ASSERT_EQ(outcome.errors.size(), 1U) << css;
+    const RenderError& error = outcome.errors.front();
+    EXPECT_EQ(error.kind, ErrorKind::UnsupportedValue) << error.message;
+    EXPECT_EQ(error.location.value_or(SourceLocation{}), kStyleAttribute);
+    EXPECT_NE(error.hint.find("no gradients"), std::string::npos) << error.hint;
+    // 見た目が変わることと、削ると危険な組を明記する
+    EXPECT_NE(error.hint.find("flat"), std::string::npos) << error.hint;
+    EXPECT_NE(error.hint.find("background-clip"), std::string::npos) << error.hint;
+  }
+  // gradient でない対応外の色には値レベルの hint を付けない
+  const Outcome plain = collect_inline("background-color: hsl(0, 100%, 50%)");
+  ASSERT_EQ(plain.errors.size(), 1U);
+  EXPECT_TRUE(plain.errors.front().hint.empty()) << plain.errors.front().hint;
+}
+
+TEST(StyleError, BackgroundImageHintsAtASolidColorOrAnImgTag) {
+  const Outcome outcome = collect_inline("background-image: url(x.png)");
+  ASSERT_EQ(outcome.errors.size(), 1U);
+  const RenderError& error = outcome.errors.front();
+  EXPECT_EQ(error.kind, ErrorKind::UnsupportedProperty);
+  EXPECT_NE(error.hint.find("background-color"), std::string::npos) << error.hint;
+  EXPECT_NE(error.hint.find("--image"), std::string::npos) << error.hint;
+}
+
+// (d) grid。プロパティ（`grid-template-*` など）と値（`display: grid`）で同じ hint。
+TEST(StyleError, GridPropertiesAndTheGridDisplayValueShareOneHint) {
+  for (const std::string_view css :
+       {"grid-template-columns: 1fr 1fr", "grid-template-rows: auto", "grid-template-areas: \"a\"",
+        "grid-area: a", "grid-column: 1 / 3", "grid-row: 1", "grid-auto-flow: row",
+        "grid-auto-rows: 1fr", "grid-auto-columns: 1fr"}) {
+    SCOPED_TRACE(css);
+    const Outcome outcome = collect_inline(css);
+    ASSERT_EQ(outcome.errors.size(), 1U);
+    const RenderError& error = outcome.errors.front();
+    EXPECT_EQ(error.kind, ErrorKind::UnsupportedProperty) << error.message;
+    EXPECT_NE(error.hint.find("flex: 1 1 0"), std::string::npos) << error.hint;
+    EXPECT_NE(error.hint.find("guide §4.2"), std::string::npos) << error.hint;
+    EXPECT_NE(error.hint.find("no equivalent"), std::string::npos) << error.hint;
+  }
+  const Outcome value = collect_inline("display: grid", kStyleAttribute);
+  ASSERT_EQ(value.errors.size(), 1U);
+  EXPECT_EQ(value.errors.front().kind, ErrorKind::UnsupportedValue);
+  EXPECT_EQ(value.errors.front().location.value_or(SourceLocation{}), kStyleAttribute);
+  EXPECT_NE(value.errors.front().hint.find("flex: 1 1 0"), std::string::npos)
+      << value.errors.front().hint;
+}
+
+// legacy gap の 3 つは写し先が対応済みなので、grid の hint に飲み込まれない（A35）。
+TEST(StyleError, LegacyGapPropertiesKeepTheirOwnHint) {
+  for (const std::string_view css :
+       {"grid-gap: 4px", "grid-row-gap: 4px", "grid-column-gap: 4px"}) {
+    SCOPED_TRACE(css);
+    const Outcome outcome = collect_inline(css);
+    ASSERT_EQ(outcome.errors.size(), 1U);
+    EXPECT_NE(outcome.errors.front().hint.find("legacy name"), std::string::npos)
+        << outcome.errors.front().hint;
+  }
+}
+
+// (e) `display: inline-block`（値）。flex の中かどうかで書き方が変わるので両方を言う。
+TEST(StyleError, InlineBlockValueHintsAtTheFlexItem) {
+  const Outcome outcome = collect_inline("display: inline-block", kStyleAttribute);
+  ASSERT_EQ(outcome.errors.size(), 1U);
+  const RenderError& error = outcome.errors.front();
+  EXPECT_EQ(error.kind, ErrorKind::UnsupportedValue);
+  EXPECT_EQ(error.location.value_or(SourceLocation{}), kStyleAttribute);
+  EXPECT_NE(error.hint.find("flex: none"), std::string::npos) << error.hint;
+  EXPECT_NE(error.hint.find("guide §3-(4)"), std::string::npos) << error.hint;
+}
+
+// 対応外だと分かっていない display の値には何も足さない（間違った助言をしない）。
+TEST(StyleError, OtherDisplayValuesGetNoHint) {
+  for (const std::string_view css : {"display: table", "display: contents", "display: blahblah"}) {
+    SCOPED_TRACE(css);
+    const Outcome outcome = collect_inline(css);
+    ASSERT_EQ(outcome.errors.size(), 1U);
+    EXPECT_EQ(outcome.errors.front().kind, ErrorKind::UnsupportedValue);
+    EXPECT_TRUE(outcome.errors.front().hint.empty()) << outcome.errors.front().hint;
+  }
+}
+
+// ベンダー接頭辞を外して引き直す経路は、足した規則にも効く（A48）。
+TEST(StyleError, VendorPrefixesReachTheNewHintRulesToo) {
+  EXPECT_NE(
+      collect_inline("-webkit-border-top: 1px solid red").errors.front().hint.find("height: 1px"),
+      std::string::npos);
+  EXPECT_NE(collect_inline("-moz-min-height: 80px").errors.front().hint.find("align-items"),
+            std::string::npos);
+  // 既存の動作（`-webkit-background-clip`）を壊さない
+  EXPECT_NE(collect_inline("-webkit-background-clip: text").errors.front().hint.find("disappear"),
+            std::string::npos);
 }
 
 // 表に無い名前（綴り間違い・そもそも知らないプロパティ）には何も足さない。
 // 間違った助言をするくらいなら、何も言わないほうがよい。
 TEST(StyleError, UnknownPropertiesGetNoHint) {
-  for (const std::string_view css :
-       {"floatt: left", "-webkit-line-clamp: 2", "grid-template-columns: 1fr 1fr",
-        "text-orientation: upright"}) {
+  for (const std::string_view css : {"floatt: left", "-webkit-line-clamp: 2",
+                                     "border-top-left-radius: 4px", "text-orientation: upright"}) {
     SCOPED_TRACE(css);
     const Outcome outcome = collect_inline(css);
     ASSERT_EQ(outcome.errors.size(), 1U);
@@ -372,9 +558,6 @@ constexpr std::string_view kNegativeLength =
     "negative lengths are only allowed for `margin` and `letter-spacing`";
 constexpr std::string_view kNegativePercent = "negative percentages are not allowed";
 constexpr std::string_view kNonNegativeNumber = "expected a non-negative number";
-
-// 宣言の位置が付くことまで見る（fail loudly は「どこが原因か」まで含めて成り立つ）。
-constexpr SourceLocation kStyleAttribute{.offset = 41, .line = 3, .column = 9};
 
 struct ValueCase {
   std::string_view css;
@@ -759,6 +942,116 @@ TEST(StyleError, BoxPropertyOnInlineIsFineWhenDisplayIsChanged) {
   const html::Node tree =
       test_root(test_element("span", {test_attr("style", "display: block; width: 10px")}));
   EXPECT_TRUE(resolve_for_test(tree).has_value());
+}
+
+// ---- A53: flex コンテナの直接の子は block 化されるので箱プロパティを取れる -------------
+//
+// 再現（`docs/benchmark/results_a46_2026-09-23.md` §2 の pill / タグ / バッジ 8 件）:
+// `display: flex` の親の中の `<span>` に padding を付けると `unsupported-layout` になっていた。
+
+TEST(StyleError, BoxPropertiesOnFlexChildrenAreAccepted) {
+  const html::Node tree = test_root(test_parent(
+      "div", {test_attr("style", "display: flex; gap: 8px")},
+      test_parent("span", {test_attr("style", "padding: 4px 8px; border-radius: 8px")},
+                  test_text("政策")),
+      test_parent("span", {test_attr("style", "display: inline; margin: 2px; width: 40px")},
+                  test_text("AI"))));
+  const Outcome outcome = collect(tree);
+  EXPECT_TRUE(outcome.errors.empty())
+      << (outcome.errors.empty() ? "" : outcome.errors.front().message);
+}
+
+// 文中の inline（flex の子でない span）は今までどおり弾く。
+TEST(StyleError, BoxPropertiesOnInlineElementsInRunningTextAreStillRejected) {
+  const html::Node tree = test_root(
+      test_parent("p", {}, test_text("文中の "),
+                  test_parent("span", {test_attr("style", "padding: 4px")}, test_text("語")),
+                  test_text(" のまわり")));
+  const Outcome outcome = collect(tree);
+  ASSERT_EQ(outcome.errors.size(), 1U);
+  EXPECT_EQ(outcome.errors.front().kind, ErrorKind::UnsupportedLayout);
+}
+
+// 孫は block 化されないので、flex の中でも文中の span は弾く。
+TEST(StyleError, BoxPropertiesOnFlexGrandchildrenAreStillRejected) {
+  const html::Node tree = test_root(
+      test_parent("div", {test_attr("style", "display: flex")},
+                  test_parent("div", {}, test_text("前 "),
+                              test_element("span", {test_attr("style", "padding: 4px")}))));
+  const Outcome outcome = collect(tree);
+  ASSERT_EQ(outcome.errors.size(), 1U);
+  EXPECT_EQ(outcome.errors.front().kind, ErrorKind::UnsupportedLayout);
+}
+
+// 例外の `<ruby>` は inline のままなので、箱プロパティは flex の中でも弾く。
+TEST(StyleError, BoxPropertiesOnRubyInAFlexContainerAreStillRejected) {
+  const html::Node tree = test_root(
+      test_parent("div", {test_attr("style", "display: flex")},
+                  test_parent("ruby", {test_attr("style", "padding: 4px")}, test_text("漢"),
+                              test_parent("rt", {}, test_text("かん")))));
+  const Outcome outcome = collect(tree);
+  ASSERT_EQ(outcome.errors.size(), 1U);
+  EXPECT_EQ(outcome.errors.front().kind, ErrorKind::UnsupportedLayout);
+}
+
+// `<img>` は前から例外（置換要素）。flex の中でも箱プロパティを取れる。
+TEST(StyleError, ImgInAFlexContainerKeepsTakingBoxProperties) {
+  const html::Node tree =
+      test_root(test_parent("div", {test_attr("style", "display: flex")},
+                            test_element("img", {test_attr("src", "x"),
+                                                 test_attr("style", "width: 24px; margin: 2px")})));
+  EXPECT_TRUE(resolve_for_test(tree).has_value());
+}
+
+// ---- 計算値の診断の重複（A48 の追記）-----------------------------------------------
+//
+// 1 つの規則に複数の要素が一致すると、計算値の検査が要素ごとに同じ診断を出していた
+// （V2-fix の case03 / 06 / 09 で `unsupported-layout` が同一位置・同一文面で 2 件）。
+
+TEST(StyleError, ComputedDiagnosticsFromOneRuleAreReportedOnce) {
+  const html::Node tree =
+      test_root(test_style_element(".tag { border: 1px solid #000; padding: 3px 12px }"),
+                test_parent("p", {}, test_element("span", {test_attr("class", "tag")}),
+                            test_element("span", {test_attr("class", "tag")})));
+  const Outcome outcome = collect(tree);
+  ASSERT_EQ(outcome.errors.size(), 1U) << "同じ (kind, 位置, 文面) は 1 件だけ";
+  EXPECT_EQ(outcome.errors.front().kind, ErrorKind::UnsupportedLayout);
+}
+
+TEST(StyleError, ComputedDiagnosticsFromDifferentRulesAreBothReported) {
+  const html::Node tree =
+      test_root(test_style_element(".a { padding: 3px } .b { padding: 3px }"),
+                test_parent("p", {}, test_element("span", {test_attr("class", "a")}),
+                            test_element("span", {test_attr("class", "b")})));
+  const Outcome outcome = collect(tree);
+  EXPECT_EQ(outcome.kinds(),
+            (std::vector<ErrorKind>{ErrorKind::UnsupportedLayout, ErrorKind::UnsupportedLayout}));
+  EXPECT_NE(outcome.errors.at(0).location.value_or(SourceLocation{}),
+            outcome.errors.at(1).location.value_or(SourceLocation{}));
+}
+
+// 同じ宣言でも `style` 属性は要素ごとに位置が違うので、2 件とも出る。
+TEST(StyleError, TheSameDeclarationInSeparateInlineStylesIsReportedTwice) {
+  constexpr SourceLocation kFirst{.offset = 20, .line = 2, .column = 6};
+  constexpr SourceLocation kSecond{.offset = 60, .line = 3, .column = 6};
+  const html::Node tree = test_root(
+      test_parent("p", {}, test_element("span", {test_attr("style", "padding: 4px", kFirst)}),
+                  test_element("span", {test_attr("style", "padding: 4px", kSecond)})));
+  const Outcome outcome = collect(tree);
+  ASSERT_EQ(outcome.errors.size(), 2U);
+  EXPECT_EQ(outcome.errors.at(0).location.value_or(SourceLocation{}), kFirst);
+  EXPECT_EQ(outcome.errors.at(1).location.value_or(SourceLocation{}), kSecond);
+}
+
+// 重複を落としても、規則の単位の診断（対応外のプロパティ）は今までどおり 1 件のまま。
+TEST(StyleError, DeduplicationDoesNotTouchDeclarationLevelDiagnostics) {
+  const html::Node tree =
+      test_root(test_style_element(".tag { float: left }"),
+                test_parent("p", {}, test_element("span", {test_attr("class", "tag")}),
+                            test_element("span", {test_attr("class", "tag")})));
+  const Outcome outcome = collect(tree);
+  ASSERT_EQ(outcome.errors.size(), 1U);
+  EXPECT_EQ(outcome.errors.front().kind, ErrorKind::UnsupportedProperty);
 }
 
 // ---- writing-mode の規則（A1）----------------------------------------------------

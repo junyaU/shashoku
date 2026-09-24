@@ -15,6 +15,11 @@ namespace shashoku {
 enum class WarningKind : std::uint8_t {
   MissingGlyph,  // どのフォントにもグリフがないコードポイントがあった（豆腐。A31 / A43）
   ContentOverflow,  // 箱（行・置換要素・ブロック）が出力の紙面の外に出ていて、その部分が切れる（A46）
+  // `font-family` で要求したフォントがどれも読み込まれておらず、要求を満たさないフォントで描いた（A57）。
+  // 「満たした」= 並びのどれかが読み込んだフォントの family 名に一致した、または `sans-serif` /
+  // `system-ui` / `ui-sans-serif` があった（既定のフォールバックがサンセリフ）。`serif` / `monospace` などの
+  // 他の総称は解釈できないので、それしか無ければ満たしていない
+  FontNotFound,
 };
 
 // ContentOverflow で、最大の超過量を出した紙面の辺（物理。縦書きでも Bottom は物理の下）。
@@ -26,6 +31,7 @@ struct Warning {
   // 人が読むための説明。位置が分かっていれば末尾に付く（RenderError と同じ " at L:C"）。
   // 例: "no font has a glyph for U+1F600 at 3:14"
   //     "content overflows the canvas by 42.5px (bottom) at 12:3"
+  //     "no requested font family is loaded (`Hiragino Mincho ProN`, `serif`); text uses `Noto Sans JP` instead at 3:14"
   std::string detail;
   // MissingGlyph のときの該当コードポイント（他の種類では 0）
   char32_t codepoint = 0;
@@ -33,6 +39,8 @@ struct Warning {
   // 文字単位の桁ではない: 文字参照（`&#x1F600;`）や空白の畳み込みを遡らないと正確に
   // 出せないので、正確に出せない桁を出すより「どのノードか」に留めてある。
   // ContentOverflow: はみ出した箱を作った要素の位置（最も外側の該当要素）。
+  // FontNotFound: その font-family の並びを使うテキストノードのうち、入力順で最初のものの**先頭**の位置
+  // （宣言の位置ではない。並びごとに 1 件。A57）。
   std::optional<SourceLocation> location;
   // ContentOverflow のとき、紙面の外に出た量の最大（CSS px、正の値）。他の種類では 0
   float overflow_px = 0.0F;
@@ -42,7 +50,7 @@ struct Warning {
   bool operator==(const Warning&) const = default;
 };
 
-// "missing-glyph" / "content-overflow" のようなケバブケースの識別子
+// "missing-glyph" / "content-overflow" / "font-not-found" のようなケバブケースの識別子
 std::string_view to_string(WarningKind kind) noexcept;
 
 // "top" / "right" / "bottom" / "left"。None は ""

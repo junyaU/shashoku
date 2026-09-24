@@ -1614,6 +1614,31 @@ definite ならその値」で、**`flex-basis` は含まれない**。
 - **残った不整合**: `docs/guide/writing-html-for-shashoku.md` §3-(3)「flex 項目の `span` は block 化されない」は
   この判断で失効する（ガイドは別の作業で直す）
 
+**A57. `font-family` の要求をどのフォントでも満たせなかったら警告する（`FontNotFound`）。
+線引きは「要求を満たせたか」で、クラスが当たらないような「正常な選択」は警告しない。**
+（2026-09-24、ユーザーの決定。契約はオーケストレーターが先に書いた。実装は別作業）
+
+- **経緯**: 再測定（`docs/benchmark/results_a53_2026-09-24.md` §3）で、普段の AI の HTML 10 件中 4 件が明朝を
+  指定していたのに、黙ってゴシック（既定の Noto Sans JP）で描かれた。豆腐は警告するのに、フォント名の取りこぼしは
+  無言だった。ユーザー: 「黙って fallback は原則（fail loudly）に反する。新しい警告 + strict で失敗、が妥当」
+- **線引き**: 警告するのは「要求を満たせなかった」ときだけ。満たせた = `font-family` の並びのどれかが読み込んだ
+  フォントの family 名に一致した、または並びに `sans-serif` / `system-ui` / `ui-sans-serif` があった（既定の
+  フォールバックがサンセリフなので実際に満たしている）。`serif` / `monospace` などの他の総称は shashoku が解釈できない
+  （読み飛ばす。A15）ので、それしか無ければ満たせていない。**総称だけの並びを一律に免除しない**（それは黙った fallback
+  の温存になる）。`sans-serif` だけは「満たしている」から警告しないのであって、例外ではない
+- **種類**: 公開ヘッダに `WarningKind::FontNotFound`（`font-not-found`）を足す。警告（描画は続く）。
+  `--strict` / `warnings_as_errors` で失敗にできる。明朝 → ゴシックは「読める」壊れ方なのでエラーにしない
+- **位置と件数**: 並びごとに 1 件。位置は、その並びを使うテキストノードのうち入力順で最初のものの先頭
+  （豆腐と同じ流儀。宣言の位置は ② が持っていないので、AI は文面の family 名で宣言を探す）
+- **段**: ④ が `ShapedText::family_request_unmet` で事実を返し（溜めない）、③ が `BoxTree::font_fallbacks` に
+  並びごとに溜め（重複除去・順序）、api が `Warning` に写す（A31 / A43 と同じ経路）。layout のテストは
+  偽の TextMeasurer でフラグを立てて確かめる
+- **文面**: `no requested font family is loaded (\`A\`, \`B\`); text uses \`Noto Sans JP\` instead at L:C`。
+  直し方は文面に含める（`--font` でそのフォントを渡す、または `font-family` を外す）
+- **確かめること（実装時に追記）**: a_plain の case03 / 05 / 07 / 10 で 1 件ずつ出ること、`sans-serif` だけの
+  入力では出ないこと、guided 15 件（ガイドどおり `font-family` を書かない）で出ないこと、ゴールデンと examples の
+  絵が不変なこと
+
 ---
 
 ## 2. モジュールと依存
@@ -1837,6 +1862,11 @@ class FreeTypeGlyphSource final : public raster::GlyphSource { /* FontStore を�
   描けないので次のフォントに送る（`FontStore::has_drawable_glyph()`。A43）。
   同じフォントが続く区間をまとめて HarfBuzz に渡す。結合文字・異体字セレクタ・ZWJ は直前の
   文字と同じ run に入れる（別フォントに割らない）
+- **フォントの要求を満たせたか**（A57）: `ShapedText::family_request_unmet` で返す。満たせた = `font-family` の
+  並びのどれかが FontStore の family 名に一致した、または並びに `sans-serif` / `system-ui` / `ui-sans-serif` が
+  あった（フォールバック列の先頭がサンセリフである前提）。空の並びは満たしている。`serif` / `monospace` などの
+  他の総称は解釈できず読み飛ばす（A15）ので、具体名の一致も無ければ「満たせなかった」。**Shaper は溜めない**
+  （警告を組み立てるのは ③。豆腐と同じ）
 - 豆腐: どのフォントでも描けないコードポイントは `ShapedCluster::missing` と
   `missing_reason`（`NotInAnyFont` / `ColorOnly`。文面のためだけの値。A43）で返し（**Shaper は
   溜めない**。警告を組み立てるのは ③ レイアウト。A31）、`□`（U+25A1）を
@@ -2059,6 +2089,11 @@ std::string dump_json(const BoxTree&);
   （`text::MissingReason`。A43））を持つ。**絵には影響しない**
   （paint は読まない）が、api が `Warning` にし、`dump_json()` が出す。
   理由は報告順にも重複除去にも効かない（順序は今までどおり位置 → コードポイント）
+- **フォントの要求を満たせなかった記録（`BoxTree::font_fallbacks`。A57）**: `struct FontFallback {
+  std::vector<std::string> families; SourceLocation location; }`。④ の `ShapedText::family_request_unmet` が
+  true だったテキストの `font-family` の並びを、**並びごとに 1 件**（同じ並びなら入力順で最初のテキストノードの
+  先頭の位置を採る）溜める。同じ段落が何度も組まれても重複しない（豆腐と同じ。キーは並び）。並びは位置の昇順。
+  絵には影響しない。`dump_json()` が出し、api が `Warning`（`FontNotFound`）にする
 - **紙面からのはみ出しの記録（`BoxTree::overflows`。A46）**: `struct ContentOverflow { SourceLocation location;
   float overflow_px; OverflowEdge edge; }` の列（`edge` は実装時に足した。下の細目）。layout の出口で箱を走査し、**箱の border box が出力の矩形の外に 0.5 px を超えて
   出ている**ものを見つける。出力の矩形は幅 `viewport_width`、高さは `viewport_height`（固定のときだけ。省略
@@ -2220,6 +2255,11 @@ HarfBuzz / `src/` の型は名前も出さない（`tests/api/public_header_chec
 どちらも `MissingGlyph`。
 api は並べ替えない（順序を決めるのは ③ の仕事）。CLI は `warning[missing-glyph]: <detail>` を
 stderr に出す。
+**フォントの要求を満たせなかった警告（A57）**: `BoxTree::font_fallbacks` を `WarningKind::FontNotFound`
+（識別子 `font-not-found`）に写す。`detail` は
+`no requested font family is loaded (\`Hiragino Mincho ProN\`, \`serif\`); text uses \`Noto Sans JP\` instead`
+（実際に描いたフォールバック列の先頭の family 名）+ ` at L:C`。`codepoint` は 0、`overflow_px` は 0、`edge` は null。
+警告なので描画は続き、`warnings_as_errors` で失敗にできる（豆腐と同じ）。CLI は `warning[font-not-found]: <detail>`。
 
 **診断の組み立て（A46）**: api は `Diagnostics diag{opts.limits.max_diagnostics}` を作り、`html::parse` と
 `style::resolve` に渡す。**②の出口のゲートは 1 か所**（`check_computed_limits` のあと）で、`diag.has_errors()` なら

@@ -10,6 +10,8 @@ std::string_view to_string(WarningKind kind) noexcept {
       return "missing-glyph";
     case WarningKind::ContentOverflow:
       return "content-overflow";
+    case WarningKind::FontNotFound:
+      return "font-not-found";
   }
   return "unknown";
 }

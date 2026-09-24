@@ -1,0 +1,57 @@
+<!-- en03: incident response flow, width 1000. nested flex (guide 4.13) + spacer note (guide 4.7)
+     step outer = 135 + 12*2 + 1*2 = 161, arrow 24, gap 6
+     5*161 + 4*24 + 8*6 = 949 <= 952 (= 1000 - 24*2)
+     Mitigate is the 3rd step: 161 + 24 + 161 + 24 + 4*6 = 394 -> spacer 394px -->
+<style>
+  .doc    { background: #ffffff; }
+  .head   { padding: 24px 24px 0 24px; font-size: 20px; font-weight: bold; color: #1b2733; }
+  .flow   { display: flex; align-items: center; gap: 6px; padding: 18px 24px 0 24px; }
+  .step   { flex: none; width: 135px; padding: 14px 12px; border: 1px solid #ccd3dd;
+            border-radius: 10px; background: #f4f7fb; }
+  .no     { font-size: 11px; color: #6b7a90; }
+  .name   { margin: 4px 0 6px 0; font-size: 17px; font-weight: bold; line-height: 1.4;
+            color: #1b2733; }
+  .desc   { font-size: 13px; line-height: 1.5; color: #44546a; }
+  .arrow  { flex: none; width: 24px; text-align: center; font-size: 22px; color: #9aa7b8; }
+  .notes  { display: flex; padding: 10px 24px 24px 24px; }
+  .sp     { flex: none; width: 394px; }
+  .note   { flex: none; font-size: 13px; line-height: 1.5; color: #b0421c; }
+</style>
+<div class="doc">
+  <div class="head">Incident response flow</div>
+  <div class="flow">
+    <div class="step">
+      <div class="no">1</div>
+      <div class="name">Detect</div>
+      <div class="desc">Monitors and<br>alerts fire</div>
+    </div>
+    <div class="arrow">&#8594;</div>
+    <div class="step">
+      <div class="no">2</div>
+      <div class="name">Triage</div>
+      <div class="desc">Assess severity<br>and blast radius</div>
+    </div>
+    <div class="arrow">&#8594;</div>
+    <div class="step">
+      <div class="no">3</div>
+      <div class="name">Mitigate</div>
+      <div class="desc">Roll back, or<br>apply a hotfix</div>
+    </div>
+    <div class="arrow">&#8594;</div>
+    <div class="step">
+      <div class="no">4</div>
+      <div class="name">Communicate</div>
+      <div class="desc">Update the status<br>page every 30 min</div>
+    </div>
+    <div class="arrow">&#8594;</div>
+    <div class="step">
+      <div class="no">5</div>
+      <div class="name">Postmortem</div>
+      <div class="desc">Write the report<br>within five days</div>
+    </div>
+  </div>
+  <div class="notes">
+    <div class="sp"></div>
+    <div class="note">&#8251; If rollback fails twice, page the on-call lead.</div>
+  </div>
+</div>

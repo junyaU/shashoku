@@ -1,0 +1,33 @@
+<style>
+  .card  { padding: 32px; border: 1px solid #ddd8cc; background: #fbfaf6; }
+  .kinds { display: flex; gap: 8px; margin: 0 0 14px 0; }
+  .kind  { flex: none; padding: 4px 12px; border-radius: 12px;
+           background: #e8eee9; color: #43604f; font-size: 13px; font-weight: bold; }
+  .term  { margin: 0 0 20px 0; font-size: 34px; font-weight: bold; line-height: 1.7;
+           color: #23281f; }
+  .label { margin: 0 0 6px 0; font-size: 13px; font-weight: bold; color: #7c8a7f; }
+  .def   { margin: 0 0 22px 0; font-size: 16px; line-height: 1.95; color: #35392f; }
+  .exbox { padding: 16px 18px; border: 1px solid #e3ded0; background: #f4f1e6; }
+  .ex    { margin: 0; font-size: 15px; line-height: 1.85; color: #4a4b3e; }
+  .rule  { height: 1px; margin: 24px 0; background: #e6e1d5; }
+  .rel   { display: flex; align-items: center; gap: 10px; }
+  .relhd { flex: none; font-size: 13px; font-weight: bold; color: #7c8a7f; }
+  .tag   { flex: none; padding: 4px 11px; border-radius: 11px; border: 1px solid #d8d2c2;
+           background: #ffffff; color: #5c6b5f; font-size: 13px; }
+</style>
+<div class="card">
+  <div class="kinds"><div class="kind">用語</div><div class="kind">設計</div></div>
+  <p class="term"><ruby>冪等性<rt>べきとうせい</rt></ruby></p>
+  <p class="label">定義</p>
+  <p class="def">同じ操作を何回繰り返しても、1 回だけ行ったときと結果が変わらない性質のこと。通信の再送や再試行が起きても、受け取る側の状態が二重に進まないことを保証する。</p>
+  <p class="label">具体例</p>
+  <div class="exbox">
+    <p class="ex">同じ注文 ID で決済 API を 2 回呼んでも、二重に課金されない</p>
+  </div>
+  <div class="rule"></div>
+  <div class="rel">
+    <div class="relhd">関連語</div>
+    <div class="tag">リトライ</div>
+    <div class="tag">at-least-once</div>
+  </div>
+</div>

@@ -1,0 +1,57 @@
+<style>
+  .page  { padding: 28px; background: #ffffff; }
+  .h     { margin: 0 0 4px 0; font-size: 22px; font-weight: bold; color: #1b2733; }
+  .lead  { margin: 0 0 22px 0; font-size: 13px; color: #6b7a90; }
+  .step  { display: flex; align-items: flex-start; gap: 16px; margin: 0 0 16px 0; }
+  .badge { flex: none; width: 40px; height: 40px; border-radius: 20px; background: #2f6fd0;
+           color: #ffffff; font-size: 19px; font-weight: bold;
+           text-align: center; line-height: 40px; }
+  .body  { flex: 1 1 0; }
+  .name  { margin: 0 0 4px 0; font-size: 17px; font-weight: bold; line-height: 1.6;
+           color: #1b2733; }
+  .desc  { margin: 0; font-size: 14px; line-height: 1.8; color: #44546a; }
+  .rule  { height: 1px; margin: 0 0 16px 0; background: #eceff4; }
+</style>
+<div class="page">
+  <p class="h">開発環境セットアップ手順</p>
+  <p class="lead">新しく入った人が最初にやること。上から順に進めてください。</p>
+  <div class="step">
+    <div class="badge">1</div>
+    <div class="body">
+      <p class="name">リポジトリの clone</p>
+      <p class="desc">社内 GitHub から作業用リポジトリを取得します。SSH 鍵の登録を先に済ませてください。</p>
+    </div>
+  </div>
+  <div class="rule"></div>
+  <div class="step">
+    <div class="badge">2</div>
+    <div class="body">
+      <p class="name">ツールチェーンの導入</p>
+      <p class="desc">CMake 3.22 以上、Ninja、clang-18 を入れます。版が古いと configure の途中で止まります。</p>
+    </div>
+  </div>
+  <div class="rule"></div>
+  <div class="step">
+    <div class="badge">3</div>
+    <div class="body">
+      <p class="name">依存ライブラリの取得</p>
+      <p class="desc">初回の configure でまとめて取得されます。回線次第で 10 分ほどかかるので待ってください。</p>
+    </div>
+  </div>
+  <div class="rule"></div>
+  <div class="step">
+    <div class="badge">4</div>
+    <div class="body">
+      <p class="name">ビルド</p>
+      <p class="desc">dev プリセットでビルドします。警告はエラー扱いなので、出たらその場で直してください。</p>
+    </div>
+  </div>
+  <div class="rule"></div>
+  <div class="step">
+    <div class="badge">5</div>
+    <div class="body">
+      <p class="name">テストの実行</p>
+      <p class="desc">全テストを走らせ、すべて通れば完了です。落ちたら結果を添えて担当者に相談してください。</p>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,1 @@
+{"ok": false, "width": null, "height": null, "truncated": false, "errors": [{"kind": "image-not-found", "message": "no image named `avatar.png` was given", "hint": "", "line": 112, "column": 11, "offset": 2325, "warning": null}], "warnings": []}

@@ -172,16 +172,22 @@ Result<Intrinsic> item_intrinsic(LayoutEngine& engine, const Item& item, float p
   return engine.content_intrinsic(item.input, percent_basis);
 }
 
-// 主軸のサイズを決めるプロパティ（row なら width、column なら height）と flex-basis。
+// 主軸のサイズプロパティ（row なら width、column なら height）。
+// §4.5 の specified size suggestion はこれで決まり、**flex-basis は入らない**（A52）。
+Dimension main_size_property(const Item& item, const LogicalMap& map, bool row) {
+  if (item.style == nullptr) {
+    return Dimension::auto_();
+  }
+  return row ? map.inline_size(*item.style) : map.block_size(*item.style);
+}
+
+// flex base size（§9.2）を決める指定。flex-basis が auto なら主軸のサイズプロパティ。
 Dimension main_dimension(const Item& item, const LogicalMap& map, bool row) {
   if (item.style == nullptr) {
     return Dimension::auto_();
   }
   const Dimension basis = item.style->flex_basis;
-  if (!basis.is_auto()) {
-    return basis;
-  }
-  return row ? map.inline_size(*item.style) : map.block_size(*item.style);
+  return basis.is_auto() ? main_size_property(item, map, row) : basis;
 }
 
 // ---- 交差軸のサイズ -------------------------------------------------------------
@@ -265,8 +271,12 @@ Result<void> prepare_base_row(LayoutEngine& engine, std::vector<Item>& items, fl
     const Dimension main = main_dimension(item, engine.map(), true);
     item.base =
         main.is_auto() ? content->max_content : std::max(resolve_length(main, main_size), 0.0F);
-    item.min_main =
-        main.is_auto() ? content->min_content : std::min(content->min_content, item.base);
+    // §4.5 の specified size suggestion は **width**。flex-basis は使わない（A52）。
+    // row の `%` は常に確定した基準（コンテナの content 幅）で解けるので definite として扱う
+    const Dimension width = main_size_property(item, engine.map(), true);
+    item.min_main = width.is_auto() ? content->min_content
+                                    : std::min(content->min_content,
+                                               std::max(resolve_length(width, main_size), 0.0F));
     if (item.replaced) {
       item.min_main = std::max(content->min_content, 0.0F);  // 画像は内容サイズより縮めない
     }
@@ -306,7 +316,15 @@ Result<void> prepare_base_column(LayoutEngine& engine, std::vector<Item>& items,
     } else {
       item.base = std::max(main.value, 0.0F);
     }
-    item.min_main = main.is_auto() ? content_height : std::min(content_height, item.base);
+    // §4.5 の specified size suggestion は **height**。flex-basis は使わない（A52）。
+    // 主軸が不定（高さ auto の column）なら `%` の height は definite ではないので、
+    // 内容の高さがそのまま下限になる
+    const Dimension height = main_size_property(item, engine.map(), false);
+    const bool height_definite =
+        !height.is_auto() && (height.kind != Dimension::Kind::Percent || main_definite);
+    item.min_main = height_definite ? std::min(content_height,
+                                               std::max(resolve_length(height, main_size), 0.0F))
+                                    : content_height;
   }
   return {};
 }

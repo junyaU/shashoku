@@ -140,14 +140,16 @@ constexpr std::array<Case, 31> kCases{{
     {Container::Block, Where::Element, Sizing::None, "anywhere", kBox, {"ABC", "DEF", "GH"}},
     {Container::Block, Where::Span, Sizing::None, "anywhere", kBox, {"ABC", "DEF", "GH"}},
 
-    // --- break-word: min-content には効かない。主軸サイズが決まらない flex の子は
+    // --- break-word: min-content には効かない。**width が auto の** flex の子は
     //     1 行ぶんの幅のままはみ出す（Chrome も同じ）。それ以外は anywhere と同じ ---
+    // `flex:1` も width は auto なので、指定なしと同じく 1 行ぶんの幅になる（A52。§4.5 の
+    // specified size suggestion は width で、flex-basis: 0 はここに入らない）
     {Container::FlexRow, Where::Element, Sizing::None, "break-word", kOneLine, {"ABCDEFGH"}},
     {Container::FlexRow, Where::Span, Sizing::None, "break-word", kOneLine, {"ABCDEFGH"}},
     {Container::FlexRow, Where::Element, Sizing::Width, "break-word", kBox, {"ABC", "DEF", "GH"}},
     {Container::FlexRow, Where::Span, Sizing::Width, "break-word", kBox, {"ABC", "DEF", "GH"}},
-    {Container::FlexRow, Where::Element, Sizing::Flex, "break-word", kBox, {"ABC", "DEF", "GH"}},
-    {Container::FlexRow, Where::Span, Sizing::Flex, "break-word", kBox, {"ABC", "DEF", "GH"}},
+    {Container::FlexRow, Where::Element, Sizing::Flex, "break-word", kOneLine, {"ABCDEFGH"}},
+    {Container::FlexRow, Where::Span, Sizing::Flex, "break-word", kOneLine, {"ABCDEFGH"}},
     {Container::FlexColumn, Where::Element, Sizing::None, "break-word", kBox, {"ABC", "DEF", "GH"}},
     {Container::FlexColumn, Where::Span, Sizing::None, "break-word", kBox, {"ABC", "DEF", "GH"}},
     {Container::Block, Where::Element, Sizing::None, "break-word", kBox, {"ABC", "DEF", "GH"}},
@@ -158,8 +160,9 @@ constexpr std::array<Case, 31> kCases{{
     {Container::FlexRow, Where::Span, Sizing::None, "normal", kOneLine, {"ABCDEFGH"}},
     {Container::FlexRow, Where::Element, Sizing::Width, "normal", kBox, {"ABCDEFGH"}},
     {Container::FlexRow, Where::Span, Sizing::Width, "normal", kBox, {"ABCDEFGH"}},
-    {Container::FlexRow, Where::Element, Sizing::Flex, "normal", kBox, {"ABCDEFGH"}},
-    {Container::FlexRow, Where::Span, Sizing::Flex, "normal", kBox, {"ABCDEFGH"}},
+    // `flex:1` の子は自動最小サイズ = min-content（= 1 行ぶん）なのでそこまでしか縮まない（A52）
+    {Container::FlexRow, Where::Element, Sizing::Flex, "normal", kOneLine, {"ABCDEFGH"}},
+    {Container::FlexRow, Where::Span, Sizing::Flex, "normal", kOneLine, {"ABCDEFGH"}},
     {Container::FlexColumn, Where::Element, Sizing::None, "normal", kBox, {"ABCDEFGH"}},
     {Container::FlexColumn, Where::Span, Sizing::None, "normal", kBox, {"ABCDEFGH"}},
     {Container::Block, Where::Element, Sizing::None, "normal", kBox, {"ABCDEFGH"}},

@@ -1498,6 +1498,61 @@ A46 の仕上げ（api + CLI）で決めた細部。仕様は §3.10。
   `examples/*.html` 5 本の PNG は main（c157766）の配布バイナリとバイト単位で一致する
   （増えたのは成功時の `wrote` の行だけ）
 
+**A52. flex アイテムの自動最小サイズは主軸のサイズプロパティ（width / height）で決め、
+flex-basis は使わない（CSS Flexbox §4.5）。**（2026-09-24。仮番号）
+
+CSS Flexbox Level 1 §4.5 "Automatic Minimum Size of Flex Items" は、`min-width: auto` /
+`min-height: auto` の flex アイテムの content-based minimum size を
+**min(specified size suggestion, content size suggestion)** と定義している。
+specified size suggestion は「**主軸のサイズプロパティ**（row なら `width`、column なら `height`）が
+definite ならその値」で、**`flex-basis` は含まれない**。
+
+`src/layout/flex_layout.cpp` はここを `main_dimension()`（flex-basis 優先）で計算していたため、
+`flex: 1 1 0`（`flex: 1` の展開。`style` の `parse_flex` は `1 1 0px` にする）のアイテムの
+最小サイズが **0** になっていた。結果:
+
+- **column**: `flex: 1 1 0` の子が高さ 0 に潰れ、文字が紙面の下に押し出されて消える。
+  再現（幅 480、`width: 400px` + `padding: 8px` の column に `flex: 1 1 0` の子と `flex: none` の子）は
+  修正前 `rect` が `[8, 8, 400, 0]`（PNG 480x40、1 つ目の子の文字が欠ける）、
+  修正後 `[8, 8, 400, 46.34]`（PNG 480x86、2 行とも見える）
+- **row**: `flex: 1 1 0` の子が min-content より縮み、文字が箱の外に描かれる。
+  再現（幅 300 の row に `flex: 1 1 0` の子 2 つ、2 つ目は分割できない長い欧文）は
+  修正前が 150 / 150（文字が箱からあふれる）、修正後が 16 / 400.33（= それぞれの min-content。
+  合計 416.33 がコンテナの 300 を超えるので、紙面から出れば `content-overflow` の警告が出る）
+
+これは A46 後の再検証で「exit 0・警告 0 なのに内容が PNG から消える」と記録した現象の原因
+（`docs/benchmark/results_a46_2026-09-23.md` §3 の a_plain case02 / case04）。ユーザーの方針
+「検出器を作る前に原因を分け、エンジンの不具合なら直す」に従い、エンジン側を直した。
+
+決めたこと:
+
+- **`min_main`（自動最小サイズ）は主軸のサイズプロパティだけを見る**（`main_size_property()`）。
+  row なら `LogicalMap::inline_size`、column なら `block_size`。auto なら内容の min-content
+  （row）/ 内容の高さ（column）そのもの、auto でなければその値と内容サイズの小さい方
+- **`base`（flex base size）は今までどおり `main_dimension()`**（flex-basis 優先）。
+  §9.2 の flex base size と §4.5 の specified size suggestion は別物で、混ぜたのが不具合だった
+- **column で主軸が不定（高さ auto）のとき、`%` の `height` は definite ではない**ので、
+  下限は内容の高さになる。`base` も今までどおり内容の高さ（`%` は解けない）
+- **column で主軸が定まっているとき、伸縮の下限は内容の高さ**。内容がコンテナより高ければ
+  はみ出す（§9.7-4d の最小サイズ違反。Chrome と同じ）
+- **置換要素（`<img>`）は今までどおり内容サイズより縮めない**。column では `resolve_image()` が
+  返す高さがそのまま内容の高さなので、新しい規則でも値は変わらない
+- **`flex_intrinsic()` と `LayoutCache` の鍵は変えない**。`flex_intrinsic()` はアイテムの
+  `width` と内容の固有寸法しか見ておらず、もともと flex-basis を参照していない。`MeasureKey` は
+  `BoxSizing`（= 解決後の `target`）を持つので、下限が変わればそのまま鍵が変わる
+- **確かめたこと**: `dev` / `asan` とも 1253 件すべて通り、**ゴールデン画像は 1 枚も変わらない**。
+  `examples/*.html` 5 本と `docs/guide/examples/*.html` 12 本を README / ガイドに書かれた引数で
+  修正前後のバイナリで描き、**17 本すべてバイト単位で一致**（`flex: 1 1 0` を使う og-card の見出し・
+  list・table・vcenter・row を含む。和文の min-content は 1 文字なので下限に当たらない）。
+  変わったのは `tests/integration/overflow_wrap_test.cpp` の表のうち
+  **`flex: 1` + `overflow-wrap: break-word` / `normal`** の 4 行（× 横書き・縦書き）で、
+  32px（3 行に割れる）から 82.21875px（1 行のままはみ出す）になった。CSS Text 3 §5.4 は
+  `break-word` の分割位置を min-content に数えないと定めており（A35 に引用）、`flex: 1` の
+  `width` は auto なので specified size suggestion が無い。**Chrome も同じで**、
+  「`flex: 1` の子で `break-word` は効かない（`anywhere` を使う）」という周知の挙動に揃った。
+  表の `Sizing::None`（指定なし）の行が前から 82.21875px だったので、**同じ `width: auto` の
+  アイテムが `flex: 1` を書いたときだけ違う、という不整合が消えた**
+
 ---
 
 ## 2. モジュールと依存
@@ -1968,8 +2023,22 @@ std::string dump_json(const BoxTree&);
   行の幅に依らないので、固有寸法の計測と実際の配置で同じものを使える
   （`inline_intrinsic()` の min-content / max-content にもアイテムごとのポリシーが効く）
 - **flex**（Phase 6）: 単一行のみ（`flex-wrap` は対応外）。CSS Flexbox §9 のアルゴリズムのうち、
-  flex-basis の解決 → grow / shrink の配分（min-content を下限に）→ 交差軸の整列 → justify-content → gap。
-  アイテムの max-content / min-content は `kUnbounded` と `min_content_width()` で測る。
+  flex base size の解決 → grow / shrink の配分 → 交差軸の整列 → justify-content → gap。
+  **アイテムの 2 つの下限を取り違えない**（A52）:
+  - **flex base size**（§9.2）は `flex-basis`。auto なら主軸のサイズプロパティ（row は `width`、
+    column は `height`）、それも auto なら内容サイズ（row は max-content、column は
+    「交差軸の幅を決めて組んでみた高さ」）
+  - **自動最小サイズ**（§4.5。`min-width: auto` / `min-height: auto` の content-based minimum size）は
+    **min(specified size suggestion, content size suggestion)**。specified size suggestion は
+    **主軸のサイズプロパティが definite ならその値**で、**`flex-basis` は入らない**。
+    content size suggestion は主軸の min-content（column では内容の高さ）。
+    主軸が不定の column では `%` の `height` は definite ではないので内容の高さが下限になる。
+    `<img>` は内容サイズより縮めない
+  - 配分（§9.7-4d）はこの下限で clamp する。**下限の合計がコンテナを超えればはみ出す**
+    （紙面から出れば `content-overflow` の警告。§3.8 のはみ出し検査）
+  アイテムの max-content / min-content は `kUnbounded` と `min_content_width()` で測る
+  （`overflow-wrap: break-word` の分割位置は min-content に数えない。A35 = CSS Text 3 §5.4。
+  したがって `flex: 1` + `break-word` の子は 1 行ぶんの幅より縮まない。Chrome と同じ）。
   column のアイテムの主軸サイズ（高さ）は「交差軸の幅を決めたうえで部分木を組んでみる」で出すが、
   その**計測**は `LayoutEngine::measure_block_size()` を通してメモする（A29。組み直していたのが
   issue #5 の 2^depth）。配置の `layout_block()` は従来どおり毎回 1 回ずつ実行するので、

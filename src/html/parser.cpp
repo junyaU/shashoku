@@ -18,6 +18,7 @@
 #include "core/result.hpp"
 #include "core/utf8.hpp"
 #include "html/dom.hpp"
+#include "html/tags.hpp"
 #include "shashoku/error.hpp"
 
 namespace shashoku::html {
@@ -34,10 +35,8 @@ constexpr std::string_view kRootTag = "#root";
 // 対応済みの生テキスト要素（中身は ② が読む CSS なので、文字参照を解決せずそのまま残す）。
 constexpr std::string_view kStyleTag = "style";
 
-// 対応タグ・対応属性（ARCHITECTURE.md §3.6）。エラーメッセージに並べるので辞書順に持つ。
-constexpr std::array<std::string_view, 15> kSupportedTags{"br", "div", "h1",   "h2",   "h3",
-                                                          "h4", "h5",  "h6",   "img",  "p",
-                                                          "rp", "rt",  "ruby", "span", "style"};
+// 対応属性（ARCHITECTURE.md §3.6）。エラーメッセージに並べるので辞書順に持つ。
+// 対応タグ（`kSupportedTags` / `is_supported_tag()`）は ② style も引くので `html/tags.hpp`。
 constexpr std::array<std::string_view, 2> kVoidTags{"br", "img"};
 // HTML の空要素のうち shashoku が対応していないもの（A49）。対応外の要素は透過にするが、
 // 空要素には終了タグが無いので、開いている要素のスタックに積むと直後の `</head>` が
@@ -83,8 +82,6 @@ char to_lower(char c) { return (c >= 'A' && c <= 'Z') ? static_cast<char>(c - 'A
 bool contains(std::span<const std::string_view> items, std::string_view value) {
   return std::find(items.begin(), items.end(), value) != items.end();
 }
-
-bool is_supported_tag(std::string_view tag) { return contains(kSupportedTags, tag); }
 
 bool is_void_tag(std::string_view tag) { return contains(kVoidTags, tag); }
 

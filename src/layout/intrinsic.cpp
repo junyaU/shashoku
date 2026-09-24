@@ -121,7 +121,9 @@ Result<Intrinsic> LayoutEngine::outer_intrinsic(const StyledNode& node, float pe
   const Dimension width = map_.inline_size(style);
   // <img> は width / 属性 / 固有寸法の優先順位が別にあるので content_intrinsic に任せる
   if (node.tag != "img" && !width.is_auto()) {
-    const float value = std::max(resolve_length(width, percent_basis), 0.0F);
+    // border-box なら指定値から padding と border を引く（A56）。extra で足し戻すので、
+    // margin-box の外寸は「指定値 + margin」になる
+    const float value = content_from_specified(style, width, percent_basis, SizeAxis::Inline);
     inner = Intrinsic{.min_content = value, .max_content = value};
   } else {
     Result<Intrinsic> content = content_intrinsic(input_of(node), percent_basis);

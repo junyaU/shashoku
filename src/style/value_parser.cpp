@@ -27,6 +27,7 @@ namespace {
 // 対応するプロパティ名（ショートハンドを含む）。DESIGN.md §4 + ARCHITECTURE.md §3.7。
 enum class PropertyName : std::uint8_t {
   Display,
+  BoxSizing,
   Width,
   Height,
   Margin,
@@ -82,6 +83,7 @@ constexpr auto kPropertyNames = std::to_array<NameEntry>({
     {"border-radius", PropertyName::BorderRadius},
     {"border-style", PropertyName::BorderStyle},
     {"border-width", PropertyName::BorderWidth},
+    {"box-sizing", PropertyName::BoxSizing},
     {"color", PropertyName::Color},
     {"column-gap", PropertyName::ColumnGap},
     {"display", PropertyName::Display},
@@ -171,7 +173,6 @@ constexpr auto kPropertyHints = std::to_array<HintEntry>({
      "disappears"},
     {"background-image",
      "no background images: use a solid `background-color`, or an `<img>` passed with `--image`"},
-    {"box-sizing", "content-box only: subtract padding and border from `width` / `height`"},
     {"flex-wrap", "single-line flex only: use one flex container per row"},
     {"float", "no floats: use `display: flex` to put boxes side by side"},
     {"grid-area", kGridHint},
@@ -469,6 +470,21 @@ Result<void> parse_display(const Ctx& ctx, std::span<const ValueToken> tokens,
     return std::unexpected(value.error());
   }
   emit(out, ctx, PropertyId::Display, *value);
+  return {};
+}
+
+Result<void> parse_box_sizing(const Ctx& ctx, std::span<const ValueToken> tokens,
+                              std::vector<Declaration>& out) {
+  constexpr std::array<KeywordEntry<BoxSizing>, 2> kTable = {{
+      {"content-box", BoxSizing::ContentBox},
+      {"border-box", BoxSizing::BorderBox},
+  }};
+  Result<BoxSizing> value =
+      single_keyword(ctx, tokens, kTable, "supported: content-box, border-box");
+  if (!value) {
+    return std::unexpected(value.error());
+  }
+  emit(out, ctx, PropertyId::BoxSizing, *value);
   return {};
 }
 
@@ -991,6 +1007,8 @@ Result<void> parse_by_name(PropertyName property, const Ctx& ctx,
   switch (property) {
     case PropertyName::Display:
       return parse_display(ctx, tokens, out);
+    case PropertyName::BoxSizing:
+      return parse_box_sizing(ctx, tokens, out);
     case PropertyName::Width:
       return parse_single_dimension(ctx, tokens, PropertyId::Width, kWidthOptions, out);
     case PropertyName::Height:
@@ -1105,6 +1123,8 @@ PropertyId single_longhand(PropertyName property) {
   switch (property) {
     case PropertyName::Display:
       return PropertyId::Display;
+    case PropertyName::BoxSizing:
+      return PropertyId::BoxSizing;
     case PropertyName::Width:
       return PropertyId::Width;
     case PropertyName::Height:

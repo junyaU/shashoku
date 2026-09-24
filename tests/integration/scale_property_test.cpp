@@ -53,9 +53,12 @@ constexpr std::string_view kRectsHtml = R"(
 </div>
 )";
 
+// A55: `body` は shashoku の要素にならないので、`body, div` と書くとセレクタが
+// `unsupported-tag` になる（どの要素にも一致しないので診断が出る）。`body` の分はもともと
+// 何にも当たっていなかったので、外しても計算値・ダンプ・絵は変わらない。
 constexpr std::string_view kTextHtml = R"(
 <style>
-  body, div { font-size: 32px; line-height: 1.5; color: #102030; }
+  div { font-size: 32px; line-height: 1.5; color: #102030; }
 </style>
 <div>組版、それは文字を並べる仕事。</div>
 <div>shashoku 1234</div>

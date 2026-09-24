@@ -24,6 +24,10 @@ inline std::string_view to_css(Display value) {
   return "block";
 }
 
+inline std::string_view to_css(BoxSizing value) {
+  return value == BoxSizing::BorderBox ? "border-box" : "content-box";
+}
+
 inline std::string_view to_css(FlexDirection value) {
   return value == FlexDirection::Row ? "row" : "column";
 }
@@ -112,6 +116,8 @@ inline std::string_view to_css(PropertyId value) {
   switch (value) {
     case PropertyId::Display:
       return "display";
+    case PropertyId::BoxSizing:
+      return "box-sizing";
     case PropertyId::Width:
       return "width";
     case PropertyId::Height:

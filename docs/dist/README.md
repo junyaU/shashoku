@@ -48,7 +48,9 @@ C++ ランタイム（libc++ など）は静的リンク済みで、動的に要
 
 - 入力は **HTML の断片**です（`<html>` や `<body>` を書くとエラーになります）。文字コードは UTF-8 のみ
 - 対応していないタグ・プロパティ・値は、**黙って無視せずエラー**になります（原因の位置つき）
-- `box-sizing` は content-box だけ。`width` / `height` は padding と border を**含まない**値です
+- `box-sizing` は `content-box`（既定。ブラウザと同じ）と `border-box` の両方が使えます。既定のままなら
+  `width` / `height` は padding と border を**含まない**値なので、外寸から引き算してください。
+  先頭に `* { box-sizing: border-box }` を書けばその引き算は要りません
 - 画像は PNG のみ。URL もファイルパスも解釈しないので `--image <名前>=<パス>` で渡します
 - 縦書きでは内容が横に伸びるので `--height` が要ります
 - `--font A.otf --font B.otf` で自分のフォントを使えます（**指定順がフォールバック順**）

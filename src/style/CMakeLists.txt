@@ -1,5 +1,5 @@
 # ② スタイル解決: DOM → スタイル付きツリー（ARCHITECTURE.md §3.7）。
-# 依存は core と html/dom.hpp（ヘッダのみ）だけ。
+# 依存は core と html/dom.hpp・html/tags.hpp（ヘッダのみ）だけ。
 shashoku_add_module(style
   SOURCES
     css_tokens.cpp

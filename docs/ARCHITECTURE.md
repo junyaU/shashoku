@@ -1526,7 +1526,7 @@ A46 の仕上げ（api + CLI）で決めた細部。仕様は §3.10。
   （増えたのは成功時の `wrote` の行だけ）
 
 **A52. flex アイテムの自動最小サイズは主軸のサイズプロパティ（width / height）で決め、
-flex-basis は使わない（CSS Flexbox §4.5）。**（2026-09-24。仮番号）
+flex-basis は使わない（CSS Flexbox §4.5）。**（2026-09-24）
 
 CSS Flexbox Level 1 §4.5 "Automatic Minimum Size of Flex Items" は、`min-width: auto` /
 `min-height: auto` の flex アイテムの content-based minimum size を
@@ -1580,10 +1580,9 @@ definite ならその値」で、**`flex-basis` は含まれない**。
   表の `Sizing::None`（指定なし）の行が前から 82.21875px だったので、**同じ `width: auto` の
   アイテムが `flex: 1` を書いたときだけ違う、という不整合が消えた**
 
----
 
 **A53. flex コンテナの直接の子要素は block 化する（CSS Display 3 §2.7）。例外は img / ruby / br。**
-（2026-09-24。仮番号）
+（2026-09-24）
 
 `display: flex` の親の中の `<span>` に `padding` を書くと `unsupported-layout` になっていた。
 仕様（CSS Display 3 §2.7 の blockification、CSS Flexbox 1 §4）では flex コンテナの子はブロック化され、

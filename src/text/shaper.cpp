@@ -69,10 +69,11 @@ constexpr char32_t kTofu = 0x25A1;  // □
   return folded;
 }
 
-// フォールバック列の先頭がサンセリフである前提で「満たせた」と見なす総称ファミリ（A57）。
-// 既定のフォールバック列（FontStore の追加順）の先頭はサンセリフ（既定は Noto Sans JP）なので、
-// これらは実際に要求を満たしている。`serif` / `monospace` などの他の総称は shashoku が
-// 解釈できない（読み飛ばす。A15）ので、ここには入れない。名前は fold_family_name 済みの綴り。
+// 「フォールバック列の先頭で描いてよい」と読む総称ファミリ（A57）。shashoku 固有の解釈で、
+// **先頭がどんな書体でも要求を満たしている**と見なす（`--font` で明朝だけを渡しても警告しない）。
+// エンジンは書体を判定しない（OS/2 の分類も panose も読まない）。`serif` / `monospace` などの
+// 他の総称は「先頭で描いてよい」とは読めない具体的な要求で、shashoku には満たせたか判定できない
+// （読み飛ばす。A15）ので、ここには入れない。名前は fold_family_name 済みの綴り。
 [[nodiscard]] bool is_sans_serif_generic(std::string_view folded) {
   return folded == "sans-serif" || folded == "system-ui" || folded == "ui-sans-serif";
 }
@@ -279,7 +280,7 @@ std::vector<FontId> ShaperImpl::resolve_stack(const TextStyle& style,
     }
     any_request = true;
     if (is_sans_serif_generic(wanted)) {
-      met = true;  // 既定のフォールバック列の先頭がサンセリフなので、実際に満たしている
+      met = true;  // 「フォールバック列の先頭で描いてよい」= 満たしている（書体は判定しない）
     }
     for (std::size_t i = 0; i < groups.size(); ++i) {
       if (groups[i].folded_name == wanted) {

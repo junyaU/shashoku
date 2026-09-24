@@ -18,8 +18,10 @@ enum class WarningKind : std::uint8_t {
   // `font-family` で要求したフォントがどれも読み込まれておらず、
   // 要求を満たさないフォントで描いた（A57）。
   // 「満たした」= 並びのどれかが読み込んだフォントの family 名に一致した、または `sans-serif` /
-  // `system-ui` / `ui-sans-serif` があった（既定のフォールバックがサンセリフ）。
-  // `serif` / `monospace` などの他の総称は解釈できないので、それしか無ければ満たしていない
+  // `system-ui` / `ui-sans-serif` があった。この 3 つは shashoku では
+  // **「読み込んだフォントの先頭で描いてよい」という意味**に読む（`--font` で明朝だけを渡して
+  // いても警告せず、明朝で描く。エンジンは書体を判定しない）。`serif` / `monospace` などの
+  // 他の総称は解釈できないので、それしか無ければ満たしていない
   FontNotFound,
 };
 

@@ -279,6 +279,35 @@ TEST(Diagnostics, NoFontWarningWhenTheRequestIsMet) {
   }
 }
 
+// `sans-serif` / `system-ui` / `ui-sans-serif` は「読み込んだフォントの先頭で描いてよい」という
+// 意味（A57）。**先頭がどんな書体でも満たしている**ので、`--font` を 1 本だけ渡した状態でも
+// 警告は出ない（エンジンは書体を判定しない）。ここでは Noto Sans だけを渡す。
+TEST(Diagnostics, SansSerifGenericsAreMetByWhateverFontWasPassed) {
+  FontSet latin_only;
+  latin_only.add(text::assets::noto_sans());
+
+  for (const std::string_view html : {
+           R"(<div style="font-family: sans-serif">Hello</div>)",
+           R"(<div style="font-family: system-ui">Hello</div>)",
+           R"(<div style="font-family: ui-sans-serif">Hello</div>)",
+           R"(<div style="font-family: 'Noto Sans'">Hello</div>)",
+       }) {
+    const auto result = render(html, latin_only, options_for(320));
+    ASSERT_TRUE(result.has_value()) << to_string(result.error());
+    EXPECT_TRUE(result->warnings.empty()) << html << " / " << result->warnings.size();
+  }
+
+  // 渡していない具体名は、解釈できない総称と並べても満たせない
+  const auto unmet = render(R"(<div style="font-family: 'Noto Sans JP', serif">Hello</div>)",
+                            latin_only, options_for(320));
+  ASSERT_TRUE(unmet.has_value()) << to_string(unmet.error());
+  ASSERT_EQ(unmet->warnings.size(), 1U);
+  EXPECT_EQ(unmet->warnings[0].kind, WarningKind::FontNotFound);
+  // 文面の「実際に使った family」は渡したフォントの先頭（A57 の契約）
+  EXPECT_NE(unmet->warnings[0].detail.find("Noto Sans"), std::string::npos)
+      << unmet->warnings[0].detail;
+}
+
 // 粒度は `font-family` の並びごとに 1 件（宣言が 1 つなら直す箇所も 1 つ）。
 // 同じ並びを何回使っても 1 件で、位置は入力順で最初のテキストノードの先頭。
 TEST(Diagnostics, FontNotFoundIsReportedOncePerFamilyStack) {

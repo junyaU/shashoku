@@ -126,9 +126,10 @@ CSS 変数（`--x`）、`calc()`。
 
 > `font-family` が照合するのは、**渡したフォントが自分で名乗っている family 名**だけです。
 > 並びのどれも満たせないと（渡していない名前と、`serif` / `monospace` などの解釈できない総称しか
-> 書いていないと）**`warning[font-not-found]` が出て、既定のフォントで描かれます**（描画は続きます）。
-> `sans-serif` / `system-ui` / `ui-sans-serif` は既定フォント（サンセリフ）で満たすので
-> 警告は出ません（明朝・等幅にする方法は §7）。
+> 書いていないと）**`warning[font-not-found]` が出て、渡したフォントの先頭で描かれます**（描画は続きます）。
+> `sans-serif` / `system-ui` / `ui-sans-serif` は**「渡したフォントの先頭で描いてよい」**という意味なので
+> 警告は出ません（`--font` で明朝だけを渡していれば明朝で描きます。**shashoku はフォントの書体を
+> 判定しません**）（明朝・等幅にする方法は §7）。
 
 **記号は「フォントに入っているものだけ」出ます。** 入っていない字は □（豆腐）になり
 `warning[missing-glyph]` が出ます。埋め込みの既定フォント（Noto Sans JP）で実際に描いて
@@ -880,8 +881,10 @@ warning[font-not-found]: no requested font family is loaded (`Hiragino Mincho Pr
 `font-not-found` は**`font-family` に書いた名前をどれも満たせず、別のフォントで描いた**という
 意味です（明朝を指定したのにゴシックで出る、が典型）。`--font` でそのフォントを渡すか、
 `font-family` を外すか、`sans-serif` にします。`sans-serif` / `system-ui` / `ui-sans-serif` は
-既定フォント（サンセリフ）で満たすので警告は出ません。`serif` / `monospace` などの総称は
-shashoku が解釈できないので、それだけでは満たせていません（§7）。
+shashoku では**「渡したフォントの先頭で描いてよい」**という意味なので、警告は出ません
+（明朝だけを渡していれば明朝で描きます。**エンジンは書体を判定しません**）。`serif` / `monospace`
+などの総称は「先頭で描いてよい」とは読めない具体的な要求で、shashoku には満たせたか判定できないので、
+それだけでは満たせていません（§7）。
 
 **警告が出ても PNG は作られ、終了コードは 0 です。** 自動配信するなら stderr も見てください。
 **`--strict` を付ければ警告も失敗**になり、PNG は作られません（既にあるファイルも上書きされません）。
@@ -1006,9 +1009,14 @@ shashoku og-card.html -o og.png --width 1200 --height 630 --strict
 **埋め込みの既定フォントは Noto Sans JP の Regular と Bold だけです。**
 `font-family: serif` や `font-family: monospace` と書いても、**字面は 1px も変わりません**
 （解釈できない総称と、渡していないフォントの名前は読み飛ばされます）。ただし黙ってはいません:
-並びのどれも満たせないと **`warning[font-not-found]` が出ます**（`sans-serif` / `system-ui` /
-`ui-sans-serif` は既定フォントで満たすので出ません）。明朝や等幅にするには、そのフォントファイルを
-`--font` で渡してください。
+並びのどれも満たせないと **`warning[font-not-found]` が出ます**。明朝や等幅にするには、そのフォント
+ファイルを `--font` で渡してください。
+
+`sans-serif` / `system-ui` / `ui-sans-serif` だけは警告が出ません。この 3 つは shashoku では
+**「渡したフォントの先頭で描いてよい」**という意味だからです。**明朝だけを `--font` で渡して
+`font-family: sans-serif` と書いた場合も、明朝で描かれて警告は出ません**（shashoku はフォントの
+書体を判定しません）。書体を確実に指定したいなら、総称ではなく**そのフォントが名乗っている
+family 名**を書いてください。
 
 - `font-family` が照合するのは、**フォントファイルが自分で名乗っている family 名**です
   （大文字小文字と前後の空白は無視されます）。`NotoSansJP-Regular.otf` なら `Noto Sans JP`、

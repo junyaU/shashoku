@@ -438,6 +438,30 @@ TEST(TextFamilyRequest, EmptyStackIsMet) {
   EXPECT_FALSE(shape_ok(shaper, U"あ", style).family_request_unmet);
 }
 
+// `sans-serif` / `system-ui` / `ui-sans-serif` は「フォールバック列の先頭で描いてよい」という
+// 意味（A57 の shashoku 固有の解釈）。**先頭がどんなフォントでも満たしている**ことを固定する:
+// ここでは Noto Sans だけを読み込む（既定の Noto Sans JP は無い）= `--font` を 1 つだけ渡した状態。
+TEST(TextFamilyRequest, SansSerifGenericsAreMetWhateverTheFirstFontIs) {
+  FontStore store;
+  ASSERT_TRUE(store.load(noto_sans()).has_value());  // 読み込むのはこの 1 本だけ
+  Shaper shaper(store);
+
+  TextStyle style = style_at();
+  style.font_family = {"sans-serif"};
+  EXPECT_FALSE(shape_ok(shaper, U"A", style).family_request_unmet);
+  style.font_family = {"system-ui"};
+  EXPECT_FALSE(shape_ok(shaper, U"A", style).family_request_unmet);
+  style.font_family = {"ui-sans-serif"};
+  EXPECT_FALSE(shape_ok(shaper, U"A", style).family_request_unmet);
+
+  // 読み込んでいない具体名は、解釈できない総称と並べても満たせない
+  style.font_family = {"Noto Sans JP", "serif"};
+  EXPECT_TRUE(shape_ok(shaper, U"A", style).family_request_unmet);
+  // 読み込んだ family 名は一致する
+  style.font_family = {"Noto Sans"};
+  EXPECT_FALSE(shape_ok(shaper, U"A", style).family_request_unmet);
+}
+
 // フォントを 2 つ以上積んでいても判定は family 名の一致で、太さの違いは関係ない。
 TEST(TextFamilyRequest, MatchesAnyLoadedFamilyRegardlessOfWeight) {
   FontStore store;

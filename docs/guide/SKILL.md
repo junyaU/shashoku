@@ -84,7 +84,8 @@ warning[font-not-found]: no requested font family is loaded (`Hiragino Mincho Pr
 - 同じ規則に複数の要素が当たっても、**同一位置・同一文面の診断は 1 件**にまとまる
 - 警告は `missing-glyph`（豆腐）、`content-overflow`（紙面からのはみ出し。切れる量と辺つき）、
   `font-not-found`（`font-family` の要求をどれも満たせず別のフォントで描いた。`sans-serif` /
-  `system-ui` / `ui-sans-serif` は既定フォントで満たすので出ない）。
+  `system-ui` / `ui-sans-serif` は「渡したフォントの先頭で描いてよい」という意味なので出ない。
+  エンジンは書体を判定しないので、明朝だけを渡して `sans-serif` と書いても明朝で描いて警告なし）。
   警告が出ても PNG は作られ、終了コードは 0
 - **`--strict`** を付けると警告 1 件以上で失敗になり、PNG は作られない（配信前の門に使う）
 - **`--diagnostics json`** で標準出力に 1 オブジェクト（成功でも失敗でも。人向けの stderr は出ない）。

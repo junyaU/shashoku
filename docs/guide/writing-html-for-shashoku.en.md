@@ -131,9 +131,11 @@ pseudo-classes and pseudo-elements (`:hover` `::before`), at-rules (`@media`, `@
 
 > `font-family` only matches the **family name a font file declares for itself**. If nothing in the
 > list can be satisfied (names you did not pass, plus generics shashoku cannot interpret such as
-> `serif` or `monospace`), you get **`warning[font-not-found]` and the text is drawn with the default
-> font** (rendering continues). `sans-serif`, `system-ui` and `ui-sans-serif` are satisfied by the
-> default font (a sans face), so they raise nothing (see §7 for serif and monospace).
+> `serif` or `monospace`), you get **`warning[font-not-found]` and the text is drawn with the first
+> font you passed** (rendering continues). `sans-serif`, `system-ui` and `ui-sans-serif` mean
+> **"the first font passed is fine"** in shashoku, so they raise nothing — pass only a serif face
+> with `--font` and that serif face draws the text, still without a warning. **The engine never
+> classifies a font's style** (see §7 for serif and monospace).
 
 **A symbol only appears if the font has it.** Anything missing renders as □ (tofu) and produces a
 `warning[missing-glyph]`. The list below was checked by actually drawing it with the embedded
@@ -914,9 +916,10 @@ warning[font-not-found]: no requested font family is loaded (`Hiragino Mincho Pr
 `font-not-found` means **none of the families in `font-family` could be satisfied, so another font
 drew the text** (asking for a serif face and getting the sans default is the typical case). Fix it by
 passing that font with `--font`, by dropping `font-family`, or by writing `sans-serif`.
-`sans-serif`, `system-ui` and `ui-sans-serif` are satisfied by the default font, so they raise
-nothing; `serif`, `monospace` and the other generics are not interpreted by shashoku, so on their own
-they are not satisfied (§7).
+`sans-serif`, `system-ui` and `ui-sans-serif` mean **"the first font passed is fine"**, so they raise
+nothing whatever that font is (**the engine does not classify font styles**). `serif`, `monospace`
+and the other generics are a concrete request that shashoku cannot check, so on their own they are
+not satisfied (§7).
 
 **A warning still produces a PNG and still exits 0.** If you publish automatically, read stderr too.
 **`--strict` turns warnings into failures**: no PNG is written and an existing file is left untouched.
@@ -1043,9 +1046,13 @@ shashoku og-card.html -o og.png --width 1200 --height 630 --strict
 **The embedded default font is only Noto Sans JP, Regular and Bold.** Writing
 `font-family: serif` or `font-family: monospace` changes **not one pixel** (generics shashoku cannot
 interpret, and the names of fonts you did not pass, are skipped). It is not silent about it, though:
-if nothing in the list can be satisfied you get **`warning[font-not-found]`** (`sans-serif`,
-`system-ui` and `ui-sans-serif` are satisfied by the default font, so they raise nothing).
+if nothing in the list can be satisfied you get **`warning[font-not-found]`**.
 To get a serif or a monospace face, pass that font file with `--font`.
+
+`sans-serif`, `system-ui` and `ui-sans-serif` are the exception that raises nothing: in shashoku they
+mean **"the first font passed is fine"**. **Pass only a Mincho face and write
+`font-family: sans-serif` and you get Mincho, with no warning** — shashoku never classifies a font's
+style. When the face matters, write the **family name the font declares** instead of a generic.
 
 - `font-family` matches the **family name the font file declares for itself** (case and surrounding
   whitespace are ignored): `Noto Sans JP` for `NotoSansJP-Regular.otf`, `Noto Sans` for

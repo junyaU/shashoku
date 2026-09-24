@@ -177,6 +177,9 @@ error[unsupported-attribute] at 3:6: `onclick` is not supported on `<div>` (supp
 警告は 3 種類で、どれも描画は続きます: 豆腐（どのフォントにもグリフが無い文字。`missing-glyph`）、
 固定した紙面からのはみ出し（`content-overflow`）、`font-family` の要求をどのフォントでも
 満たせなかったこと（`font-not-found`。渡していないフォント名や `serif` だけを指定した場合）。
+`sans-serif` / `system-ui` / `ui-sans-serif` は shashoku では**「渡したフォントの先頭で描いてよい」**
+という意味なので、警告は出ません（`--font` で明朝だけを渡していれば明朝で描きます。
+**エンジンはフォントの書体を判定しません**）。
 
 ```
 $ ./shashoku card.html -o out.png --height 200

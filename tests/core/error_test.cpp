@@ -165,6 +165,7 @@ TEST(FailureToString, ErrorsThenWarningsThenTruncation) {
 TEST(WarningKindToString, CoversEveryKind) {
   EXPECT_EQ(to_string(WarningKind::MissingGlyph), "missing-glyph");
   EXPECT_EQ(to_string(WarningKind::ContentOverflow), "content-overflow");
+  EXPECT_EQ(to_string(WarningKind::FontNotFound), "font-not-found");
 }
 
 // OverflowEdge の全値 → 物理の辺の識別子（A50）。None だけは「辺が無い」ので空文字列。

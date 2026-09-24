@@ -76,6 +76,7 @@ error[unsupported-property] at 84:6: `max-width` is not a supported property
   hint: no min/max sizes: use a fixed `width` / `height`, or drop it
 warning[missing-glyph]: no font has a glyph for U+1F600 at 1:6
 warning[content-overflow]: content overflows the canvas by 430.0px (bottom) at 19:1
+warning[font-not-found]: no requested font family is loaded (`Hiragino Mincho ProN`, `serif`); text uses `Noto Sans JP` instead at 1:57
 ```
 
 - 機械が頼ってよいのは **識別子**（`unsupported-value` など）と **位置**（`行:桁`）。文面は変わりうる
@@ -84,7 +85,10 @@ warning[content-overflow]: content overflows the canvas by 430.0px (bottom) at 1
 - **hint は成立条件つき**のことがある（「親が stretch の flex なら削る」「不等幅・またぎは代替なし」）。
   条件を読んでから選ぶ。hint が無いのは「確かめた代替が無い」という意味
 - 同じ規則に複数の要素が当たっても、**同一位置・同一文面の診断は 1 件**にまとまる
-- 警告は `missing-glyph`（豆腐）と `content-overflow`（紙面からのはみ出し。切れる量と辺つき）。
+- 警告は `missing-glyph`（豆腐）、`content-overflow`（紙面からのはみ出し。切れる量と辺つき）、
+  `font-not-found`（`font-family` の要求をどれも満たせず別のフォントで描いた。`sans-serif` /
+  `system-ui` / `ui-sans-serif` は「渡したフォントの先頭で描いてよい」という意味なので出ない。
+  エンジンは書体を判定しないので、明朝だけを渡して `sans-serif` と書いても明朝で描いて警告なし）。
   警告が出ても PNG は作られ、終了コードは 0
 - **`--strict`** を付けると警告 1 件以上で失敗になり、PNG は作られない（配信前の門に使う）
 - **`--diagnostics json`** で標準出力に 1 オブジェクト（成功でも失敗でも。人向けの stderr は出ない）。

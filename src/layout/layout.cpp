@@ -306,6 +306,9 @@ Result<BoxTree> layout_root(const style::StyledNode& root, const Options& option
   // 豆腐の記録（A31）。同じ段落を計測と配置で何度組んでも重複しないよう LayoutEngine が
   // (位置, コードポイント) で重複を除いて溜めており、並びも決定的（入力位置 → コードポイント）。
   tree.missing_glyphs = engine.missing_glyphs();
+  // font-family の要求を満たせなかった記録（A57）。こちらも並び（= 宣言 1 つに相当）を
+  // キーに LayoutEngine が重複を除いており、並びは入力位置の昇順で決定的。
+  tree.font_fallbacks = engine.font_fallbacks();
   // 段の出口の不変条件（A36）: 出す座標・寸法はすべて有限で上限以内。`%` の解決も
   // 座標の足し算も flex の比も、この段でしか起きない（style では判定できない。A5）。
   // ここで止めないと raster が「非有限な寸法のコマンドは無視する」（§3.3）で黙って捨て、

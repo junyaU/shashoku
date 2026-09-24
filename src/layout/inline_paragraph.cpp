@@ -41,6 +41,9 @@ class ParagraphBuilder {
   // <rt> のルビ文字は chars に無い（RubyGroup::rt_text の中）ので別に拾う。
   void record_missing_ruby(const text::ShapedText& shaped, const std::u32string& rt_text,
                            std::size_t rt_style);
+  // (b'') font-family の要求を満たせなかったことを拾う（A57）。豆腐と同じで Shaper は
+  // 何も溜めないので、事実（ShapedText::family_request_unmet）を見て並びと位置を記録する。
+  void record_font_fallback(const text::ShapedText& shaped, std::size_t style);
   // (c) このアイテムに効く行分割ポリシー（issue #2 / A28）。`style` はアイテムの代表の文字
   // （クラスタ先頭 / <img> / <br> / ルビ組の親文字の先頭）が属する要素の計算値の添字。
   [[nodiscard]] linebreak::Item policy_of(linebreak::Item item, std::size_t style) const {
@@ -72,6 +75,7 @@ Result<std::size_t> ParagraphBuilder::shape_run(std::size_t begin, std::size_t e
   }
   out_->runs.push_back(ShapedRun{.shaping = shaping, .shaped = std::move(*shaped)});
   record_missing(out_->runs.back().shaped, begin);
+  record_font_fallback(out_->runs.back().shaped, out_->chars[begin].style);
   return out_->runs.size() - 1;
 }
 
@@ -99,6 +103,16 @@ void ParagraphBuilder::record_missing_ruby(const text::ShapedText& shaped,
       engine_->record_missing_glyph(rt_text[cluster.text_begin], location, cluster.missing_reason);
     }
   }
+}
+
+// 記録は `font-family` の並びごとに 1 件（位置は入力順で最初のテキストノードの先頭）なので、
+// 重複除去も位置の取り方も LayoutEngine 側に置いてある（A57）。
+void ParagraphBuilder::record_font_fallback(const text::ShapedText& shaped, std::size_t style) {
+  if (!shaped.family_request_unmet) {
+    return;
+  }
+  engine_->record_font_fallback(out_->styles.shaping(style).font_family,
+                                out_->styles.location(style));
 }
 
 Result<void> ParagraphBuilder::build_ruby_item(std::size_t group_index) {
@@ -156,6 +170,7 @@ Result<void> ParagraphBuilder::build_ruby_item(std::size_t group_index) {
   out_->runs.push_back(
       ShapedRun{.shaping = out_->styles.shaping_index(rt_style), .shaped = std::move(*rt_shaped)});
   record_missing_ruby(out_->runs.back().shaped, group.rt_text, rt_style);
+  record_font_fallback(out_->runs.back().shaped, rt_style);
   piece.rt_run = out_->runs.size() - 1;
   piece.rt_style = rt_style;
   for (const text::ShapedCluster& cluster : out_->runs.back().shaped.clusters) {

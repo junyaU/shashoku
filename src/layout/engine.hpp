@@ -1,6 +1,8 @@
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <optional>
 #include <set>
@@ -81,6 +83,17 @@ void translate(BlockBox& box, float delta_inline, float delta_block);
 // engine.hpp は中身を知らない（layout_cache.hpp が engine.hpp を include するため）。
 class LayoutCache;
 
+// 入力位置の前後（報告順。MissingGlyph::operator< と同じ並べ方）。
+[[nodiscard]] inline bool is_earlier(const SourceLocation& a, const SourceLocation& b) {
+  if (a.offset != b.offset) {
+    return a.offset < b.offset;
+  }
+  if (a.line != b.line) {
+    return a.line < b.line;
+  }
+  return a.column < b.column;
+}
+
 class LayoutEngine {
  public:
   // memo: 計測結果のメモ（A29）を使うか。false にすると毎回組み直す（テスト用の口。
@@ -132,6 +145,29 @@ class LayoutEngine {
   }
   [[nodiscard]] std::vector<MissingGlyph> missing_glyphs() const {
     return {missing_glyphs_.begin(), missing_glyphs_.end()};
+  }
+
+  // font-family の要求を満たせなかった記録（A57）。豆腐と同じで、同じ段落が計測と配置で
+  // 何度組まれても増えないよう **`font-family` の並びをキーに** 1 件だけ溜め、位置は
+  // 入力順で最初のテキストノードの先頭（= offset が最小のもの）を採る。
+  void record_font_fallback(const std::vector<std::string>& families,
+                            const SourceLocation& location) {
+    const auto [at, inserted] = font_fallbacks_.try_emplace(families, location);
+    if (!inserted && is_earlier(location, at->second)) {
+      at->second = location;
+    }
+  }
+  // 位置の昇順（同じ位置なら並びの辞書順 = std::map の順）。決定的であること。
+  [[nodiscard]] std::vector<FontFallback> font_fallbacks() const {
+    std::vector<FontFallback> out;
+    out.reserve(font_fallbacks_.size());
+    for (const auto& [families, location] : font_fallbacks_) {
+      out.push_back(FontFallback{.families = families, .location = location});
+    }
+    std::stable_sort(out.begin(), out.end(), [](const FontFallback& a, const FontFallback& b) {
+      return is_earlier(a.location, b.location);
+    });
+    return out;
   }
 
   // CSS 2.1 §10.3.3（inline 方向）と §10.5（block 方向）の使用値。
@@ -195,6 +231,9 @@ class LayoutEngine {
   // 溜まった豆腐。std::set の順序がそのまま出力の順序になる（MissingGlyph::operator<）ので、
   // ポインタ値も unordered の反復順もここには入らない（DESIGN.md §3-5）。
   std::set<MissingGlyph> missing_glyphs_;
+  // 満たせなかった font-family の並び（A57）。キーは並びそのもので、値は最初の位置。
+  // std::map なのでポインタ値も unordered の反復順も出力に出ない（DESIGN.md §3-5）。
+  std::map<std::vector<std::string>, SourceLocation> font_fallbacks_;
   bool memo_ = true;
 };
 

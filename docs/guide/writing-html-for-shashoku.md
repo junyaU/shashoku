@@ -125,8 +125,11 @@ CSS 変数（`--x`）、`calc()`。
 > `font-size` はキーワード（`large` など）を受け付けません。
 
 > `font-family` が照合するのは、**渡したフォントが自分で名乗っている family 名**だけです。
-> `serif` / `sans-serif` / `monospace` などの総称ファミリと、渡していないフォントの名前は
-> **エラーにならず黙って読み飛ばされます**（明朝・等幅にする方法は §7）。
+> 並びのどれも満たせないと（渡していない名前と、`serif` / `monospace` などの解釈できない総称しか
+> 書いていないと）**`warning[font-not-found]` が出て、渡したフォントの先頭で描かれます**（描画は続きます）。
+> `sans-serif` / `system-ui` / `ui-sans-serif` は**「渡したフォントの先頭で描いてよい」**という意味なので
+> 警告は出ません（`--font` で明朝だけを渡していれば明朝で描きます。**shashoku はフォントの書体を
+> 判定しません**）（明朝・等幅にする方法は §7）。
 
 **記号は「フォントに入っているものだけ」出ます。** 入っていない字は □（豆腐）になり
 `warning[missing-glyph]` が出ます。埋め込みの既定フォント（Noto Sans JP）で実際に描いて
@@ -898,6 +901,18 @@ warning[content-overflow]: content overflows the canvas by 430.0px (bottom) at 1
 `right` なら `--width` を増やすか箱の幅・余白を減らします。`--height` を省いていれば
 （内容の高さに追従）縦には出られないので、この警告は横方向だけになります。
 
+```
+warning[font-not-found]: no requested font family is loaded (`Hiragino Mincho ProN`, `serif`); text uses `Noto Sans JP` instead at 1:57
+```
+
+`font-not-found` は**`font-family` に書いた名前をどれも満たせず、別のフォントで描いた**という
+意味です（明朝を指定したのにゴシックで出る、が典型）。`--font` でそのフォントを渡すか、
+`font-family` を外すか、`sans-serif` にします。`sans-serif` / `system-ui` / `ui-sans-serif` は
+shashoku では**「渡したフォントの先頭で描いてよい」**という意味なので、警告は出ません
+（明朝だけを渡していれば明朝で描きます。**エンジンは書体を判定しません**）。`serif` / `monospace`
+などの総称は「先頭で描いてよい」とは読めない具体的な要求で、shashoku には満たせたか判定できないので、
+それだけでは満たせていません（§7）。
+
 **警告が出ても PNG は作られ、終了コードは 0 です。** 自動配信するなら stderr も見てください。
 **`--strict` を付ければ警告も失敗**になり、PNG は作られません（既にあるファイルも上書きされません）。
 
@@ -926,7 +941,8 @@ warning[content-overflow]: content overflows the canvas by 430.0px (bottom) at 1
   **成立条件があるときは条件つきで**書かれます（「親が stretch の flex なら削る」「不等幅・またぎは
   代替なし」など）。代替が無いものには hint が付きません
 - **同じ規則に複数の要素が当たっても、同一位置・同一文面の診断は 1 件**です
-- 警告は 2 種類です。`missing-glyph`（豆腐）と `content-overflow`（**固定した紙面からのはみ出し**）。
+- 警告は 3 種類です。`missing-glyph`（豆腐）、`content-overflow`（**固定した紙面からのはみ出し**）、
+  `font-not-found`（**`font-family` の要求をどれも満たせなかった**）。
   `--height` を固定して中身が多いと、切れる量と辺つきで警告が出ます
 - **`--strict`** を付けると、警告 1 件以上で失敗になり **PNG は作られません**（既にあるファイルも
   上書きしません）。サーバーで「検出した問題のある画像は配らない」判断に使えます
@@ -1019,8 +1035,15 @@ shashoku og-card.html -o og.png --width 1200 --height 630 --strict
 
 **埋め込みの既定フォントは Noto Sans JP の Regular と Bold だけです。**
 `font-family: serif` や `font-family: monospace` と書いても、**字面は 1px も変わりません**
-（総称ファミリと、渡していないフォントの名前は**エラーにならず黙って読み飛ばされます**）。
-明朝や等幅にするには、そのフォントファイルを `--font` で渡してください。
+（解釈できない総称と、渡していないフォントの名前は読み飛ばされます）。ただし黙ってはいません:
+並びのどれも満たせないと **`warning[font-not-found]` が出ます**。明朝や等幅にするには、そのフォント
+ファイルを `--font` で渡してください。
+
+`sans-serif` / `system-ui` / `ui-sans-serif` だけは警告が出ません。この 3 つは shashoku では
+**「渡したフォントの先頭で描いてよい」**という意味だからです。**明朝だけを `--font` で渡して
+`font-family: sans-serif` と書いた場合も、明朝で描かれて警告は出ません**（shashoku はフォントの
+書体を判定しません）。書体を確実に指定したいなら、総称ではなく**そのフォントが名乗っている
+family 名**を書いてください。
 
 - `font-family` が照合するのは、**フォントファイルが自分で名乗っている family 名**です
   （大文字小文字と前後の空白は無視されます）。`NotoSansJP-Regular.otf` なら `Noto Sans JP`、

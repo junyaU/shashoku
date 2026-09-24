@@ -125,7 +125,11 @@ TEST(ApiStrings, DumpStage) {
   EXPECT_EQ(to_string(DumpStage::Svg), "svg");
 }
 
-TEST(ApiStrings, WarningKind) { EXPECT_EQ(to_string(WarningKind::MissingGlyph), "missing-glyph"); }
+TEST(ApiStrings, WarningKind) {
+  EXPECT_EQ(to_string(WarningKind::MissingGlyph), "missing-glyph");
+  EXPECT_EQ(to_string(WarningKind::ContentOverflow), "content-overflow");
+  EXPECT_EQ(to_string(WarningKind::FontNotFound), "font-not-found");
+}
 
 TEST(ApiStrings, Version) {
   EXPECT_FALSE(version().empty());

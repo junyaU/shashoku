@@ -2,14 +2,17 @@
      行は右から左へ、字は上から下へ進む。margin / padding は物理方向のまま:
      padding-top = 行の先頭側の空き、padding-right = 1 行目の外側、
      margin-right = 前のブロックとの間、margin-left = 次のブロックとの間。
+     署名は margin-top: auto（margin の 1 値目）で字送りの終わり = 下端に貼り付ける。
+     紙面を column の flex にしておくと、この auto が余りを全部吸う。
      1 行に入る字数のめやす = (height - padding上下) / font-size。
        この例は (900 - 40*2) / 25 = 32.8 字 >= 歌の 32 字 なので 1 行に収まる。
      shashoku docs/guide/examples/vertical.html -o vertical.png --width 480 --height 900 -->
 <style>
-  .sheet  { writing-mode: vertical-rl; width: 400px; height: 820px; padding: 40px;
+  .sheet  { writing-mode: vertical-rl; display: flex; flex-direction: column;
+            width: 400px; height: 820px; padding: 40px;
             background: #f7f3e8; color: #23201a; }
   .poem   { margin: 0; font-size: 25px; line-height: 2; }
-  .author { margin: 0 28px 0 0; padding: 560px 0 0 0; font-size: 16px; color: #6b6355; }
+  .author { margin: auto 28px 0 0; font-size: 16px; color: #6b6355; }
 </style>
 <div class="sheet">
   <div class="poem">ゆふぐれの　駅のホームに　立ちつくし　届かぬ返事を　もう一度読む</div>

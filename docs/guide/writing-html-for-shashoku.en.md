@@ -211,12 +211,26 @@ Doing so gives `error[unsupported-layout]`.
 Inline elements do take `color`, `background-color`, `font-size`, `font-family`, `font-weight`,
 `letter-spacing`. A `span` with a different `font-size` **aligns on the baseline**.
 
-### (3) A `span` that is a flex item is not blockified
+### (3) The **direct children** of a flex container are blockified (grandchildren are not)
 
-Browsers blockify the children of a flex container. **shashoku does not.** They stay
-`display: inline`, so trap (2) still applies to them.
+A direct child of a `display: flex` element is blockified even if you wrote it as a `span`
+(CSS Display 3 §2.7). It takes `padding` / `border` / `width`, and **a `div` and a `span` produce
+exactly the same picture** (a byte-identical PNG).
 
-> **Always make the children of a flex container `div`s.**
+```html
+<!-- these two are the same -->
+<div style="display: flex; gap: 8px">
+  <span style="flex: none; padding: 5px 12px; background: #e7f0ff">Policy</span>
+  <div style="flex: none; padding: 5px 12px; background: #e7f0ff">AI</div>
+</div>
+```
+
+There are three exceptions — **`<img>`, `<ruby>` and `<br>`** — which stay inline even as direct
+children of a flex container. `padding` on a `<ruby>` is still `error[unsupported-layout]`; wrap it
+in a `div` or a `span` if it needs a box. `<img>` works as a flex item exactly as before (§4.12).
+
+**Only direct children are blockified.** A `span` sitting inside running text (a grandchild of the
+flex container) stays inline, and trap (2) applies to it unchanged.
 
 ### (4) No `display: inline-block` — use "flex parent + `flex: none` child"
 
@@ -280,8 +294,16 @@ guide; replace the text with your own — the markup is what matters.
 
 `flex: 1 1 0` gives equal columns (the equivalent of grid's `1fr`). `flex: 1` is the same thing
 (it expands to `flex: 1 1 0`). Use `flex: none` for shrink-to-fit and
-`flex: none; width: 180px` for a fixed column.
+`flex: none; width: 180px` for a fixed column. A child may be a `div` or a `span` (§3-(3)).
 For flex inside flex (arrows between steps, a row of tags inside a card) see §4.13.
+
+**An unbreakable long word breaks the equal split.** A `flex: 1 1 0` child never gets narrower than
+**the width it cannot shrink past** (the longest unbreakable word plus its `padding` and `border`).
+Put a URL, a long English word, a run of alphanumerics or a hash in one and that child grows while
+the others shrink; once the total exceeds the parent it **overflows the parent** (and, if it leaves
+the canvas, raises `warning[content-overflow]`). Add **`overflow-wrap: anywhere`** to any child that
+may receive a long word. **`overflow-wrap: break-word` has no effect on a `flex: 1 1 0` child** (it
+does not count towards the shrinkable width; CSS Text 3 §5.4). Worked example in §4.3.
 
 ### 4.3 Table (flex rows + 1px rules) — [table.html](examples/table.html)
 
@@ -315,6 +337,25 @@ For flex inside flex (arrows between steps, a row of tags inside a card) see §4
 of height, put a `&nbsp;` in it — it is accepted as a character reference and carries a height of
 `font-size × line-height` (25.5px here, for a 45.5px row). If any cell in the row has content, the
 empty ones are stretched by `stretch` anyway and need no `&nbsp;`.
+
+**Add `overflow-wrap: anywhere` to any column that may hold a long word.** Cells are `flex: 1 1 0`,
+so an unbreakable token (a URL, a hash, a run of alphanumerics) widens that one column and **the
+header row and the body row stop lining up** (§4.2). Putting a 40-character commit hash in the
+`.tbl` above and rendering at `--width 400`:
+
+| | Header row columns | Body row columns | Result |
+|---|---|---|---|
+| as written | 132.7 / 132.7 / 132.7 | 54.0 / 349.8 / 59.6 | columns misaligned, 64.4px past the right edge with `warning[content-overflow]` |
+| `overflow-wrap: anywhere` | 132.7 / 132.7 / 132.7 | 132.7 / 132.7 / 132.7 | aligned; the hash wraps mid-token |
+| `overflow-wrap: break-word` | — | same as "as written" | **no effect** |
+
+```html
+<style>
+  /* add to the .tbl / .tr / .td / .rule above */
+  .long { overflow-wrap: anywhere; }
+</style>
+<div class="tr"><div class="td">コミット</div><div class="td long">9f2c1b4e8d7a6503f1e2c9b8a7d6e5f4c3b2a190</div><div class="td">main の先端</div></div>
+```
 
 ### 4.4 Bulleted list (flex + a dot) — [list.html](examples/list.html)
 
@@ -357,6 +398,8 @@ A good `margin-top` is `(font-size × line-height − dot diameter) ÷ 2`
 ```
 
 There is no `flex-wrap`, so pills **never wrap**. Split them into one `.tags` row per line.
+Writing the children as `<span class="pill">` gives the same result (direct children of a flex
+container are blockified; §3-(3)).
 
 ### 4.6 Vertical centring — [vcenter.html](examples/vcenter.html)
 
@@ -485,10 +528,11 @@ Render with `shashoku og-card.html -o og.png --width 1200 --height 630`.
 
 ```html
 <style>
-  .sheet  { writing-mode: vertical-rl; width: 400px; height: 820px; padding: 40px;
+  .sheet  { writing-mode: vertical-rl; display: flex; flex-direction: column;
+            width: 400px; height: 820px; padding: 40px;
             background: #f7f3e8; color: #23201a; }
   .poem   { margin: 0; font-size: 25px; line-height: 2; }
-  .author { margin: 0 28px 0 0; padding: 560px 0 0 0; font-size: 16px; color: #6b6355; }
+  .author { margin: auto 28px 0 0; font-size: 16px; color: #6b6355; }
 </style>
 <div class="sheet">
   <div class="poem">ゆふぐれの　駅のホームに　立ちつくし　届かぬ返事を　もう一度読む</div>
@@ -560,12 +604,11 @@ the signature at the left edge (the main axis of a `column` runs right to left, 
 spreads them horizontally).
 
 **Along the inline axis (top and bottom)** use `align-items` on the same flex container (it applies
-to every child) or, per child, `margin-top: auto` / `margin-bottom: auto`. For instance the
-signature in [vertical.html](examples/vertical.html) above is pushed down with
-`padding: 560px 0 0 0`; make the sheet a `display: flex; flex-direction: column` and give the
-signature `margin-top: auto` instead and it **lands exactly on the bottom edge and survives a
-change of body text or `font-size` without recomputing anything** (it does not land on precisely
-the same spot as the padding did — but it is the reliable way to reach the bottom edge).
+to every child) or, per child, `margin-top: auto` / `margin-bottom: auto`. The signature in the
+example above does exactly that: the `auto` in `margin: auto 28px 0 0` (that is `margin-top`)
+absorbs all the free space and **pins the signature to the bottom edge**. You could instead count
+the distance and write `padding-top: 560px`, but then every change of body text or `font-size`
+means counting again.
 
 > The `rect` in `--dump-stage box` is in **logical coordinates**. In vertical writing it reads
 > `[offset along the inline axis (from the top), offset along the block axis (from the right edge),
@@ -723,21 +766,23 @@ Render with `shashoku quote.html -o quote.png --width 600 --height 360`
 | `<table>` `<tr>` `<td>` | error | Flex rows + `flex: 1 1 0` cells (§4.3) |
 | `<strong>` `<b>` `<em>` `<code>` `<a>` `<section>` `<header>` | error | `span` (+ `font-weight` / `color` / `background-color`) or `div` |
 | Emoji (🎉 😀 …) | **drawn as □ with a warning** | **Do not use them.** Use a symbol from the list in §2.4 (`→` `▼` `※` `✓`) or a small coloured `div` |
-| `display: inline-block` | error | Flex parent + `flex: none` child (§3-(4)) |
+| `display: inline-block` | error | **Inside a flex container just drop the declaration** — a direct child is blockified and already takes box properties (§3-(3)). Elsewhere, a flex parent with a `flex: none` child (§3-(4)) |
 | `position` / `top` / `left` / `z-index` | error | Flex with `justify-content` / `align-items` / an empty spacer (§4.7) |
-| `grid` / `grid-template-columns` | error | Flex + `flex: 1 1 0` (the `1fr` equivalent) |
+| `grid` / `grid-template-columns` and the other `grid-*` | error | For **equal-width columns in one row**, `display: flex` on the parent and `flex: 1 1 0` on each child (the `1fr` equivalent; §4.3). For **several rows**, one flex container per row (§4.2). **Unequal columns and spanning cells (`grid-column: span 2`) have no equivalent** |
 | `float` | error | Flex |
 | `flex-wrap` | error | One flex container per row |
 | `align-self` / `order` / `flex-flow` | error | Put the elements in the order you want |
 | `box-sizing` | error | Subtract padding and border from the width/height (§3-(1)) |
-| `min-width` / `max-width` / `min-height` / `max-height` | error | A fixed `width` / `height` |
+| `min-height` | error | If the parent is a **flex container with the default `align-items: stretch`**, just **drop it** (the item already fills the cross size). If the height is known, use `height`. Otherwise drop it and let the content decide |
+| `min-width` / `max-width` / `max-height` | error | A fixed `width` / `height`, or drop it |
 | `overflow` | error | Size it so nothing overflows; give up on clipping rounded corners |
-| Gradients in `background` (`linear-gradient`, …) | error | **A flat colour** |
+| Gradients in `background` (`linear-gradient`, …) | error | **A flat `background-color`** (the picture becomes flat). If it is paired with `background-clip: text` + `color: transparent`, drop **both** (see "Pairs that are dangerous to split" below) |
+| `background-image` (`url(...)`, …) | error | A flat `background-color`, or an `<img>` passed with `--image` (§4.12) |
 | `box-shadow` / `text-shadow` | error | Drop the shadow; show edges with a 1px border or a tinted background |
 | `opacity` | error | Use a lighter colour directly (`#00000099` or a pale value) |
 | `transform` (`rotate`, …) | error | Do not rotate |
 | `::before` / `::after` + `content` | error | Write a **real element** (`span` / `div`). Remember there is no `position`, so it **lands in the flow** |
-| `border-top` / `border-left` and friends | error | Insert a 1px-tall (or 1px-wide) `div` (§4.3) |
+| `border-top` / `border-left` and friends | error | For a **divider between boxes**, insert a `div` with `height: 1px` (`width: 1px` in a row) and a background colour (§4.3) — note it **takes 1px of space in the flow**. For **one edge of a frame** there is no equivalent: use a full four-sided `border` or drop it |
 | `border-style: dashed` / `dotted` | error | `solid`. Distinguish the two kinds of line by **colour** |
 | Per-corner `border-radius` (4 values) | error | One `border-radius` value |
 | `border-collapse` | absent | Do not border the cells; draw rules with 1px `div`s |
@@ -805,6 +850,26 @@ error[unsupported-value] at 82:77: `border-style: dashed` is not supported (supp
 - The **wording** is for humans and AIs and may change between versions
 - Errors without a location (`invalid-option`, …) have no `at` part
 
+Whenever there is a known fix, an indented **`  hint: …` line** follows (verbatim output below).
+
+```
+error[unsupported-property] at 3:8: `min-height` is not a supported property
+  hint: no min/max sizes. If the parent is a flex container with the default `align-items: stretch`, drop it (the item already fills the cross size); if the height is known, use `height`; otherwise drop it and let the content decide the height
+error[unsupported-value] at 7:17: `display: grid` is not supported (supported: block, flex, inline, none)
+  hint: no grid. For equal-width columns in one row, use `display: flex` on the parent and `flex: 1 1 0` on each child (guide §4.3); for several rows, one flex row per line (guide §4.2). Unequal or spanning grids have no equivalent
+error[unsupported-layout] at 12:16: `padding-top` is not supported on an inline element (`display: inline`); only `<img>` takes box properties while inline
+  hint: drop the declaration; `display: block` would accept it but breaks the surrounding text flow. If the box is a standalone part (tag / pill / badge), make it a flex item: a `div` inside a `display: flex` parent (guide §3-(4))
+```
+
+- **A hint may be conditional.** "If the parent is … drop it; if the height is known, use `height`",
+  "unequal or spanning grids have no equivalent" — read the cases and pick the one you are in
+- The third one is a `span` **inside running text** (a grandchild of a flex container). The same
+  declaration on a **direct child** of a flex container is not an error at all (§3-(3))
+- No hint means "there is no verified substitute". Fall back to the table in §5
+- Even when several elements match one rule, **identical diagnostics at one location are reported
+  once**
+- To read them from a program use `--diagnostics json`; `hint` carries the same string (§6.4)
+
 The identifiers you will actually see:
 
 | Identifier | Meaning | First thing to do |
@@ -813,7 +878,7 @@ The identifiers you will actually see:
 | `unsupported-attribute` | unsupported attribute | Delete it (only `style` `class` `id` survive) |
 | `unsupported-property` | unsupported property | §5. If it is prefixed, drop the prefix |
 | `unsupported-value` | property is fine, value is not | Use one of the values in the `supported: …` list |
-| `unsupported-layout` | unsupported layout | Box properties on an inline (§3-(2)(3)) or writing mode (§4.10) |
+| `unsupported-layout` | unsupported layout | Box properties on an inline inside running text (§3-(2)) or writing mode (§4.10) |
 | `css-parse` | unsupported CSS syntax / selector | Remove descendant selectors, pseudo-elements, at-rules, `!important` |
 | `html-parse` / `invalid-utf8` | broken HTML | Fix the closing tags and the encoding |
 | `image-not-found` | `<img src>` names no image passed via `--image` | Make the names match (§4.12) |
@@ -851,7 +916,8 @@ edges are checked.
 4. Then **layout** (`unsupported-layout`). Where box properties sat on an inline element,
    **delete the declaration rather than adding `display: block`**
    (`display: block` breaks the run of text and splits one sentence across lines).
-   If the box really is a standalone component, turn it into a `div` and make it a flex item
+   If the box really is a standalone component (a tag / pill / badge), make it a **direct child**
+   of a `display: flex` parent — a `div` or a `span`, either works (§3-(3))
 5. **Once the errors are gone, look at the PNG.** No errors does not mean the picture is right
    (overlaps, unintended placement and text the same colour as its background are not detected)
 
@@ -863,8 +929,12 @@ shashoku 0.1.0 today:
   can step over (unsupported tags, attributes, properties, values, selectors) before failing, so you
   do not have to rerun after every single fix. **Structural breakage stops the run on the spot**
   though (an unclosed tag, a bare `&`, invalid UTF-8) — fix that first and run again
-- **Hints ("write this instead") are on their own line** (`  hint: …`), only for the properties
-  that have a verified substitute
+- **Hints ("write this instead") are on their own line** (`  hint: …`), only where there is a
+  verified substitute, and **conditional when the substitute depends on the situation** ("if the
+  parent is a stretch flex container, drop it", "unequal or spanning grids have no equivalent").
+  No hint means there is no substitute
+- **Identical diagnostics at one location are reported once**, even when several elements match the
+  same rule
 - There are two warnings: `missing-glyph` (tofu) and `content-overflow` (**content that does not fit
   the fixed canvas**). Set `--height` too small and you are told how much is cut off, and on which edge
 - **`--strict`** turns any warning into a failure and **writes no PNG** (an existing file is left
@@ -873,16 +943,27 @@ shashoku 0.1.0 today:
 - On success the CLI writes one line to stderr: `wrote out.png (1200x630)`. That is where you read
   the actual height when you omitted `--height`
 
-The diagnostics JSON:
+The diagnostics JSON (real output, only line-wrapped here):
 
 ```json
-{"ok": true, "width": 1200, "height": 630, "truncated": false,
- "errors": [{"kind": "unsupported-property", "message": "…", "hint": "…",
-             "line": 3, "column": 14, "offset": 120, "warning": null}],
- "warnings": [{"kind": "missing-glyph", "detail": "…", "codepoint": 128512,
-               "line": 3, "column": 1, "offset": 88, "overflow_px": 0, "edge": null},
-              {"kind": "content-overflow", "detail": "…", "codepoint": 0,
-               "line": 19, "column": 1, "offset": 700, "overflow_px": 430, "edge": "bottom"}]}
+{"ok": false, "width": null, "height": null, "truncated": false,
+ "errors": [{"kind": "unsupported-property",
+             "message": "`box-sizing` is not a supported property",
+             "hint": "content-box only: subtract padding and border from `width` / `height`",
+             "line": 2, "column": 11, "offset": 18, "warning": null}],
+ "warnings": []}
+```
+
+```json
+{"ok": true, "width": 400, "height": 120, "truncated": false, "errors": [],
+ "warnings": [{"kind": "content-overflow",
+               "detail": "content overflows the canvas by 128.0px (bottom) at 4:1",
+               "codepoint": 0, "line": 4, "column": 1, "offset": 100,
+               "overflow_px": 128, "edge": "bottom"},
+              {"kind": "missing-glyph",
+               "detail": "no font has a glyph for U+1F389 at 4:19",
+               "codepoint": 127881, "line": 4, "column": 19, "offset": 118,
+               "overflow_px": 0, "edge": null}]}
 ```
 
 - `line` / `column` / `offset` are `null` when there is no location, `hint` is `""` when there is none

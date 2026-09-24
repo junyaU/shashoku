@@ -204,12 +204,26 @@ rt { font-size: 0.5em }
 インラインに効くのは `color` `background-color` `font-size` `font-family` `font-weight`
 `letter-spacing` などです。`font-size` の違う `span` は**ベースラインで揃います**。
 
-### (3) flex 項目の `span` は block 化されない
+### (3) flex コンテナの**直接の子**は block 化される（孫は (2) のまま）
 
-ブラウザでは flex コンテナの子は自動で block 級になりますが、**shashoku はしません**。
-`display: inline` のままなので、(2) の制限がそのまま効きます。
+`display: flex` の直接の子は、`span` と書いても自動で block 級になります（CSS Display 3 §2.7）。
+`padding` / `border` / `width` を付けてよく、**`div` と `span` でまったく同じ絵**（バイト単位で
+同じ PNG）が出ます。
 
-> **flex コンテナの子は、かならず `div` にしてください。**
+```html
+<!-- どちらも同じ結果 -->
+<div style="display: flex; gap: 8px">
+  <span style="flex: none; padding: 5px 12px; background: #e7f0ff">政策</span>
+  <div style="flex: none; padding: 5px 12px; background: #e7f0ff">AI</div>
+</div>
+```
+
+例外は **`<img>` / `<ruby>` / `<br>`** の 3 つで、flex の直接の子でも inline のままです。
+`<ruby>` に `padding` を書くと `error[unsupported-layout]` になるので、箱が要るなら
+`div` か `span` で包んでください。`<img>` は従来どおりそのまま flex 項目にできます（§4.12）。
+
+**block 化されるのは直接の子だけです。** 文章の中に置いた `span`（= flex コンテナの孫）は
+inline のままなので、(2) の制限がそのまま効きます。
 
 ### (4) `display: inline-block` が無い → 「flex の親 + `flex: none` の子」
 
@@ -272,7 +286,16 @@ rt { font-size: 0.5em }
 `flex: 1 1 0` で等分になります（CSS grid の `1fr` 相当）。`flex: 1` は同じ意味の短縮形です
 （`flex: 1 1 0` に展開されます）。内容ぶんの幅にしたいときは `flex: none`、
 幅を決め打ちにしたいときは `flex: none; width: 180px`。
+子は `div` でも `span` でも同じです（§3-(3)）。
 flex の中に flex を入れて組み立てる形（段の間の矢印、カードの中のタグ列）は §4.13。
+
+**分割できない長い語があると等分になりません。** `flex: 1 1 0` の子は、
+**これ以上縮められない幅**（= 分割できない一番長い語の幅 + `padding` + `border`）より狭くなりません。
+URL・長い英単語・連続する英数字・ハッシュ値が入ると、その子だけ広がって他が縮み、
+合計が親を超えれば**親からはみ出します**（紙面の外まで出れば `warning[content-overflow]`）。
+長い語が入りうる子には **`overflow-wrap: anywhere`** を付けてください。
+**`overflow-wrap: break-word` は `flex: 1 1 0` の子では効きません**（縮められる幅の計算に
+入らないため。CSS Text 3 §5.4）。実例は §4.3。
 
 ### 4.3 表（flex の行 + 1px の罫）— [table.html](examples/table.html)
 
@@ -307,6 +330,24 @@ flex の中に flex を入れて組み立てる形（段の間の矢印、カー
 （文字参照として通り、`font-size × line-height` の高さを持ちます。上の例なら 15 × 1.7 = 25.5px で
 行は 45.5px になります）。同じ行に中身のあるセルが 1 つでもあれば、空のセルも `stretch` で
 引き伸ばされるので `&nbsp;` は要りません。
+
+**長い語が入る列には `overflow-wrap: anywhere` を付けてください。** セルは `flex: 1 1 0` なので、
+分割できない語（URL・ハッシュ・連続する英数字）があるとその列だけ広がり、**見出し行と本文行で
+列がずれます**（§4.2）。上の `.tbl` に 40 桁のコミットハッシュを入れて `--width 400` で描くと:
+
+| | 見出し行の列幅 | 本文行の列幅 | 結果 |
+|---|---|---|---|
+| そのまま | 132.7 / 132.7 / 132.7 | 54.0 / 349.8 / 59.6 | 列がずれ、右に 64.4px はみ出して `warning[content-overflow]` |
+| `overflow-wrap: anywhere` | 132.7 / 132.7 / 132.7 | 132.7 / 132.7 / 132.7 | そろう。ハッシュは途中で折り返す |
+| `overflow-wrap: break-word` | — | そのままと同じ | **効きません** |
+
+```html
+<style>
+  /* 上の .tbl / .tr / .td / .rule に足す */
+  .long { overflow-wrap: anywhere; }
+</style>
+<div class="tr"><div class="td">コミット</div><div class="td long">9f2c1b4e8d7a6503f1e2c9b8a7d6e5f4c3b2a190</div><div class="td">main の先端</div></div>
+```
 
 ### 4.4 箇条書き（flex + 丸）— [list.html](examples/list.html)
 
@@ -349,6 +390,7 @@ flex の中に flex を入れて組み立てる形（段の間の矢印、カー
 ```
 
 `flex-wrap` が無いので**折り返しません**。数が多いときは行ごとに `.tags` を分けてください。
+子を `<span class="pill">` と書いても同じです（flex の直接の子は block 化されます。§3-(3)）。
 
 ### 4.6 縦中央揃え — [vcenter.html](examples/vcenter.html)
 
@@ -472,10 +514,11 @@ spacer の幅の出し方:
 
 ```html
 <style>
-  .sheet  { writing-mode: vertical-rl; width: 400px; height: 820px; padding: 40px;
+  .sheet  { writing-mode: vertical-rl; display: flex; flex-direction: column;
+            width: 400px; height: 820px; padding: 40px;
             background: #f7f3e8; color: #23201a; }
   .poem   { margin: 0; font-size: 25px; line-height: 2; }
-  .author { margin: 0 28px 0 0; padding: 560px 0 0 0; font-size: 16px; color: #6b6355; }
+  .author { margin: auto 28px 0 0; font-size: 16px; color: #6b6355; }
 </style>
 <div class="sheet">
   <div class="poem">ゆふぐれの　駅のホームに　立ちつくし　届かぬ返事を　もう一度読む</div>
@@ -542,11 +585,10 @@ spacer の幅の出し方:
 （`column` の主軸が右 → 左なので、`space-between` が寄せるのは左右です）。
 
 **字送り方向（上下）の位置決め**は、同じ flex の `align-items`（全部の子に効く）か、
-子ごとの `margin-top: auto` / `margin-bottom: auto` です。たとえば上の
-[vertical.html](examples/vertical.html) の署名は `padding: 560px 0 0 0` で下に押していますが、
-紙面を `display: flex; flex-direction: column` にして署名を `margin-top: auto` にすると、
-**署名が下端ぴったりに付き、本文の長さや `font-size` を変えても数字を計算し直さずに済みます**
-（`padding` で押した位置とは少しずれます。下端に付けたいならこちらが確実です）。
+子ごとの `margin-top: auto` / `margin-bottom: auto` です。上の例の署名がこれで、
+`margin: auto 28px 0 0` の `auto`（= `margin-top`）が余りを全部吸って**署名を下端に貼り付けます**。
+`padding-top: 560px` のように数えて押すこともできますが、その場合は本文の長さや `font-size` を
+変えるたびに数え直しになります。
 
 > `--dump-stage box` の `rect` は**論理座標**です。縦書きでは
 > `[字送り（上）からの位置, 行送り（右端）からの位置, 字送り方向の大きさ, 行送り方向の大きさ]`
@@ -697,21 +739,23 @@ spacer の幅の出し方:
 | `<table>` `<tr>` `<td>` | エラー | flex の行 + `flex: 1 1 0` のセル（§4.3） |
 | `<strong>` `<b>` `<em>` `<code>` `<a>` `<section>` `<header>` | エラー | `span`（+ `font-weight` / `color` / `background-color`）または `div` |
 | 絵文字（🎉 😀 など） | **□ になって警告** | **使わない**。§2.4 の一覧にある記号（`→` `▼` `※` `✓`）か、色付きの小さな `div` で代用 |
-| `display: inline-block` | エラー | flex の親 + `flex: none` の子（§3-(4)） |
+| `display: inline-block` | エラー | **flex コンテナの中なら宣言を削るだけ**（直接の子は block 化され、そのまま箱のプロパティを取ります。§3-(3)）。それ以外は flex の親 + `flex: none` の子（§3-(4)） |
 | `position` / `top` / `left` / `z-index` | エラー | flex と `justify-content` / `align-items` / 空の spacer（§4.7） |
-| `grid` / `grid-template-columns` | エラー | flex + `flex: 1 1 0`（`1fr` 相当） |
+| `grid` / `grid-template-columns` ほか `grid-*` | エラー | **等幅の 1 行**なら親に `display: flex`・子に `flex: 1 1 0`（`1fr` 相当。§4.3）。**複数行**なら 1 行 1 flex コンテナ（§4.2）。**不等幅・セルのまたぎ（`grid-column: span 2`）は代替がありません** |
 | `float` | エラー | flex |
 | `flex-wrap` | エラー | 行ごとに flex コンテナを分ける |
 | `align-self` / `order` / `flex-flow` | エラー | 並び順を HTML の順で書く |
 | `box-sizing` | エラー | 幅・高さから padding と border を引く（§3-(1)） |
-| `min-width` / `max-width` / `min-height` / `max-height` | エラー | 固定値の `width` / `height` |
+| `min-height` | エラー | 親が **既定の `align-items: stretch` の flex** なら**削るだけ**（その子はもう交差方向いっぱいです）。高さが分かっているなら `height`。どちらでもなければ削って内容に高さを決めさせる |
+| `min-width` / `max-width` / `max-height` | エラー | 固定値の `width` / `height` にするか、削る |
 | `overflow` | エラー | はみ出さない寸法にする。角丸のクリップは諦める |
-| `background` のグラデーション（`linear-gradient` ほか） | エラー | **単色**にする |
+| `background` のグラデーション（`linear-gradient` ほか） | エラー | **単色**の `background-color` にする（絵は平坦になります）。`background-clip: text` + `color: transparent` と組で使っているときは**両方**外す（下の「削ると危険な組み合わせ」） |
+| `background-image`（`url(...)` ほか） | エラー | 単色の `background-color` か、`--image` で渡した `<img>`（§4.12） |
 | `box-shadow` / `text-shadow` | エラー | 影は諦める。境界は 1px の枠線か薄い背景色で表す |
 | `opacity` | エラー | 色そのものを薄くする（`#00000099` や淡い色） |
 | `transform`（`rotate` など） | エラー | 傾けない |
 | `::before` / `::after` + `content` | エラー | **実要素**（`span` / `div`）として書く。ただし `position` が無いので**流れの中に落ちる**ことに注意 |
-| `border-top` / `border-left` など辺ごとの枠 | エラー | 高さ（幅）1px の `div` を挟む（§4.3） |
+| `border-top` / `border-left` など辺ごとの枠 | エラー | **箱と箱の区切り線**なら `height: 1px`（横並びなら `width: 1px`）+ 背景色の `div` を挟む（§4.3）。ただし**流れの中で 1px ぶん場所を取ります**。**枠の一辺だけ**を出す代替はありません: 4 辺の `border` にするか、諦めて削る |
 | `border-style: dashed` / `dotted` | エラー | `solid`。破線と実線の描き分けは**色**で代える |
 | 隅ごとの `border-radius`（4 値） | エラー | 1 値の `border-radius` |
 | `border-collapse` | 無い | セルに枠を付けず、1px の `div` で罫を引く |
@@ -774,6 +818,25 @@ error[unsupported-value] at 82:77: `border-style: dashed` is not supported (supp
 - **文面**は人と AI が読むためのもので、版が変わると変わりえます
 - 位置が無いエラー（`invalid-option` など）は `at` の部分がありません
 
+直し方が分かるものには、**`  hint: …` の行が続きます**（下は実際の出力そのままです）。
+
+```
+error[unsupported-property] at 3:8: `min-height` is not a supported property
+  hint: no min/max sizes. If the parent is a flex container with the default `align-items: stretch`, drop it (the item already fills the cross size); if the height is known, use `height`; otherwise drop it and let the content decide the height
+error[unsupported-value] at 7:17: `display: grid` is not supported (supported: block, flex, inline, none)
+  hint: no grid. For equal-width columns in one row, use `display: flex` on the parent and `flex: 1 1 0` on each child (guide §4.3); for several rows, one flex row per line (guide §4.2). Unequal or spanning grids have no equivalent
+error[unsupported-layout] at 12:16: `padding-top` is not supported on an inline element (`display: inline`); only `<img>` takes box properties while inline
+  hint: drop the declaration; `display: block` would accept it but breaks the surrounding text flow. If the box is a standalone part (tag / pill / badge), make it a flex item: a `div` inside a `display: flex` parent (guide §3-(4))
+```
+
+- **hint には成立条件が書かれていることがあります。**「親が …なら削る／高さが分かるなら `height`」
+  「不等幅・またぎは代替なし」のように場合分けしてあるので、自分の HTML がどれに当たるかを見てから選んでください
+- 3 つ目の `unsupported-layout` は**文章の中に置いた `span`**（flex コンテナの孫）の例です。
+  flex コンテナの**直接の子**なら block 化されるので、同じ宣言でもエラーになりません（§3-(3)）
+- hint が無いのは「確かめた代替が無い」という意味です。§5 の表を見てください
+- 同じ規則に複数の要素が当たっても、**同一位置・同一文面の診断は 1 件**にまとめられます
+- 機械で読むなら `--diagnostics json`。`hint` は同じ文字列がそのまま入ります（§6.4）
+
 主な識別子:
 
 | 識別子 | 意味 | まずやること |
@@ -782,7 +845,7 @@ error[unsupported-value] at 82:77: `border-style: dashed` is not supported (supp
 | `unsupported-attribute` | 対応外の属性 | 属性を消す（`style` `class` `id` だけ） |
 | `unsupported-property` | 対応外のプロパティ | §5 の代替表。接頭辞なら外す |
 | `unsupported-value` | プロパティは対応、値が対応外 | 文面の `supported: …` に挙がった値にする |
-| `unsupported-layout` | 対応外のレイアウト | inline への箱プロパティ（§3-(2)(3)）／縦書きの向き（§4.10） |
+| `unsupported-layout` | 対応外のレイアウト | 文中の inline への箱プロパティ（§3-(2)）／縦書きの向き（§4.10） |
 | `css-parse` | CSS の構文・セレクタが対応外 | 子孫セレクタ・擬似要素・at-rule・`!important` を外す |
 | `html-parse` / `invalid-utf8` | HTML が壊れている | 閉じタグと文字コードを直す |
 | `image-not-found` | `<img src>` の名前が `--image` に無い | 名前をそろえる（§4.12） |
@@ -819,7 +882,8 @@ warning[content-overflow]: content overflows the canvas by 430.0px (bottom) at 1
 4. 最後に **レイアウト**（`unsupported-layout`）。inline に箱プロパティを付けていた場所は、
    **`display: block` を足すのではなく宣言を削る**のが基本です
    （`display: block` にすると文の流れが切れて、1 文が複数行に割れます）。
-   その箱が独立した部品なら、`div` に変えて flex 項目にします
+   その箱が独立した部品（タグ・pill・バッジ）なら、`display: flex` の親の**直接の子**にします
+   （`div` でも `span` でもよい。§3-(3)）
 5. **エラーが消えたら PNG を見る。** エラーが無いことは「絵が正しい」ことを意味しません
    （重なり・意図と違う位置・文字色と背景色の同化は検出されません）
 
@@ -831,7 +895,10 @@ warning[content-overflow]: content overflows the canvas by 430.0px (bottom) at 1
   問題（対応外のタグ・属性・プロパティ・値・セレクタ）を集めてから失敗します。1 件直すたびに
   走らせ直す必要はありません。ただし**構造が壊れている場合**（閉じ忘れ、`&` の書き忘れ、不正な UTF-8）は
   その場で止まるので、まずそれを直してからもう一度走らせてください
-- **「直し方」（hint）は独立した行**に出ます（`  hint: …`）。確かめた代替があるものにだけ付きます
+- **「直し方」（hint）は独立した行**に出ます（`  hint: …`）。確かめた代替があるものにだけ付き、
+  **成立条件があるときは条件つきで**書かれます（「親が stretch の flex なら削る」「不等幅・またぎは
+  代替なし」など）。代替が無いものには hint が付きません
+- **同じ規則に複数の要素が当たっても、同一位置・同一文面の診断は 1 件**です
 - 警告は 2 種類です。`missing-glyph`（豆腐）と `content-overflow`（**固定した紙面からのはみ出し**）。
   `--height` を固定して中身が多いと、切れる量と辺つきで警告が出ます
 - **`--strict`** を付けると、警告 1 件以上で失敗になり **PNG は作られません**（既にあるファイルも
@@ -840,16 +907,27 @@ warning[content-overflow]: content overflows the canvas by 430.0px (bottom) at 1
 - 成功すると CLI は `wrote out.png (1200x630)` を標準エラーに 1 行出します。
   `--height` を省いたときの実際の高さはここで分かります
 
-診断 JSON の形:
+診断 JSON の形（下は実際の出力を折り返しただけのものです）:
 
 ```json
-{"ok": true, "width": 1200, "height": 630, "truncated": false,
- "errors": [{"kind": "unsupported-property", "message": "…", "hint": "…",
-             "line": 3, "column": 14, "offset": 120, "warning": null}],
- "warnings": [{"kind": "missing-glyph", "detail": "…", "codepoint": 128512,
-               "line": 3, "column": 1, "offset": 88, "overflow_px": 0, "edge": null},
-              {"kind": "content-overflow", "detail": "…", "codepoint": 0,
-               "line": 19, "column": 1, "offset": 700, "overflow_px": 430, "edge": "bottom"}]}
+{"ok": false, "width": null, "height": null, "truncated": false,
+ "errors": [{"kind": "unsupported-property",
+             "message": "`box-sizing` is not a supported property",
+             "hint": "content-box only: subtract padding and border from `width` / `height`",
+             "line": 2, "column": 11, "offset": 18, "warning": null}],
+ "warnings": []}
+```
+
+```json
+{"ok": true, "width": 400, "height": 120, "truncated": false, "errors": [],
+ "warnings": [{"kind": "content-overflow",
+               "detail": "content overflows the canvas by 128.0px (bottom) at 4:1",
+               "codepoint": 0, "line": 4, "column": 1, "offset": 100,
+               "overflow_px": 128, "edge": "bottom"},
+              {"kind": "missing-glyph",
+               "detail": "no font has a glyph for U+1F389 at 4:19",
+               "codepoint": 127881, "line": 4, "column": 19, "offset": 118,
+               "overflow_px": 0, "edge": null}]}
 ```
 
 - `line` / `column` / `offset` は位置が無ければ `null`、`hint` が無ければ `""`

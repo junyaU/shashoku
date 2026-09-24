@@ -91,6 +91,7 @@ struct SpecFontFamily {
 // longhand プロパティ。ショートハンドは宣言パースの時点でここまで展開する。
 enum class PropertyId : std::uint8_t {
   Display,
+  BoxSizing,
   Width,
   Height,
   MarginTop,
@@ -132,8 +133,8 @@ enum class GlobalKeyword : std::uint8_t { None, Inherit, Initial };
 using SpecifiedValue =
     std::variant<std::monostate,  // inherit / initial のときのプレースホルダ
                  SpecDimension, SpecLength, SpecNumber, SpecWeight, SpecColor, SpecLineHeight,
-                 SpecFontFamily, Display, FlexDirection, JustifyContent, AlignItems, TextAlign,
-                 LineBreak, OverflowWrap, WritingMode, BorderStyle>;
+                 SpecFontFamily, Display, BoxSizing, FlexDirection, JustifyContent, AlignItems,
+                 TextAlign, LineBreak, OverflowWrap, WritingMode, BorderStyle>;
 
 struct Declaration {
   PropertyId property = PropertyId::Display;

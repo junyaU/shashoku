@@ -20,7 +20,7 @@ namespace {
 // ① html と ② style の対応外が混ざった入力。それぞれの段が別の問題を見つける。
 constexpr std::string_view kMixedHtml =
     "<div style=\"float: left\">あ</div>\n"
-    "<table><span style=\"box-sizing: border-box\">い</span></table>\n"
+    "<table><span style=\"max-width: 200px\">い</span></table>\n"
     "<div onclick=\"x\" style=\"position: absolute\">う</div>\n";
 
 // 位置の取り出しはここに 1 か所だけ置く。①② の診断は必ず位置を持つ（持たなければ契約違反）が、
@@ -102,14 +102,14 @@ TEST(Diagnostics, CollectsHtmlAndStyleProblemsAtOnce) {
 // 機械側は kind と hint を別々に読めるし、人向けの 1 行は to_string() が作る。
 TEST(Diagnostics, HintIsSeparateFromTheMessage) {
   const auto result =
-      render(R"(<div style="box-sizing: border-box">あ</div>)", japanese_fonts(), options_for(320));
+      render(R"(<div style="float: left">あ</div>)", japanese_fonts(), options_for(320));
   ASSERT_FALSE(result.has_value());
   const RenderError error = first_error(result.error());
   EXPECT_EQ(error.kind, ErrorKind::UnsupportedProperty);
   EXPECT_FALSE(error.hint.empty()) << to_string(result.error());
-  // 確かめた代替（content-box で書き直す）を勧める。message 側には入れない
-  EXPECT_NE(error.hint.find("content-box"), std::string::npos) << error.hint;
-  EXPECT_EQ(error.message.find("content-box"), std::string::npos) << error.message;
+  // 確かめた代替（flex で横並びにする）を勧める。message 側には入れない
+  EXPECT_NE(error.hint.find("display: flex"), std::string::npos) << error.hint;
+  EXPECT_EQ(error.message.find("display: flex"), std::string::npos) << error.message;
   // 人向けの 1 行は "  hint: …" の行として続く（error.hpp の契約）
   EXPECT_NE(to_string(result.error()).find("\n  hint: "), std::string::npos)
       << to_string(result.error());

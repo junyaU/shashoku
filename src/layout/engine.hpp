@@ -57,6 +57,11 @@ struct ResolvedImage {
 
 enum class ChildKind : std::uint8_t { Skip, Inline, Block };
 
+// `box-sizing: border-box` で引く padding の辺を選ぶ軸（A56）。border は 4 辺共通（A11）。
+// **論理方向**なので、物理の `width` / `height` から引くときは writing-mode で読み替える
+// （`image.cpp` がそうしている）。
+enum class SizeAxis : std::uint8_t { Inline, Block };
+
 [[nodiscard]] ChildKind classify(const style::StyledNode& node);
 // 無名ブロック / 無名 flex アイテムを作らなくてよい「空白だけのインラインの連続」か。
 [[nodiscard]] bool is_blank(std::span<const style::StyledNode> nodes);
@@ -136,6 +141,18 @@ class LayoutEngine {
       const style::ComputedStyle& style, float containing_inline_size,
       const SourceLocation& location, std::optional<float> override_inline = std::nullopt,
       std::optional<float> override_block = std::nullopt) const;
+
+  // `box-sizing: border-box` のときに指定値から引く量（A56）。
+  // content-box なら 0、border-box なら「その軸の padding 2 辺 + border x 2」。
+  // 指定値が長さで与えられていない（`auto`）箱には関係しない。
+  [[nodiscard]] float border_box_extra(const style::ComputedStyle& style, SizeAxis axis) const;
+
+  // `width` / `height` / `flex-basis` の指定値 → content サイズ（A56。CSS Box Sizing 3 §3）。
+  // `%` は先に percent_basis で解決し、そのあとで引く。下限は 0。
+  // `Auto` の扱いは呼び出し側の責任（resolve_length と同じく 0 を返す）。
+  [[nodiscard]] float content_from_specified(const style::ComputedStyle& style,
+                                             const style::Dimension& size, float percent_basis,
+                                             SizeAxis axis) const;
 
   // 論理方向のマージン（auto は 0）と、どの辺が auto だったか。
   [[nodiscard]] LogicalEdges<float> resolve_margin(const style::ComputedStyle& style,

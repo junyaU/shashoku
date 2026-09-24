@@ -16,7 +16,7 @@ shashoku（HTML→PNG エンジン、v0.1.0）向けの HTML を書き、CLI で
 1. **HTML を書く前に**
    [writing-html-for-shashoku.md](writing-html-for-shashoku.md) を読む（英語版:
    [writing-html-for-shashoku.en.md](writing-html-for-shashoku.en.md)）。
-   対応表は §2、落とし穴は §3、定石の最小例は §4、代替表は §5 にある。
+   対応表は §2、先に知っておくことは §3、定石の最小例は §4、代替表は §5 にある。
    LLM に書かせるなら、この文書を丸ごとプロンプトに貼る
 2. **骨格は [examples/](examples/) から写す**。14 個の定石（カード・横並び・表・箇条書き・
    タグ・縦中央揃え・左右の位置合わせ・見出しと本文・OG 画像・縦書き・ルビ・画像・
@@ -25,8 +25,11 @@ shashoku（HTML→PNG エンジン、v0.1.0）向けの HTML を書き、CLI で
 4. **失敗したらガイド §6**（エラーの読み方・直す順序・現状と予定）
 5. **成功しても PNG を開いて目で見る**。エラーが無いことは絵が正しいことを意味しない
 
-つまずきやすい 2 点（ガイド §3-(3) / §4.2）:
+先に知っておく 3 点（ガイド §3-(1) / §3-(3) / §4.2）:
 
+- **`box-sizing` は `content-box`（既定。ブラウザと同じ）と `border-box` の両方が使える。**
+  先頭に `* { box-sizing: border-box }` を書けば、`width` / `height` から padding と border を
+  引く必要はない（`flex-basis` と `<img>` にも効く）。ガイド §4 の例は content-box のまま
 - **`display: flex` の直接の子は block 化される。** `span` でも `div` でも同じ絵になり、
   `padding` / `border` / `width` を付けてよい。例外は `<img>` / `<ruby>` / `<br>`（inline のまま）。
   文章の中に置いた `span`（flex の孫）は inline のままで、箱のプロパティは `unsupported-layout`
@@ -69,8 +72,8 @@ shashoku --version                                              # 版（この s
 
 ```
 error[unsupported-value] at 82:77: `border-style: dashed` is not supported (supported: solid, none)
-error[unsupported-property] at 84:6: `box-sizing` is not a supported property
-  hint: content-box only: subtract padding and border from `width` / `height`
+error[unsupported-property] at 84:6: `max-width` is not a supported property
+  hint: no min/max sizes: use a fixed `width` / `height`, or drop it
 warning[missing-glyph]: no font has a glyph for U+1F600 at 1:6
 warning[content-overflow]: content overflows the canvas by 430.0px (bottom) at 19:1
 ```

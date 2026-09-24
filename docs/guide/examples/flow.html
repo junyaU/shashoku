@@ -1,0 +1,35 @@
+<!-- flex の入れ子。外側の flex が段を横に並べ、段の中の flex が縦に積み、
+     いちばん内側の flex がタグを横に並べる。段の間の矢印は「文字を 1 つ入れた div」で、
+     外側の align-items: center で段の縦中央に来る（矢印の位置を計算しなくてよい）。
+     入れ子の各段で必要なのは: 外側 = 並べる向きと揃え、内側 = 自分の中の並び。
+     shashoku docs/guide/examples/flow.html -o flow.png --width 720 -->
+<style>
+  .flow  { display: flex; align-items: center; gap: 12px; padding: 20px; background: #ffffff; }
+  .step  { flex: 1 1 0; display: flex; flex-direction: column; gap: 8px;
+           padding: 14px; border-radius: 10px; background: #f1f4f9; }
+  .no    { font-size: 12px; color: #6b7a90; }
+  .name  { font-size: 17px; font-weight: bold; line-height: 1.5; color: #1b2733; }
+  .tags  { display: flex; gap: 6px; }
+  .tag   { flex: none; padding: 2px 8px; border-radius: 9px;
+           background: #e7f0ff; color: #14509b; font-size: 12px; }
+  .arrow { flex: none; font-size: 22px; color: #9aa7b8; }
+</style>
+<div class="flow">
+  <div class="step">
+    <div class="no">1</div>
+    <div class="name">受け取る</div>
+    <div class="tags"><div class="tag">HTML</div><div class="tag">フォント</div></div>
+  </div>
+  <div class="arrow">→</div>
+  <div class="step">
+    <div class="no">2</div>
+    <div class="name">組む</div>
+    <div class="tags"><div class="tag">行分割</div><div class="tag">約物</div></div>
+  </div>
+  <div class="arrow">→</div>
+  <div class="step">
+    <div class="no">3</div>
+    <div class="name">出す</div>
+    <div class="tags"><div class="tag">PNG</div></div>
+  </div>
+</div>

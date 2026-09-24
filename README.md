@@ -20,7 +20,8 @@ tar xf shashoku-linux-x86_64.tar.gz && cd shashoku-linux-x86_64
 > GitHub の Releases で "Publish release" を押して公開します。
 
 実行ファイルは 1 つだけで、依存ライブラリも**既定フォント**（Noto Sans JP Regular / Bold）も
-中に入っています。`--font` を書けばそちらが優先されます。
+中に入っています。`--font` を書くと**既定フォントは使われず、渡したフォントだけ**になります
+（和文が要るなら和文のフォントも渡してください）。
 版は `./shashoku --version`、ライセンスは `./shashoku --license` で出ます。
 [examples/](examples/) の HTML には**そのまま貼れる 1 行**が先頭コメントに書いてあります。
 

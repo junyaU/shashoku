@@ -101,7 +101,9 @@ pseudo-classes and pseudo-elements (`:hover` `::before`), at-rules (`@media`, `@
 - **There are no per-side borders** (`border-top`, `border-left`, … are unsupported).
   Draw rules with a `div` that has `height: 1px; background: <colour>` (§4.3)
 - **There are no per-corner radii** — `border-radius` takes exactly one length
-- `margin: auto` works (horizontal centring)
+- `margin: auto` works. Besides centring a block horizontally, **on a flex item it absorbs the free
+  space**: `margin-left: auto` on a child of a row pushes it to the right edge, `margin-top: auto`
+  on a child of a column pushes it to the bottom (§4.14)
 
 ### 2.4 Values, units and colours
 
@@ -126,6 +128,33 @@ pseudo-classes and pseudo-elements (`:hover` `::before`), at-rules (`@media`, `@
 > resolves it against its own `font-size`; an `em` value inherits as a resolved px length. Prefer
 > **unitless** whenever the element has children with a different `font-size`.
 > `font-size` does not accept keywords such as `large`.
+
+> `font-family` only matches the **family name a font file declares for itself**. Generic families
+> (`serif`, `sans-serif`, `monospace`, …) and the names of fonts you did not pass are
+> **skipped silently, not reported as an error** (see §7 for serif and monospace).
+
+**A symbol only appears if the font has it.** Anything missing renders as □ (tofu) and produces a
+`warning[missing-glyph]`. The list below was checked by actually drawing it with the embedded
+default font (Noto Sans JP); with a different font passed via `--font` the answer changes.
+
+| Group | Symbols that render |
+|---|---|
+| Arrows | `→` `←` `↑` `↓` `⇒` `⇐` `⇔` `↔` `⇨` `➡` |
+| Shapes | `●` `○` `◎` `■` `□` `◆` `◇` `▲` `△` `▼` `▽` `▶` `▷` `◀` `◁` `▪` `▫` `★` `☆` |
+| Signs and maths | `✓` `×` `✚` `※` `〓` `¬` `∞` `≠` `≦` `≧` `√` `∴` `∵` `−` `±` `÷` `‰` `℃` `°` `′` `″` |
+| Dashes and punctuation | `–` `—` `―` `…` `〜` `～` `「」` `『』` `（）` `〔〕` `【】` `〈〉` `《》` `・` |
+| Currency and reference | `€` `¥` `£` `$` `©` `®` `™` `§` `¶` `†` `‡` `№` `①` `②` `③` `Ⅰ` `Ⅱ` `Ⅲ` |
+| Others | `♦` `♥` `♠` `♣` `♪` `☀` `☁` `☂` `☃` `☎` `✂` `⌘` `⏎` `⇧` `⚠` `❖` |
+
+**These came out as □** (the same check actually produced a warning for each):
+
+- Every emoji. `🎉` `😀` `✅` `❗` `⭐` `❤` `⚡` `⏰` `✈` `✉` `⬛` `⬜`
+- Most check marks and crosses. `✔` `✕` `✗` `✘` `✖` `☑` `☐` `☒`
+  (**only `✓` and `×` render**)
+- `≒` `✦` `✳` `✴` `➔` `⌥`
+
+Writing `⚠️` with a variation selector (`U+FE0F`) drops the selector and gives you the
+**monochrome `⚠`**. There is no way to get a colour emoji.
 
 ### 2.5 The user-agent stylesheet
 
@@ -252,6 +281,7 @@ guide; replace the text with your own — the markup is what matters.
 `flex: 1 1 0` gives equal columns (the equivalent of grid's `1fr`). `flex: 1` is the same thing
 (it expands to `flex: 1 1 0`). Use `flex: none` for shrink-to-fit and
 `flex: none; width: 180px` for a fixed column.
+For flex inside flex (arrows between steps, a row of tags inside a card) see §4.13.
 
 ### 4.3 Table (flex rows + 1px rules) — [table.html](examples/table.html)
 
@@ -279,6 +309,12 @@ guide; replace the text with your own — the markup is what matters.
 
 `align-items` defaults to `stretch`, so **cells in a row end up the same height** automatically
 (zebra stripes stay intact). For uneven columns use `flex: none; width: 180px` or `flex: 2 1 0`.
+
+**An empty cell has no height.** An empty `div` has a content height of 0, so a row whose cells are
+**all empty** is only as tall as its padding (20px for the `.td` above: 10 + 10). To keep one line
+of height, put a `&nbsp;` in it — it is accepted as a character reference and carries a height of
+`font-size × line-height` (25.5px here, for a 45.5px row). If any cell in the row has content, the
+empty ones are stretched by `stretch` anyway and need no `&nbsp;`.
 
 ### 4.4 Bulleted list (flex + a dot) — [list.html](examples/list.html)
 
@@ -346,6 +382,7 @@ Two cases:
 To centre content in a **full-height** box, use
 `display: flex; flex-direction: column; justify-content: center` plus an explicit `height`
 on the parent (content-box, so subtract the padding).
+To centre the body text and still pin a byline or a date to the bottom edge, see §4.14.
 
 ### 4.7 Left/right alignment and placing a note — [space-between.html](examples/space-between.html)
 
@@ -370,6 +407,39 @@ There is no `position`, so **all placement happens in the flow**.
   `flex: none; width: <offset>px` spacer before the note. You compute the offset yourself
   (content-box, so add the `padding` and `border` of everything to its left).
   Change any of those sizes by 1px and you must update this number too
+- To push **only one** item to the right edge, `margin-left: auto` does the same thing without a
+  spacer `div`
+
+How to compute the spacer width:
+
+1. Add up the outer size of **every preceding sibling**. One sibling's outer size is
+   `width + left/right padding + left/right border` (content-box, so `width` excludes them)
+2. Add one `gap` for **every gap you cross** (n preceding siblings means n gaps)
+3. Give the note's row the **same `padding-left`** as the row above it — any difference shifts
+   the note by exactly that amount
+4. Check it with `--dump-stage box`: the first number of the note's `rect` must equal the first
+   number of the target element's `rect`
+
+```html
+<style>
+  .row   { display: flex; gap: 12px; padding: 16px; background: #ffffff; }
+  .cell  { flex: none; width: 160px; padding: 10px; border: 1px solid #ccd3dd;
+           border-radius: 8px; font-size: 15px; color: #1b2733; }
+  .notes { display: flex; padding: 0 16px 16px 16px; background: #ffffff; }
+  .sp    { flex: none; width: 194px; }
+  .note  { flex: none; font-size: 13px; color: #c0392b; }
+</style>
+<div class="row">
+  <div class="cell">一次案</div>
+  <div class="cell">二次案</div>
+  <div class="cell">最終案</div>
+</div>
+<div class="notes"><div class="sp"></div><div class="note">▲ ここだけ差し替えた</div></div>
+```
+
+One cell measures `160 + 10×2 + 1×2 = 182` on the outside and we cross one gap, so the spacer is
+`182 + 12 = 194px`. With `shashoku notes.html --dump-stage box --width 600`, the second cell and
+the note both start their `rect` at `210` (= 16 + 194).
 
 ### 4.8 Heading and body text — [heading.html](examples/heading.html)
 
@@ -454,6 +524,53 @@ The rules:
 - **Line thickness** = `font-size × line-height`; lines × that must fit inside `width`
 - There is no tate-chu-yoko (`text-combine-upright`)
 
+#### Placing things along the block axis (left and right)
+
+"Title at the right edge, signature at the left edge" is built by making the outermost element a
+`display: flex`. The axes rotate by 90° in vertical writing, so settle which property acts in which
+direction first (this table was checked with `--dump-stage box`):
+
+| `flex-direction` | Main axis (`justify-content`) | Cross axis (`align-items`) |
+|---|---|---|
+| `row` (default) | **vertical** (top → bottom). `flex-start` = top, `flex-end` = bottom | **horizontal** (right → left). `flex-start` = **right**, `flex-end` = **left** |
+| `column` | **horizontal** (right → left). `flex-start` = **right**, `flex-end` = **left** | **vertical** (top → bottom). `flex-start` = top, `flex-end` = bottom |
+
+`margin` is the one thing that ignores this table and **stays physical**. To open space along the
+block axis use `margin-right` (gap to the block on its right) and `margin-left` (gap to the block on
+its left).
+
+```html
+<style>
+  .sheet { writing-mode: vertical-rl; display: flex; flex-direction: column;
+           justify-content: space-between; width: 400px; height: 520px; padding: 32px;
+           background: #f7f3e8; color: #23201a; }
+  .title { font-size: 30px; font-weight: bold; }
+  .body  { font-size: 20px; line-height: 2; }
+  .by    { font-size: 15px; color: #6b6355; }
+</style>
+<div class="sheet">
+  <div class="title">秋の便り</div>
+  <div class="body">風が冷たくなりました。庭の柿が色づき、夕暮れの早さに驚いています。</div>
+  <div class="by">架空　花</div>
+</div>
+```
+
+`shashoku letter.html -o letter.png --width 464 --height 584` puts the title at the right edge and
+the signature at the left edge (the main axis of a `column` runs right to left, so `space-between`
+spreads them horizontally).
+
+**Along the inline axis (top and bottom)** use `align-items` on the same flex container (it applies
+to every child) or, per child, `margin-top: auto` / `margin-bottom: auto`. For instance the
+signature in [vertical.html](examples/vertical.html) above is pushed down with
+`padding: 560px 0 0 0`; make the sheet a `display: flex; flex-direction: column` and give the
+signature `margin-top: auto` instead and it **lands exactly on the bottom edge and survives a
+change of body text or `font-size` without recomputing anything** (it does not land on precisely
+the same spot as the padding did — but it is the reliable way to reach the bottom edge).
+
+> The `rect` in `--dump-stage box` is in **logical coordinates**. In vertical writing it reads
+> `[offset along the inline axis (from the top), offset along the block axis (from the right edge),
+> inline size, block size]` — **the larger the second number, the further left**.
+
 ### 4.11 Ruby — [ruby.html](examples/ruby.html)
 
 ```html
@@ -469,7 +586,18 @@ The rules:
 
 - `<rt>` is `0.5em` of its parent by UA default
 - **A line with ruby grows its line box automatically**, so ruby never collides with the line
-  above. It does look cramped below about `line-height: 1.0`; **aim for `line-height: 1.8`**
+  above (not even at `line-height: 1.0`). It does look cramped that tight;
+  **aim for `line-height: 1.8`**
+- **The height of such a line** (horizontal writing) is
+  `font-size × max(line-height, A + line-height ÷ 2)`, where `A` is the font's
+  **ascent + descent expressed in em** — about **1.45** for the default font (Noto Sans JP).
+  So below `2 × A ≈ 2.9` the ruby makes the line taller, and **only the top side grows**.
+  Measured with the default font at `font-size: 20px`: a `line-height: 1.8` line is 36px and the
+  same line with ruby is **46.95px**; at `line-height: 2.9` it stays 58px either way
+- Consequently, **mixing lines with and without ruby makes the leading uneven**. Either set
+  `line-height` to 2.9 or more for the whole paragraph (which is very airy) or accept it.
+  The annotation itself does not participate in the line height — only the overhang that puts it
+  outside the base text does
 - When the ruby and its base differ in width, the ruby is distributed 1:2:…:2:1 (JLREQ 3.3.6) and
   any overhang is allowed only over adjacent **kana** (JLREQ 3.3.8). Latin base text also takes ruby
 - `letter-spacing` has no effect inside `<rt>`
@@ -500,6 +628,89 @@ Render with `shashoku image.html --image icon=examples/icon.png -o out.png --wid
 - `alt` is optional (leaving it out is not an error; it is not drawn either)
 - `<img>` is the only element that takes `width` / `height` / `border-radius` while inline,
   and its `border-radius` **clips the image**
+- **`<img>` can be a direct child of a flex container.** `.head` above *is* the flex container —
+  there is no need to wrap the `<img>` in a `div`. Size it with `width` / `height`
+
+### 4.13 Flex inside flex — [flow.html](examples/flow.html)
+
+With no `position` and no `grid`, anything slightly involved is built by **nesting flex
+containers**. Each level only has two decisions: the **direction** (`flex-direction`) and the
+**cross-axis alignment** (`align-items`).
+
+```html
+<style>
+  .flow  { display: flex; align-items: center; gap: 12px; padding: 20px; background: #ffffff; }
+  .step  { flex: 1 1 0; display: flex; flex-direction: column; gap: 8px;
+           padding: 14px; border-radius: 10px; background: #f1f4f9; }
+  .no    { font-size: 12px; color: #6b7a90; }
+  .name  { font-size: 17px; font-weight: bold; line-height: 1.5; color: #1b2733; }
+  .tags  { display: flex; gap: 6px; }
+  .tag   { flex: none; padding: 2px 8px; border-radius: 9px;
+           background: #e7f0ff; color: #14509b; font-size: 12px; }
+  .arrow { flex: none; font-size: 22px; color: #9aa7b8; }
+</style>
+<div class="flow">
+  <div class="step">
+    <div class="no">1</div>
+    <div class="name">受け取る</div>
+    <div class="tags"><div class="tag">HTML</div><div class="tag">フォント</div></div>
+  </div>
+  <div class="arrow">→</div>
+  <div class="step">
+    <div class="no">2</div>
+    <div class="name">組む</div>
+    <div class="tags"><div class="tag">行分割</div><div class="tag">約物</div></div>
+  </div>
+</div>
+```
+
+- **The arrow between steps** is a `flex: none` `div` holding the single character `→`.
+  `align-items: center` on the outer flex centres it against the steps, so you never compute its
+  position (`→` renders with the default font; see §2.4)
+- **The steps are `flex: 1 1 0`** so they share the width evenly; the arrows are `flex: none` and
+  take only what they need
+- **Inside a step, `flex-direction: column`** stacks the number, the heading and the tag row, and
+  `gap` becomes the spacing between them
+- **The tag row is yet another flex** (`display: flex` with `flex: none` children) — the same shape
+  as §4.5
+- Nesting does not bring `flex-wrap` back. **If it does not fit, it overflows** (overflow out of a
+  parent box is not detected). Raise `--width` when you add steps
+
+### 4.14 Quote card (body centred, byline pinned to the bottom) — [quote.html](examples/quote.html)
+
+A fixed-height canvas with the body in the middle and the byline at the bottom edge. There is no
+`position`, so you solve it with **one box that soaks up the free space**.
+
+```html
+<style>
+  .sheet { display: flex; flex-direction: column; width: 552px; height: 312px;
+           padding: 24px; background: #fbf8f2; color: #23201a; }
+  .body  { flex: 1 1 0; display: flex; flex-direction: column; justify-content: center; }
+  .quote { margin: 0; font-size: 26px; line-height: 1.9; }
+  .by    { flex: none; text-align: right; font-size: 15px; color: #7a7266; }
+</style>
+<div class="sheet">
+  <div class="body"><p class="quote">おそれるな。おそれは、まだ起きていないことの影にすぎない。</p></div>
+  <div class="by">架空　花『影の書』</div>
+</div>
+```
+
+Render with `shashoku quote.html -o quote.png --width 600 --height 360`
+(`552 = 600 − 24×2`, `312 = 360 − 24×2`).
+
+- Make the sheet a `flex-direction: column` and give the **body box `flex: 1 1 0`**: it takes all
+  the space the byline does not. `justify-content: center` inside it centres the body, and the
+  byline lands on the bottom edge
+- The body is centred within **the area left over after the byline**, which sits half the byline's
+  height above the centre of the canvas. To centre it on the canvas exactly, add an empty
+  `flex: none; height: <byline height>px` `div` **above** the body box. Pinning the byline's
+  `height` and `line-height` to the same px makes that easy: 22px for both in the example above
+  puts the centre of the body at exactly 180px, the middle of the canvas
+- If the body may stay at the top and only the byline needs to be pinned, you need neither the
+  spacer nor `flex: 1 1 0` — just `margin-top: auto` on the byline, which absorbs all the free space
+- In vertical writing `margin-top: auto` still pushes to "the end of the inline axis", i.e. the
+  **bottom edge** (checked in §4.10). To reach an edge along the block axis (left or right), read
+  the `justify-content` table in §4.10
 
 ---
 
@@ -511,7 +722,7 @@ Render with `shashoku image.html --image icon=examples/icon.png -o out.png --wid
 | `<ul>` `<li>` `<ol>` | error | Flex rows + a dot `div` (§4.4) |
 | `<table>` `<tr>` `<td>` | error | Flex rows + `flex: 1 1 0` cells (§4.3) |
 | `<strong>` `<b>` `<em>` `<code>` `<a>` `<section>` `<header>` | error | `span` (+ `font-weight` / `color` / `background-color`) or `div` |
-| Emoji (🎉 😀 …) | **drawn as □ with a warning** | **Do not use them.** Use characters (`→` `↓` `▼` `※`) or a small coloured `div` |
+| Emoji (🎉 😀 …) | **drawn as □ with a warning** | **Do not use them.** Use a symbol from the list in §2.4 (`→` `▼` `※` `✓`) or a small coloured `div` |
 | `display: inline-block` | error | Flex parent + `flex: none` child (§3-(4)) |
 | `position` / `top` / `left` / `z-index` | error | Flex with `justify-content` / `align-items` / an empty spacer (§4.7) |
 | `grid` / `grid-template-columns` | error | Flex + `flex: 1 1 0` (the `1fr` equivalent) |
@@ -535,6 +746,22 @@ Render with `shashoku image.html --image icon=examples/icon.png -o out.png --wid
 | `@media` / `@import` / custom properties / `calc()` / `!important` | error | Write the resolved value |
 | Descendant selectors (`.card p`) | error | Put a class directly on the element |
 | JPEG / SVG / WebP images | error | Convert to PNG and pass with `--image` |
+
+### Change the picture, change the words
+
+Working through the table above, it is easy to end up with **a new picture and the old wording**.
+Nothing errors and nothing warns, so you find out when you look at the PNG.
+
+- Dashed border (`dashed`) replaced by a solid one or a tint → "the part **inside the dashed box**"
+  is now a lie
+- An arrow image or a `::before` ornament replaced by the character `→` → "the **downward arrow**
+  below" no longer matches
+- A shadow (`box-shadow`) replaced by a border → "the card that **appears to float**" no longer
+  matches
+- A gradient replaced by a flat colour → "**the blue-to-purple gradient**" no longer matches
+
+Treat every substitution as **two edits, the style and the prose**. Scan the legend, the captions
+and the body for any phrase that points at the appearance, and fix them at the same time.
 
 ### Pairs that are dangerous to split
 
@@ -715,6 +942,36 @@ shashoku og-card.html -o og.png --width 1200 --height 630 --strict
 
 **Bold** comes from `font-weight` alone (the default font's Bold is selected).
 `font-family` only reorders the family preference; weight matching works with or without it.
+
+### Serif and monospace (`--font` and `font-family`)
+
+**The embedded default font is only Noto Sans JP, Regular and Bold.** Writing
+`font-family: serif` or `font-family: monospace` changes **not one pixel** (generic families, and
+the names of fonts you did not pass, are **skipped silently rather than reported as an error**).
+To get a serif or a monospace face, pass that font file with `--font`.
+
+- `font-family` matches the **family name the font file declares for itself** (case and surrounding
+  whitespace are ignored): `Noto Sans JP` for `NotoSansJP-Regular.otf`, `Noto Sans` for
+  `NotoSans-Regular.ttf`. Not the file name, and not a CSS generic name
+- A match only moves that family to the front; **the rest follow in `--font` order**. Characters the
+  first family does not have fall through to the next font
+- **Passing even one `--font` drops the default font.** Pass a Japanese font yourself if you need
+  Japanese (a Latin-only font leaves every Japanese character as □)
+- If you do not know the family name, omit `font-family` and let **`--font` order decide** — that
+  always works
+
+```html
+<p style="font-family: 'Noto Sans'">Hamburgefonstiv 0123 / 写植</p>
+```
+
+```bash
+shashoku doc.html -o doc.png --width 460 \
+  --font NotoSansJP-Regular.otf --font NotoSans-Regular.ttf
+```
+
+Here the Latin text is set in Noto Sans and `写植`, which Noto Sans does not have, falls through to
+Noto Sans JP. Serif and monospace work the same way: add the file to `--font` and put that file's
+family name (`Noto Serif JP`, `Noto Sans Mono`, …) in `font-family`.
 
 The same input (HTML, fonts, images, options) always produces a **byte-identical PNG**.
 

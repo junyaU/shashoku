@@ -97,7 +97,8 @@ CSS 変数（`--x`）、`calc()`。
 - **辺ごとの border はありません**（`border-top` `border-left` などは非対応）。
   罫線は `height: 1px; background: <色>` の `div` で引いてください（§4.3）
 - **隅ごとの border-radius はありません**（`border-radius: 8px` のように 1 値だけ）
-- `margin: auto` は使えます（左右中央寄せ）
+- `margin: auto` は使えます。ブロックの左右中央寄せのほかに、**flex 項目では余りを吸って寄せます**
+  （横並びの子に `margin-left: auto` で右端へ、縦並びの子に `margin-top: auto` で下端へ。§4.14）
 
 ### 2.4 値・単位・色
 
@@ -122,6 +123,32 @@ CSS 変数（`--x`）、`calc()`。
 > `font-size` を基準に計算する」、`em` は「計算済みの px が継承される」という違いがあるので、
 > 文字サイズの違う子を持つ要素では**単位なし**を選んでください。
 > `font-size` はキーワード（`large` など）を受け付けません。
+
+> `font-family` が照合するのは、**渡したフォントが自分で名乗っている family 名**だけです。
+> `serif` / `sans-serif` / `monospace` などの総称ファミリと、渡していないフォントの名前は
+> **エラーにならず黙って読み飛ばされます**（明朝・等幅にする方法は §7）。
+
+**記号は「フォントに入っているものだけ」出ます。** 入っていない字は □（豆腐）になり
+`warning[missing-glyph]` が出ます。埋め込みの既定フォント（Noto Sans JP）で実際に描いて
+確かめた一覧です（`--font` で別のフォントを渡したときは、そのフォント次第で変わります）。
+
+| 分類 | 出る記号 |
+|---|---|
+| 矢印 | `→` `←` `↑` `↓` `⇒` `⇐` `⇔` `↔` `⇨` `➡` |
+| 図形 | `●` `○` `◎` `■` `□` `◆` `◇` `▲` `△` `▼` `▽` `▶` `▷` `◀` `◁` `▪` `▫` `★` `☆` |
+| 記号・数式 | `✓` `×` `✚` `※` `〓` `¬` `∞` `≠` `≦` `≧` `√` `∴` `∵` `−` `±` `÷` `‰` `℃` `°` `′` `″` |
+| ダッシュ・約物 | `–` `—` `―` `…` `〜` `～` `「」` `『』` `（）` `〔〕` `【】` `〈〉` `《》` `・` |
+| 通貨・記載 | `€` `¥` `£` `$` `©` `®` `™` `§` `¶` `†` `‡` `№` `①` `②` `③` `Ⅰ` `Ⅱ` `Ⅲ` |
+| そのほか | `♦` `♥` `♠` `♣` `♪` `☀` `☁` `☂` `☃` `☎` `✂` `⌘` `⏎` `⇧` `⚠` `❖` |
+
+**□ になったもの**（同じ確かめ方で実際に警告が出たもの）:
+
+- 絵文字はすべて。`🎉` `😀` `✅` `❗` `⭐` `❤` `⚡` `⏰` `✈` `✉` `⬛` `⬜`
+- チェック・バツの多く。`✔` `✕` `✗` `✘` `✖` `☑` `☐` `☒`（**出るのは `✓` と `×` だけ**）
+- `≒` `✦` `✳` `✴` `➔` `⌥`
+
+`⚠️` のように異体字セレクタ（`U+FE0F`）を付けた書き方は、セレクタが無視されて
+**白黒の `⚠`** になります。色の付いた絵文字は出せません。
 
 ### 2.5 UA の既定スタイル
 
@@ -245,6 +272,7 @@ rt { font-size: 0.5em }
 `flex: 1 1 0` で等分になります（CSS grid の `1fr` 相当）。`flex: 1` は同じ意味の短縮形です
 （`flex: 1 1 0` に展開されます）。内容ぶんの幅にしたいときは `flex: none`、
 幅を決め打ちにしたいときは `flex: none; width: 180px`。
+flex の中に flex を入れて組み立てる形（段の間の矢印、カードの中のタグ列）は §4.13。
 
 ### 4.3 表（flex の行 + 1px の罫）— [table.html](examples/table.html)
 
@@ -272,6 +300,13 @@ rt { font-size: 0.5em }
 
 `align-items` の既定は `stretch` なので、**同じ行のセルの高さは自動でそろいます**（縞模様が崩れません）。
 列幅を変えたいときは `flex: 1 1 0` の代わりに `flex: none; width: 180px` や `flex: 2 1 0` を使います。
+
+**空のセルは高さを持ちません。** 中身の無い `div` の内容高さは 0 なので、その行のセルが**全部空**だと、
+行の高さは `padding` のぶんだけになります（上の `.td` なら 10 + 10 = 20px）。
+1 行ぶんの高さを保ちたいときは `&nbsp;` を入れてください
+（文字参照として通り、`font-size × line-height` の高さを持ちます。上の例なら 15 × 1.7 = 25.5px で
+行は 45.5px になります）。同じ行に中身のあるセルが 1 つでもあれば、空のセルも `stretch` で
+引き伸ばされるので `&nbsp;` は要りません。
 
 ### 4.4 箇条書き（flex + 丸）— [list.html](examples/list.html)
 
@@ -338,6 +373,7 @@ rt { font-size: 0.5em }
 
 **箱いっぱいの縦中央**は `display: flex; flex-direction: column; justify-content: center` と、
 親に明示した `height`（content-box なので padding を引いた値）で作ります。
+本文を縦中央に置きつつ、署名や日付だけを下端に張り付けたいときは §4.14。
 
 ### 4.7 左右の位置合わせ・注記の位置決め — [space-between.html](examples/space-between.html)
 
@@ -361,6 +397,36 @@ rt { font-size: 0.5em }
 - **特定の要素の真下に注記を置く** → 注記の前に `flex: none; width: <その位置まで>px` の空の `div` を置く。
   幅は自分で足し算します（content-box なので `padding` と `border` も足す）。
   上の要素の寸法を 1px でも変えたらこの値も直してください
+- **一方だけ右端に寄せる**なら `margin-left: auto` でも同じです（spacer の `div` が要りません）
+
+spacer の幅の出し方:
+
+1. 狙う要素より**前にある兄弟**の外寸を全部足す。1 つぶんの外寸は
+   `width + padding左右 + border左右`（content-box なので `width` に含まれていません）
+2. その間で**またぐ `gap` の数**だけ `gap` を足す（兄弟が n 個なら gap は n 個）
+3. 注記の行の `padding-left` を、上の行の `padding-left` と**同じ**にする（違うとその差だけずれます）
+4. `--dump-stage box` で確かめる。`rect` の 1 つ目の数が、狙った要素の `rect` の 1 つ目と一致すれば合っています
+
+```html
+<style>
+  .row   { display: flex; gap: 12px; padding: 16px; background: #ffffff; }
+  .cell  { flex: none; width: 160px; padding: 10px; border: 1px solid #ccd3dd;
+           border-radius: 8px; font-size: 15px; color: #1b2733; }
+  .notes { display: flex; padding: 0 16px 16px 16px; background: #ffffff; }
+  .sp    { flex: none; width: 194px; }
+  .note  { flex: none; font-size: 13px; color: #c0392b; }
+</style>
+<div class="row">
+  <div class="cell">一次案</div>
+  <div class="cell">二次案</div>
+  <div class="cell">最終案</div>
+</div>
+<div class="notes"><div class="sp"></div><div class="note">▲ ここだけ差し替えた</div></div>
+```
+
+セル 1 つの外寸は `160 + 10×2 + 1×2 = 182`、gap を 1 つまたぐので spacer は `182 + 12 = 194px`。
+`shashoku notes.html --dump-stage box --width 600` で見ると、2 つ目のセルも注記も
+`rect` の先頭が `210`（= 16 + 194）でそろいます。
 
 ### 4.8 見出しと本文 — [heading.html](examples/heading.html)
 
@@ -442,6 +508,50 @@ rt { font-size: 0.5em }
 - **行の太さ** = `font-size × line-height`。行数 × これが `width` に収まる必要があります
 - 縦中横（`text-combine-upright`）はありません
 
+#### 行送り方向（左右）に置き分ける
+
+「右端に題、左端に署名」のような配置は、いちばん外側の要素を `display: flex` にして作ります。
+縦書きでは軸が 90 度回るので、どのプロパティがどちらに効くかを先に押さえてください
+（`--dump-stage box` で確かめた表です）。
+
+| `flex-direction` | 主軸（`justify-content` が効く向き） | 交差軸（`align-items` が効く向き） |
+|---|---|---|
+| `row`（既定） | **縦**（上 → 下）。`flex-start` = 上、`flex-end` = 下 | **横**（右 → 左）。`flex-start` = **右**、`flex-end` = **左** |
+| `column` | **横**（右 → 左）。`flex-start` = **右**、`flex-end` = **左** | **縦**（上 → 下）。`flex-start` = 上、`flex-end` = 下 |
+
+`margin` だけは上の表と無関係に**物理方向のまま**です。行送り方向に空けたいときは
+`margin-right`（右隣との間）と `margin-left`（左隣との間）を使います。
+
+```html
+<style>
+  .sheet { writing-mode: vertical-rl; display: flex; flex-direction: column;
+           justify-content: space-between; width: 400px; height: 520px; padding: 32px;
+           background: #f7f3e8; color: #23201a; }
+  .title { font-size: 30px; font-weight: bold; }
+  .body  { font-size: 20px; line-height: 2; }
+  .by    { font-size: 15px; color: #6b6355; }
+</style>
+<div class="sheet">
+  <div class="title">秋の便り</div>
+  <div class="body">風が冷たくなりました。庭の柿が色づき、夕暮れの早さに驚いています。</div>
+  <div class="by">架空　花</div>
+</div>
+```
+
+`shashoku letter.html -o letter.png --width 464 --height 584` で、題が右端・署名が左端に付きます
+（`column` の主軸が右 → 左なので、`space-between` が寄せるのは左右です）。
+
+**字送り方向（上下）の位置決め**は、同じ flex の `align-items`（全部の子に効く）か、
+子ごとの `margin-top: auto` / `margin-bottom: auto` です。たとえば上の
+[vertical.html](examples/vertical.html) の署名は `padding: 560px 0 0 0` で下に押していますが、
+紙面を `display: flex; flex-direction: column` にして署名を `margin-top: auto` にすると、
+**署名が下端ぴったりに付き、本文の長さや `font-size` を変えても数字を計算し直さずに済みます**
+（`padding` で押した位置とは少しずれます。下端に付けたいならこちらが確実です）。
+
+> `--dump-stage box` の `rect` は**論理座標**です。縦書きでは
+> `[字送り（上）からの位置, 行送り（右端）からの位置, 字送り方向の大きさ, 行送り方向の大きさ]`
+> の順で、**2 つ目の数が大きいほど左**にあります。
+
 ### 4.11 ルビ — [ruby.html](examples/ruby.html)
 
 ```html
@@ -456,8 +566,17 @@ rt { font-size: 0.5em }
 ```
 
 - `<rt>` の大きさは UA 既定で親の `0.5em` です
-- **ルビのある行は行ボックスが自動で広がる**ので、上の行と重なることはありません。
-  ただし `line-height: 1.0` 前後だと窮屈に見えます。**`line-height: 1.8` 前後**を目安にしてください
+- **ルビのある行は行ボックスが自動で広がる**ので、上の行と重なることはありません
+  （`line-height: 1.0` でも重なりません）。ただし窮屈に見えるので **`line-height: 1.8` 前後**を目安に
+- **行の高さの式**（横書き）: ルビのある行の高さは
+  `font-size × max(line-height, A + line-height ÷ 2)` です。`A` はフォントの
+  **ascent + descent を em で表した値**で、既定フォント（Noto Sans JP）では **約 1.45**。
+  つまり `line-height` が `2 × A ≒ 2.9` 未満だとルビのぶんだけ行が高くなり、**増えるのは上側だけ**です。
+  実測（既定フォント、`font-size: 20px`）: `line-height: 1.8` の行は 36px、同じ行にルビがあると
+  **46.95px**。`line-height: 2.9` なら 58px で、ルビがあっても変わりません
+- そのため、**ルビのある行とない行が混ざると行送りが不ぞろいに見えます**。そろえたいなら
+  段落ごと `line-height` を 2.9 以上にする（かなり空きます）か、不ぞろいを受け入れてください。
+  注記（`<rt>`）そのものは行の高さに参加せず、参加するのは「親文字の外に出るための張り出し」だけです
 - 親文字とルビの幅が違うときは JLREQ 3.3.6 の 1:2:…:2:1 で配り、はみ出したぶんは隣の**仮名**にだけ掛けます。
   親文字が欧文でもルビは付きます（広めに配られます）
 - `<rt>` に `letter-spacing` は効きません
@@ -488,6 +607,84 @@ rt { font-size: 0.5em }
 - `alt` は任意です（書かなくてもエラーになりません。描画にも使われません）
 - `<img>` は inline のまま `width` / `height` / `border-radius` を取れる唯一の要素で、
   `border-radius` は**中身をクリップ**します
+- **`<img>` は flex の直接の子に置けます。** 上の例の `.head` がそのまま flex コンテナで、
+  `<img>` を `div` で包む必要はありません。大きさは `width` / `height` で決めます
+
+### 4.13 flex の入れ子 — [flow.html](examples/flow.html)
+
+`position` も `grid` も無いので、少し込み入った紙面は **flex の中に flex** を入れて作ります。
+入れ子の各段で決めることは 2 つだけです: **並べる向き**（`flex-direction`）と、
+**交差方向の揃え**（`align-items`）。
+
+```html
+<style>
+  .flow  { display: flex; align-items: center; gap: 12px; padding: 20px; background: #ffffff; }
+  .step  { flex: 1 1 0; display: flex; flex-direction: column; gap: 8px;
+           padding: 14px; border-radius: 10px; background: #f1f4f9; }
+  .no    { font-size: 12px; color: #6b7a90; }
+  .name  { font-size: 17px; font-weight: bold; line-height: 1.5; color: #1b2733; }
+  .tags  { display: flex; gap: 6px; }
+  .tag   { flex: none; padding: 2px 8px; border-radius: 9px;
+           background: #e7f0ff; color: #14509b; font-size: 12px; }
+  .arrow { flex: none; font-size: 22px; color: #9aa7b8; }
+</style>
+<div class="flow">
+  <div class="step">
+    <div class="no">1</div>
+    <div class="name">受け取る</div>
+    <div class="tags"><div class="tag">HTML</div><div class="tag">フォント</div></div>
+  </div>
+  <div class="arrow">→</div>
+  <div class="step">
+    <div class="no">2</div>
+    <div class="name">組む</div>
+    <div class="tags"><div class="tag">行分割</div><div class="tag">約物</div></div>
+  </div>
+</div>
+```
+
+- **段の間の矢印**は「`→` を 1 文字入れた `flex: none` の `div`」です。外側の
+  `align-items: center` で段の縦中央に来るので、矢印の位置を計算する必要はありません
+  （§2.4 のとおり `→` は既定フォントで出ます）
+- **段（`.step`）は `flex: 1 1 0`** で等分に。矢印は `flex: none` なので幅を食いません
+- **段の中は `flex-direction: column`** にして、番号・見出し・タグ列を縦に積みます。
+  `gap` が段の中の行間になります
+- **タグ列はさらに内側の flex**（`display: flex` + 子に `flex: none`）。§4.5 と同じ形です
+- 入れ子にしても `flex-wrap` はありません。**入りきらなければはみ出します**（親の箱からの
+  はみ出しは検出されません）。段の数を増やすときは `--width` も増やしてください
+
+### 4.14 引用カード（本文を縦中央、署名を下端）— [quote.html](examples/quote.html)
+
+高さを固定した紙面で「本文は真ん中、署名は下端」にする形です。`position` が無いので、
+**余りを吸う箱**を 1 つ作って解きます。
+
+```html
+<style>
+  .sheet { display: flex; flex-direction: column; width: 552px; height: 312px;
+           padding: 24px; background: #fbf8f2; color: #23201a; }
+  .body  { flex: 1 1 0; display: flex; flex-direction: column; justify-content: center; }
+  .quote { margin: 0; font-size: 26px; line-height: 1.9; }
+  .by    { flex: none; text-align: right; font-size: 15px; color: #7a7266; }
+</style>
+<div class="sheet">
+  <div class="body"><p class="quote">おそれるな。おそれは、まだ起きていないことの影にすぎない。</p></div>
+  <div class="by">架空　花『影の書』</div>
+</div>
+```
+
+`shashoku quote.html -o quote.png --width 600 --height 360` で出します
+（`552 = 600 − 24×2`、`312 = 360 − 24×2`）。
+
+- 紙面を `flex-direction: column` にして、**本文の箱に `flex: 1 1 0`** を与えると、署名以外の
+  余りを全部その箱が取ります。中で `justify-content: center` すれば本文が縦中央、署名は下端です
+- 本文が中央に来るのは「**署名を除いた領域**」の中央で、紙面の中央より署名の高さの半分だけ上です。
+  厳密に紙面の中央に置きたいなら、**署名と同じ高さの空の `div`**（`flex: none; height: <署名の高さ>px`）を
+  本文の箱の**上**に足してください。署名の高さは `height` と `line-height` を同じ px にして決め打ちにすると
+  合わせやすく、上の例なら両方 22px にすると本文の中心が紙面のちょうど中央（180px）に来ます
+- **本文は上端のままでよく、署名だけ下端に張り付けたい**なら、spacer も `flex: 1 1 0` も要りません。
+  署名に `margin-top: auto` を書くだけです（余りをその margin が全部吸います）
+- 縦書きでも `margin-top: auto` は「字送りの終わり = **下端**」に押します（§4.10 で確かめた形）。
+  行送り方向（左右）の端に寄せたいときは、§4.10 の `justify-content` の表を見てください
 
 ---
 
@@ -499,7 +696,7 @@ rt { font-size: 0.5em }
 | `<ul>` `<li>` `<ol>` | エラー | flex の行 + 丸の `div`（§4.4） |
 | `<table>` `<tr>` `<td>` | エラー | flex の行 + `flex: 1 1 0` のセル（§4.3） |
 | `<strong>` `<b>` `<em>` `<code>` `<a>` `<section>` `<header>` | エラー | `span`（+ `font-weight` / `color` / `background-color`）または `div` |
-| 絵文字（🎉 😀 など） | **□ になって警告** | **使わない**。文字（`→` `↓` `▼` `※`）か、色付きの小さな `div` で代用 |
+| 絵文字（🎉 😀 など） | **□ になって警告** | **使わない**。§2.4 の一覧にある記号（`→` `▼` `※` `✓`）か、色付きの小さな `div` で代用 |
 | `display: inline-block` | エラー | flex の親 + `flex: none` の子（§3-(4)） |
 | `position` / `top` / `left` / `z-index` | エラー | flex と `justify-content` / `align-items` / 空の spacer（§4.7） |
 | `grid` / `grid-template-columns` | エラー | flex + `flex: 1 1 0`（`1fr` 相当） |
@@ -523,6 +720,19 @@ rt { font-size: 0.5em }
 | `@media` / `@import` / CSS 変数 / `calc()` / `!important` | エラー | 値を直接書く |
 | 子孫セレクタ（`.card p`） | エラー | 当てたい要素にクラスを直接書く |
 | JPEG / SVG / WebP の画像 | エラー | PNG に変換して `--image` で渡す |
+
+### 絵を代えたら、文章も直す
+
+上の表のとおりに置き換えると、**絵は変わったのに文章がそのまま**になりがちです。
+エラーも警告も出ないので、気づくのは PNG を見たときです。
+
+- 破線の枠（`dashed`）を実線や薄い色に代えた → 「**破線で囲んだ部分**は…」という凡例が嘘になります
+- 矢印の画像や `::before` の飾りを `→` の文字に代えた → 「**下向きの矢印**が…」が合わなくなります
+- 影（`box-shadow`）を枠線に代えた → 「**浮いて見えるカード**が…」が合わなくなります
+- グラデーションを単色に代えた → 「**青から紫へのグラデーション**」が合わなくなります
+
+置き換えは**スタイルと文章の 2 か所で 1 組**だと思ってください。凡例・キャプション・本文のうち、
+見た目を指している言葉を探して同時に直します。
 
 ### 削ると危険な組み合わせ
 
@@ -699,6 +909,35 @@ shashoku og-card.html -o og.png --width 1200 --height 630 --strict
 
 **太字**は `font-weight` を書けば出ます（既定フォントの Bold が選ばれます）。
 `font-family` は family の優先順を変えるだけで、太さの照合は書かなくても働きます。
+
+### 明朝・等幅にする（`--font` と `font-family`）
+
+**埋め込みの既定フォントは Noto Sans JP の Regular と Bold だけです。**
+`font-family: serif` や `font-family: monospace` と書いても、**字面は 1px も変わりません**
+（総称ファミリと、渡していないフォントの名前は**エラーにならず黙って読み飛ばされます**）。
+明朝や等幅にするには、そのフォントファイルを `--font` で渡してください。
+
+- `font-family` が照合するのは、**フォントファイルが自分で名乗っている family 名**です
+  （大文字小文字と前後の空白は無視されます）。`NotoSansJP-Regular.otf` なら `Noto Sans JP`、
+  `NotoSans-Regular.ttf` なら `Noto Sans`。ファイル名でも CSS の総称名でもありません
+- 照合した family が先頭に来るだけで、**残りは `--font` の順で後ろに続きます**。
+  先頭の family に無い字は次のフォントへ落ちます
+- **`--font` を 1 つでも書くと、既定フォントは使われません。** 和文が要るなら和文のフォントも
+  自分で渡してください（欧文フォントだけを渡すと、和文が全部 □ になります）
+- family 名が分からなければ `font-family` を書かず、**`--font` の順だけで決める**のが確実です
+
+```html
+<p style="font-family: 'Noto Sans'">Hamburgefonstiv 0123 / 写植</p>
+```
+
+```bash
+shashoku doc.html -o doc.png --width 460 \
+  --font NotoSansJP-Regular.otf --font NotoSans-Regular.ttf
+```
+
+この 1 行では欧文が Noto Sans で、`写植` は Noto Sans に無いので次の Noto Sans JP に落ちます。
+明朝や等幅も同じで、`--font` にそのファイルを足し、`font-family` にそのファイルの family 名
+（`Noto Serif JP`、`Noto Sans Mono` など）を書きます。
 
 同じ入力（HTML・フォント・画像・オプション）からは、常に**バイト単位で同じ PNG** が出ます。
 

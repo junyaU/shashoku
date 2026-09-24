@@ -1,0 +1,40 @@
+{
+ "case": "case10",
+ "title": "短歌（縦書き、SNS）",
+ "html": "case10.html",
+ "png": "case10.png",
+ "cli_args": "--width 1080 --height 1080 --strict --diagnostics json",
+ "first_try": {
+  "status": "pass",
+  "errors": 0,
+  "warnings": 0,
+  "first_error": null
+ },
+ "iterations": [
+  {
+   "n": 1,
+   "status": "pass",
+   "errors": 0,
+   "warnings": 0,
+   "kinds": [],
+   "fix": "（修正なし。初回で通過）",
+   "hint_helped": false
+  }
+ ],
+ "final": "pass",
+ "rounds": 1,
+ "usable": 4,
+ "emphasis": 3,
+ "fidelity": 5,
+ "dropped": [],
+ "warnings": [],
+ "undiagnosed": [],
+ "guide_gaps": [
+  "§4.10 は端寄せ（右に題・左に署名）の例はあるが、縦書きで 1 つの子を紙面の中央に置く形の例が無い。軸の表から導けはするが、定石として 1 つあると迷わない。"
+ ],
+ "hints_used": [],
+ "hints_misleading": [],
+ "notes": "writing-mode:vertical-rl + display:flex（justify-content:center で字送り方向=上下の中央、align-items:center で行送り方向=左右の中央）。§4.10 の軸の表から導けた。字の向きは正しく、長音「ー」も縦向き。1 行 32 字が (960 − 0) ÷ 29 = 33 字に収まる計算どおり 1 行に入った。依頼文の 「」 は引用の記号と判断して本文から外した。用途は満たすが、1080 角に太さ 61px の 1 本だけなので画としては寂しい（依頼が 1 首だけなので情報の強弱は付けようがない）。",
+ "diagnostics_rounds": 1,
+ "_note": "依頼文が 1 行欠けた状態（作者名・色・余白・800×1200 の指定なし）で作った成果物。退避。"
+}

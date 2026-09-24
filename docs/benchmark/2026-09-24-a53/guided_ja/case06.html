@@ -1,0 +1,25 @@
+<style>
+  .card  { display: flex; flex-direction: column; width: 1072px; height: 502px;
+           padding: 64px; background: #10203a; color: #f4f6f8; }
+  .top   { flex: none; display: flex; align-items: center; gap: 18px; }
+  .avatar { width: 56px; height: 56px; border-radius: 28px; }
+  .site  { flex: none; font-size: 28px; font-weight: bold; color: #8ec5ff; }
+  .title { flex: 1 1 0; margin: 34px 0 0 0; font-size: 56px; font-weight: bold;
+           line-height: 1.38; }
+  .foot  { flex: none; display: flex; justify-content: space-between; align-items: center; }
+  .date  { flex: none; font-size: 24px; color: #9fb0c4; }
+  .tags  { display: flex; gap: 10px; }
+  .tag   { flex: none; padding: 7px 18px; border-radius: 18px;
+           background: #1d3a5f; color: #a5d8ff; font-size: 22px; font-weight: bold; }
+</style>
+<div class="card">
+  <div class="top">
+    <img class="avatar" src="avatar" alt="著者アイコン">
+    <div class="site">junya.dev</div>
+  </div>
+  <div class="title">Rust で書き直したら速くなった、と言うために測ったこと、測らなかったこと</div>
+  <div class="foot">
+    <div class="date">2026年9月23日</div>
+    <div class="tags"><div class="tag">Rust</div><div class="tag">計測</div></div>
+  </div>
+</div>

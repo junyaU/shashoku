@@ -1,0 +1,11 @@
+<style>
+ .outer { display: flex; align-items: stretch; }
+ .tall { width: 60px; height: 120px; background: #cde; }
+ .mid { flex: 1 1 0; display: flex; align-items: center; background: #eee; }
+ .line { flex: 1 1 0; height: 2px; background: #333; }
+</style>
+<div class="outer">
+  <div class="tall"></div>
+  <div class="mid"><div class="line"></div></div>
+  <div class="tall"></div>
+</div>

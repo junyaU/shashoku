@@ -1369,6 +1369,33 @@ A46 の「① html と ② style は見つけた問題を集めてから失敗�
   `fail()` に hint 引数を足すと全モジュールの共有物が A46 のために太るので、style の中に置いた
   （`is_recoverable(kind)` も同じ理由でここ）
 
+**追記（2026-09-24、A53 と同じ回）**: hint の書き方と、計算値の診断の重複について決めた。
+
+- **hint は無条件の置き換えにしない。** A46 の「確かめた代替だけ」は維持したうえで、**見た目が変わる代替**
+  （gradient → 単色、片側の `border` → 1px の div）は「変わる」と明記し、**成立条件**があるなら添える。
+  `min-height` を「`height` を使え」で置き換えると、親が flex で `align-items: stretch`（既定）のときに
+  不要な固定高さが入る。条件は宣言だけからは判定できないので、条件を書いたうえで
+  「判定できないならガイドの節番号を見よ」に寄せる。等価な書き方が無い側（箱の枠の一辺、不等幅の grid）は
+  「no equivalent」と書いて、代替を捏造しない
+- **値レベルの hint を足した**（`bad_value_with_hint()`）。`display: grid` / `display: inline-block` /
+  `background: linear-gradient(…)` は、プロパティ名まででは対応外だと分からない。プロパティの表
+  （`kPropertyHints`）を値にも広げるのではなく、値パーサの中で**値を見てから**添える。
+  message は `bad_value()` と同じまま（変えたのは hint だけ）で、`core/result.hpp` の `fail()` と
+  `Error` は触っていない（A46 のときと同じ理由）
+- **名前の引き方に接頭辞の一致を足した。** 片側だけの `border-*` は 16 通り、grid は `grid-template*` /
+  `grid-auto-*` があるので、表に 20 行以上並べるより接頭辞で 1 規則にするほうが食い違わない。
+  ただし**完全一致を先に引く**（legacy の `grid-gap` / `grid-row-gap` / `grid-column-gap` は A35 の
+  案内のまま）。`border-top-left-radius` のような**角**の指定には罫の助言を当てない
+  （助言が別物になる。間違った助言をするくらいなら何も言わない、という A48 の規則）
+- **計算値の診断の重複は style の中で落とす。** 1 つの規則（`.tag { border: 1px solid #000 }`）に
+  複数の要素が一致すると、計算値の検査は要素ごとに同じ診断を出す（V2-fix の case03 / 06 / 09 で
+  `unsupported-layout` が同一位置・同一文面で 2 件）。**同じ (kind, location, message) は 1 回だけ**にする。
+  core の `Diagnostics` を変えないのは、①html と③以降の診断は「同じ文面が複数回出るのが正しい」ことが
+  あるため（要素ごとの豆腐・はみ出し）。落とすのは**計算値の検査だけ**で、宣言の単位の診断は
+  もともと規則を 1 回しか読まないので対象外。覚えるのは順序つきの `std::set`（`unordered_map` の
+  反復順を出力に影響させない。DESIGN.md §3-5）で、`Diagnostics` が上限で捨てたものは覚えない
+  （大きさが `max_diagnostics` で抑えられる）
+
 **A49. ① html の「透過」の細部: 対応外の要素は開始タグ・終了タグを無いものとして読み、
 HTML の空要素はスタックに積まず、入れ子の上限は透過を含むスタックの深さで見る。
 捨てるもの（透過した要素の属性・対応外の属性の値・対応外の生テキスト要素の中身）は
@@ -1499,7 +1526,7 @@ A46 の仕上げ（api + CLI）で決めた細部。仕様は §3.10。
   （増えたのは成功時の `wrote` の行だけ）
 
 **A52. flex アイテムの自動最小サイズは主軸のサイズプロパティ（width / height）で決め、
-flex-basis は使わない（CSS Flexbox §4.5）。**（2026-09-24。仮番号）
+flex-basis は使わない（CSS Flexbox §4.5）。**（2026-09-24）
 
 CSS Flexbox Level 1 §4.5 "Automatic Minimum Size of Flex Items" は、`min-width: auto` /
 `min-height: auto` の flex アイテムの content-based minimum size を
@@ -1552,6 +1579,40 @@ definite ならその値」で、**`flex-basis` は含まれない**。
   「`flex: 1` の子で `break-word` は効かない（`anywhere` を使う）」という周知の挙動に揃った。
   表の `Sizing::None`（指定なし）の行が前から 82.21875px だったので、**同じ `width: auto` の
   アイテムが `flex: 1` を書いたときだけ違う、という不整合が消えた**
+
+
+**A53. flex コンテナの直接の子要素は block 化する（CSS Display 3 §2.7）。例外は img / ruby / br。**
+（2026-09-24）
+
+`display: flex` の親の中の `<span>` に `padding` を書くと `unsupported-layout` になっていた。
+仕様（CSS Display 3 §2.7 の blockification、CSS Flexbox 1 §4）では flex コンテナの子はブロック化され、
+`display: inline` と明示されていても block になる。**shashoku の layout はもともと仕様どおりで**
+（`flex_layout.cpp` の `build_items()` は flex コンテナの子をすべて flex アイテム = ブロック級として組む）、
+止めていたのは ② style の計算値の検査だけだった。
+
+- **経緯**: A46 後の再検証（`docs/benchmark/results_a46_2026-09-23.md` §2）で、inline への箱プロパティの
+  hint「宣言を削る」が当たった 8 件が**すべて pill / タグ / バッジ**で、削ると絵が壊れるため誤解を招いた。
+  ガイドは「flex の子はかならず div」という回避規則を持っていた。エンジンを仕様に合わせれば、
+  この回避規則も hint の言い換えも要らなくなる（ユーザーの方針: ガイドの回避規則を増やすより
+  エンジンの小さな修正）
+- **決めたこと**: 親の計算値の `display` が `Flex` である**直接の子要素**で、自分の計算値の `display` が
+  `Inline` なら `Block` にする。作者が明示的に `display: inline` と書いていても block 化する（仕様どおり）。
+  **孫は変えない**（文中の span は文の流れに残る）。テキストノードも変えない。
+  **例外は 3 つ**で、どれも layout が inline のまま別扱いしているもの:
+  `img`（置換要素。inline でも箱プロパティを取れ、flex では置換アイテムになる）、
+  `ruby`（`flex_layout.cpp` が意図的に無名アイテムの中へ inline のまま入れる。単独のアイテムにすると
+  親文字とルビの組が壊れる）、`br`（強制改行そのもの）。`display: none` は none のまま
+- **カスケードのあとに直す**（`cascade()` の末尾）。計算値の検査（`validate()`）も、ダンプ
+  （`--dump-stage style`）も、layout も、同じ値を見るようにするため。段の順序（DESIGN.md §3-1）は
+  変わらない: ② の中で計算値を決め切ってから ③ に渡す
+- **確かめたこと**: `<div style="display: flex; gap: 8px">` の中の `<span style="padding: 4px 8px; …">`
+  2 つは、修正前は `unsupported-layout` が 2 件、修正後は**診断 0** で、`span` を `div` に書き換えた
+  入力の PNG と**バイト一致**する。`--dump-stage style` で span の `display` は `block`。
+  flex の中の `<img>` / `<ruby>` / `<br>` を含む入力の PNG は、修正前のバイナリの出力と**バイト一致**。
+  `<p>` の中の span への `padding` は今までどおり `unsupported-layout`。
+  `examples/*.html` 5 本の PNG は main（2c7066c）のバイナリとバイト一致
+- **残った不整合**: `docs/guide/writing-html-for-shashoku.md` §3-(3)「flex 項目の `span` は block 化されない」は
+  この判断で失効する（ガイドは別の作業で直す）
 
 ---
 
@@ -1911,6 +1972,12 @@ std::string dump_json(const StyledNode& root);
   - **二重に出さない**: 文書の `writing-mode` を決める先読み（`document_writing_mode`）は同じ要素を
     もう一度カスケードするので、そこでの診断は捨てる `Diagnostics` に流し、致命エラーも握り潰す
     （どちらも `build_element` が通るときに正しい順序で出る）
+  - **計算値の診断の重複は style の中で落とす**（A48 の追記）。1 つの規則に複数の要素が一致すると
+    計算値の検査（`validate()` と `document_writing_mode` の食い違い）が要素ごとに同じ診断を出すので、
+    **同じ (kind, location, message) は 1 回だけ**足す。覚えるのは順序つきの `std::set`（`unordered_map` の
+    反復順を出力に影響させない。DESIGN.md §3-5）で、`Diagnostics` が上限で捨てたものは覚えない
+    （大きさは `max_diagnostics` で抑えられる）。宣言の単位の診断（`UnsupportedProperty` など）は
+    もともと規則を 1 回しか読まないので対象外。core の `Diagnostics` は変えない
 - **hint は `RenderError::hint` に入れ、`message` には混ぜない**（A46。機械側が分けて読める。以前は message の
   末尾に括弧で足していた）。`kPropertyHints` の規則「shashoku で同じ結果が出せると確かめた代替だけ」は変えない。
   足すもの: (a) ベンダー接頭辞（`-webkit-*` / `-moz-*` / `-ms-*` / `-o-*`）は「接頭辞を外す（対応表にあれば）」
@@ -1922,6 +1989,21 @@ std::string dump_json(const StyledNode& root);
   同じ結果が出せると確かめた代替**と、**削ると危険な組の警告**だけで、代替が無いもの（縦中横）は
   「未実装」とだけ言う。接頭辞つきの名前は表を引く前に接頭辞を外して引き直すので、
   `-webkit-background-clip` は `background-clip` の hint に当たる
+- **hint は無条件の置き換えにしない**（A48 の追記 / A53）。**見た目が変わる代替**（gradient → 単色、
+  片側の `border` → 1px の div）は「変わる」と書き、**成立条件**があるなら条件を添える
+  （`min-height`: 親が既定の `align-items: stretch` の flex なら削ってよい）。宣言だけから条件を
+  判定できないときは代替を断定せず、ガイドの節番号（`docs/guide/writing-html-for-shashoku.md §4.3` など。
+  英語版も同じ番号）を示す。等価な書き方が無い場合は「no equivalent」と書く。
+  hint は英語で 1〜2 文
+- **値レベルの hint**（A53）。プロパティ名では対応外だと分からないもの
+  （`display: grid` / `display: inline-block` / `background` と `background-color` の `gradient(`）には、
+  **値を見てから** hint を付ける。`value_parser.cpp` の `bad_value_with_hint()` が
+  `bad_value()` と同じ message に hint だけを足す（core の `fail()` / `Error` は変えない）
+- 名前の引き方は 3 段（`direct_hint_for()`）: (1) `kPropertyHints` の**完全一致**
+  (2) 片側だけの `border-*` の接頭辞一致（`border-top` `-right` `-bottom` `-left` と、その
+  `-width` / `-style` / `-color` の 16 通り。`border-top-left-radius` のような**角**には当てない）
+  (3) `grid-template*` / `grid-auto-*` の接頭辞一致。完全一致が先なので、
+  legacy の `grid-gap` / `grid-row-gap` / `grid-column-gap`（A35）は grid の hint に飲み込まれない
 - 単位: `px` `em`、`0`（単位なし）。`%` は `width` と `flex-basis` のみ。`line-height` は
   `normal` / 数値 / px / em。色: `#rgb #rgba #rrggbb #rrggbbaa`、`rgb()` `rgba()`、
   CSS の色名、`transparent`、`currentColor`（border-color のみ）
@@ -1929,8 +2011,16 @@ std::string dump_json(const StyledNode& root);
   `em` は親の（`font-size` 自身は親の、それ以外は自分の）font-size で解決する
 - 合成ルート `#root` は `display: block`、それ以外のプロパティは初期値（`writing-mode` だけ A1 の規則で決まる）。
   `img` の `width` / `height` 属性は px の数値として `attr_width` / `attr_height` に入れる（不正なら `UnsupportedValue`）
+- **flex コンテナの直接の子要素は block 化する**（CSS Display 3 §2.7 / CSS Flexbox 1 §4。**A53**）。
+  親の計算値の `display` が `flex` で、自分の計算値の `display` が `inline` なら `block` にする
+  （作者が明示的に `display: inline` と書いていても block にする。仕様どおり）。**孫は変えない**し、
+  テキストノードも変えない。block 化は**カスケードのあと**に行うので、計算値の検査もダンプ
+  （`--dump-stage style`）も layout も block を見る。例外は 3 つで、どれも layout が inline のまま
+  別扱いしているもの: `img`（置換要素。inline でも箱プロパティを取れる）、`ruby`（layout が意図的に
+  無名アイテムの中へ inline のまま入れる）、`br`（強制改行）。`display: none` は none のまま
 - `display: inline` の要素への `width height margin padding border` 指定は `UnsupportedLayout`
-  （`img` を除く）。`writing-mode` の途中変更も `UnsupportedLayout`（A1）
+  （`img` を除く）。A53 のあと、ここに来るのは**文中の inline 要素**（と flex の子の `ruby` / `br`）だけで、
+  flex の子の `span` は block 化されて通る。`writing-mode` の途中変更も `UnsupportedLayout`（A1）
 - `<style>` から読んだ規則が `max_style_rules` を超えたら `LimitExceeded`（位置つき）。
   セレクタの照合は「規則数 x 要素数」なので、規則の数そのものに上限が要る（A25）
 - **出力の不変条件（A36）**: 返る木の `ComputedStyle` に入っている長さは、`font-size` を除いて

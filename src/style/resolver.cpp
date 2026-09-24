@@ -3,10 +3,12 @@
 #include <algorithm>
 #include <cassert>
 #include <cmath>
+#include <compare>
 #include <cstddef>
 #include <cstdint>
 #include <format>
 #include <optional>
+#include <set>
 #include <string>
 #include <string_view>
 #include <tuple>
@@ -51,6 +53,38 @@ struct StyleState {
 const ComputedStyle& initial_computed() {
   static const ComputedStyle initial;  // 既定値は契約ヘッダ computed_style.hpp が正
   return initial;
+}
+
+// ---- 計算値の診断の重複を落とす（A48 の追記）----------------------------------
+//
+// 1 つの規則に複数の要素が一致すると、計算値の検査は要素ごとに同じ診断を出す
+// （`.tag { border: 1px solid #000 }` と `.tag` の span が 2 つ → 同一位置・同一文面が 2 件）。
+// 同じ (kind, location, message) は 1 回だけにする。
+//
+// 覚えるのは `std::set`（順序つき）。`unordered_map` の反復順やポインタ値を出力に
+// 影響させない（DESIGN.md §3-5）。
+struct ComputedDiagnosticKey {
+  ErrorKind kind = ErrorKind::Internal;
+  // 「位置があるか」。`bool` にすると既定の `<=>` が bool → int の暗黙変換を含み、
+  // readability-implicit-bool-conversion に当たるので 0 / 1 の整数で持つ
+  std::uint8_t has_location = 0;
+  std::uint32_t offset = 0;
+  std::uint32_t line = 0;
+  std::uint32_t column = 0;
+  std::string message;
+
+  auto operator<=>(const ComputedDiagnosticKey&) const = default;
+};
+
+ComputedDiagnosticKey key_of(const Error& error) {
+  const SourceLocation location = error.location.value_or(SourceLocation{});
+  return ComputedDiagnosticKey{
+      .kind = error.kind,
+      .has_location = error.location.has_value() ? std::uint8_t{1} : std::uint8_t{0},
+      .offset = location.offset,
+      .line = location.line,
+      .column = location.column,
+      .message = error.message};
 }
 
 // ---- 継承 --------------------------------------------------------------------
@@ -544,6 +578,23 @@ bool is_box_property(PropertyId property) {
   }
 }
 
+// ---- flex コンテナの子の block 化（A53）---------------------------------------
+//
+// CSS Display 3 §2.7 / CSS Flexbox 1 §4: flex コンテナの**直接の子要素**はブロック化される
+// （作者が明示的に `display: inline` と書いていても block になる）。孫は変えない。
+// layout（`flex_layout.cpp` の `build_items()`）はもともと子を flex アイテム
+// （ブロック級）として組んでいるので、絵は変わらない。止めていたのは style の検査だけだった。
+//
+// 例外は 3 つ。どれも layout が inline のまま**別扱い**しているもので、block にすると絵が変わる:
+//   - `img`  … 置換要素。inline でも箱プロパティを取れ、flex では置換アイテムになる
+//   - `ruby` … `flex_layout.cpp` が意図的に無名アイテムの中へ inline のまま入れる
+//               （単独のアイテムにすると親文字とルビの組が壊れる）
+//   - `br`   … 強制改行そのもの。ブロックにする意味がない
+// `display: none` は none のまま（木から落ちる）。テキストノードは対象外（make_text_node）。
+bool blockifies_in_flex_container(std::string_view tag) {
+  return tag != "img" && tag != "ruby" && tag != "br";
+}
+
 // 検査に使う「作者が書いたかどうか」を覚える。UA スタイルシート由来は数えない。
 void record_author_declaration(const Declaration& declaration, Origin origin, StyleState& state) {
   if (origin == Origin::UserAgent) {
@@ -736,6 +787,10 @@ class Resolver {
   // （同じ要素を 2 回カスケードするので、そのままだと同じ診断が 2 件になる）。
   [[nodiscard]] Result<StyleState> cascade(const html::Node& node, const StyleState& parent,
                                            Diagnostics& sink) const;
+  [[nodiscard]] Result<void> validate(const html::Node& node, const StyleState& state,
+                                      const StyleState& parent) const;
+  // 計算値の検査の診断を足す。同じ (kind, location, message) は 1 回だけ（A48 の追記）
+  void add_computed_error(Error error) const;
   [[nodiscard]] WritingMode document_writing_mode(const html::Node& root,
                                                   const StyleState& root_state) const;
   Result<void> build_children(const html::Node& node, const StyleState& state,
@@ -748,6 +803,9 @@ class Resolver {
   float max_length_px_ = kMaxLengthPx;
   Stylesheet ua_;
   Stylesheet author_;
+  // 記録できた計算値の診断の鍵。`Diagnostics` が上限で捨てたものは入れないので、
+  // 大きさは max_diagnostics で抑えられる
+  mutable std::set<ComputedDiagnosticKey> computed_seen_;
 };
 
 // `<style>` 要素は木のどこにあってもよく、文書全体に効く。複数あれば出現順に連結する。
@@ -782,6 +840,16 @@ Result<void> collect_author_css(const html::Node& node, std::uint32_t& order, St
     }
   }
   return {};
+}
+
+void Resolver::add_computed_error(Error error) const {
+  ComputedDiagnosticKey key = key_of(error);
+  if (computed_seen_.contains(key)) {
+    return;
+  }
+  if (diagnostics_->add_error(std::move(error))) {
+    computed_seen_.insert(std::move(key));
+  }
 }
 
 Result<void> Resolver::load(const html::Node& root) {
@@ -858,6 +926,13 @@ Result<StyleState> Resolver::cascade(const html::Node& node, const StyleState& p
   if (state.border_color_is_current) {
     state.computed.border_color = state.computed.color;
   }
+
+  // カスケードのあとに display を外部化する（A53）。計算値の検査（validate）も、
+  // ダンプ（--dump-stage style）も、layout も、この値を見る
+  if (parent.computed.display == Display::Flex && state.computed.display == Display::Inline &&
+      blockifies_in_flex_container(node.tag)) {
+    state.computed.display = Display::Block;
+  }
   return state;
 }
 
@@ -928,14 +1003,17 @@ Result<void> check_computed_lengths(const ComputedStyle& s, float max_px, Source
 
 // 計算値まで見ないと分からない対応外（A46 の「計算値の検査で分かる UnsupportedLayout」）は
 // 集めて続行する。止まるのは長さの上限（LimitExceeded）だけ。
-Result<void> validate(const html::Node& node, const StyleState& state, const StyleState& parent,
-                      float max_length_px, Diagnostics& diagnostics) {
-  if (Result<void> lengths = check_computed_lengths(state.computed, max_length_px, node.location);
+//
+// 診断は `add_computed_error()` を通すので、同じ (kind, location, message) は 1 回だけ出る
+// （A48 の追記。1 つの規則が複数の要素に当たったとき）。
+Result<void> Resolver::validate(const html::Node& node, const StyleState& state,
+                                const StyleState& parent) const {
+  if (Result<void> lengths = check_computed_lengths(state.computed, max_length_px_, node.location);
       !lengths) {
     return lengths;
   }
   if (state.writing_mode_declared && state.computed.writing_mode != parent.computed.writing_mode) {
-    diagnostics.add_error(error_with_hint(
+    add_computed_error(error_with_hint(
         ErrorKind::UnsupportedLayout,
         std::format("`writing-mode: {}` differs from the inherited `{}`; the whole "
                     "document uses one writing mode and only top-level elements may set "
@@ -945,15 +1023,17 @@ Result<void> validate(const html::Node& node, const StyleState& state, const Sty
   }
   if (state.computed.display == Display::Inline && node.tag != "img" && state.box_property) {
     // A46 の hint (c): `display: block` にすると通るが、文の流れが切れる。
-    // どちらを勧めるかを明記する（検証 C の観察）
-    diagnostics.add_error(error_with_hint(
+    // A53 のあと、ここに来るのは**文中の inline 要素だけ**（flex の子は block 化される）なので、
+    // 「独立した箱なら flex アイテムにする」という成立条件つきの代替も添える
+    add_computed_error(error_with_hint(
         ErrorKind::UnsupportedLayout,
         std::format("`{}` is not supported on an inline element (`display: inline`); only "
                     "`<img>` takes box properties while inline",
                     to_css(*state.box_property)),
         state.box_property_location,
         "drop the declaration; `display: block` would accept it but breaks the surrounding "
-        "text flow"));
+        "text flow. If the box is a standalone part (tag / pill / badge), make it a flex item: "
+        "a `div` inside a `display: flex` parent (guide §3-(4))"));
   }
   return {};
 }
@@ -980,8 +1060,9 @@ WritingMode Resolver::document_writing_mode(const html::Node& root,
       continue;
     }
     if (chosen && *chosen != state->computed.writing_mode) {
-      // 最初に出た値を文書の writing-mode として続行する（決定的で、続きの診断が出せる）
-      diagnostics_->add_error(error_with_hint(
+      // 最初に出た値を文書の writing-mode として続行する（決定的で、続きの診断が出せる）。
+      // ここも計算値の検査なので、同じ (kind, location, message) は 1 回だけ（A48 の追記）
+      add_computed_error(error_with_hint(
           ErrorKind::UnsupportedLayout,
           std::format("top-level elements disagree about `writing-mode` (`{}` and `{}`); "
                       "the whole document must use one writing mode (ARCHITECTURE.md A1)",
@@ -1035,8 +1116,7 @@ Result<std::optional<StyledNode>> Resolver::build_element(const html::Node& node
   if (!state) {
     return std::unexpected(state.error());
   }
-  if (Result<void> checked = validate(node, *state, parent, max_length_px_, *diagnostics_);
-      !checked) {
+  if (Result<void> checked = validate(node, *state, parent); !checked) {
     return std::unexpected(checked.error());
   }
 

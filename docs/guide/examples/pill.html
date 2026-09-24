@@ -1,5 +1,6 @@
 <!-- タグ / pill（内容幅の箱）。display: inline-block は無いので
-     「flex の親 + flex: none の子」で作る。span には padding が付かない。
+     「flex の親 + flex: none の子」で作る。子は div でも span でもよい
+     （flex の直接の子は block 化されるので、span でも padding が付く）。
      shashoku docs/guide/examples/pill.html -o pill.png --width 640 -->
 <style>
   .tags { display: flex; gap: 8px; align-items: center; background: #ffffff; padding: 16px; }

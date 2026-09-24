@@ -1,0 +1,156 @@
+<style>
+  body {
+    margin: 0;
+    padding: 40px 20px;
+    background: #f4f6f8;
+    font-family: "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, sans-serif;
+    color: #1f2933;
+  }
+  .wrap {
+    width: 900px;
+    margin: 0 auto;
+    background: #ffffff;
+    border-radius: 12px;
+  }
+  .head {
+    padding: 28px 32px 20px;
+  }
+  .rule {
+    height: 1px;
+    background: #e4e7eb;
+  }
+  .head-title {
+    margin: 0 0 6px;
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+  }
+  .head-sub {
+    margin: 0;
+    font-size: 13px;
+    color: #7b8794;
+  }
+  .table {
+    width: 900px;
+    font-size: 13.5px;
+    line-height: 1.75;
+  }
+  .row {
+    display: flex;
+  }
+  .hth {
+    background: #2f5d8f;
+    color: #ffffff;
+    font-weight: 500;
+    text-align: left;
+    padding: 14px 16px;
+    font-size: 14px;
+    letter-spacing: 0.04em;
+    width: 217px;
+  }
+  .corner {
+    background: #24496e;
+    width: 118px;
+  }
+  .bth {
+    text-align: left;
+    font-weight: 500;
+    padding: 16px;
+    background: #eef2f6;
+    color: #334e68;
+    width: 118px;
+  }
+  .btd {
+    padding: 16px;
+    color: #3e4c59;
+    width: 217px;
+  }
+  .bth-e { background: #e7edf3; }
+  .btd-e { background: #f7f9fb; }
+  .vrule-h { width: 1px; background: #4d7ba9; }
+  .vrule-th { width: 1px; background: #dfe6ed; }
+  .vrule-td { width: 1px; background: #edf0f3; }
+  .rule-row { height: 1px; background: #edf0f3; }
+  .engine {
+    display: block;
+    font-size: 11px;
+    font-weight: 400;
+    letter-spacing: 0.06em;
+    margin-top: 2px;
+  }
+  .foot {
+    padding: 16px 32px 24px;
+    font-size: 12px;
+    color: #9aa5b1;
+  }
+</style>
+  <div class="wrap">
+    <div class="head">
+      <h1 class="head-title">データストア比較：RDB / KVS / ドキュメント DB</h1>
+      <p class="head-sub">技術選定資料 2026-09 版 ／ 対象: PostgreSQL・Redis・MongoDB</p>
+    </div>
+    <div class="rule"></div>
+    <div class="table">
+      <div class="row">
+        <div class="hth corner">比較項目</div>
+        <div class="vrule-h"></div>
+        <div class="hth">RDB<span class="engine">PostgreSQL</span></div>
+        <div class="vrule-h"></div>
+        <div class="hth">KVS<span class="engine">Redis</span></div>
+        <div class="vrule-h"></div>
+        <div class="hth">ドキュメント DB<span class="engine">MongoDB</span></div>
+      </div>
+      <div class="rule-row"></div>
+      <div class="row">
+        <div class="bth">得意なデータ</div>
+        <div class="vrule-th"></div>
+        <div class="btd">関係が固定的で、結合して集計したい正規化済みの業務データ。</div>
+        <div class="vrule-td"></div>
+        <div class="btd">寿命が短く単純な値。セッションやカウンタ、一時的なキャッシュ。</div>
+        <div class="vrule-td"></div>
+        <div class="btd">項目が案件ごとに揺れる半構造データ。入れ子の JSON をそのまま持てる。</div>
+      </div>
+      <div class="rule-row"></div>
+      <div class="row even">
+        <div class="bth bth-e">トランザクション</div>
+        <div class="vrule-th"></div>
+        <div class="btd btd-e">複数テーブルにまたがる ACID を標準で持つ。会計処理でも安心して使える。</div>
+        <div class="vrule-td"></div>
+        <div class="btd btd-e">MULTI で原子実行はできるが、ロールバックのない単純な一括実行に近い。</div>
+        <div class="vrule-td"></div>
+        <div class="btd btd-e">単一文書は原子的。複数文書のトランザクションは使えるが代償が大きい。</div>
+      </div>
+      <div class="rule-row"></div>
+      <div class="row">
+        <div class="bth">スケール</div>
+        <div class="vrule-th"></div>
+        <div class="btd">まず垂直に伸ばす。読み取りはレプリカ、書き込みは分割の設計が必要。</div>
+        <div class="vrule-td"></div>
+        <div class="btd">Cluster で水平に伸びる。メモリ量が上限なので容量設計が効いてくる。</div>
+        <div class="vrule-td"></div>
+        <div class="btd">シャーディング前提の設計。キー選びを誤ると偏って効果が出ない。</div>
+      </div>
+      <div class="rule-row"></div>
+      <div class="row even">
+        <div class="bth bth-e">運用の手間</div>
+        <div class="vrule-th"></div>
+        <div class="btd btd-e">知見も道具も揃っている。VACUUM と長時間トランザクションだけ要注意。</div>
+        <div class="vrule-td"></div>
+        <div class="btd btd-e">運用は軽いが、永続化とフェイルオーバーの設定は事前に詰めておきたい。</div>
+        <div class="vrule-td"></div>
+        <div class="btd btd-e">スキーマ変更は楽な反面、実質の形はアプリ側の規律に依存してしまう。</div>
+      </div>
+      <div class="rule-row"></div>
+      <div class="row">
+        <div class="bth">うちでの用途</div>
+        <div class="vrule-th"></div>
+        <div class="btd">注文・請求・ユーザーなど、整合性が売上に直結する中核データを置く。</div>
+        <div class="vrule-td"></div>
+        <div class="btd">ログイン情報と API のレート制限、重い集計結果の一時保存に使う。</div>
+        <div class="vrule-td"></div>
+        <div class="btd">審査ログや外部 API の生レスポンスなど、形の定まらない記録の置き場。</div>
+      </div>
+    </div>
+    <div class="rule"></div>
+    <div class="foot">※ 評価は当チームの現行ワークロード（1 日あたり書き込み 300 万件規模）を前提とした相対比較です。</div>
+  </div>

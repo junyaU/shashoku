@@ -1,0 +1,651 @@
+[
+ {
+  "case": "case01",
+  "html": "case01.html",
+  "png": "case01.png",
+  "cli_args": "--width 940",
+  "first_try": {
+   "errors": 61,
+   "warnings": 0,
+   "truncated": false,
+   "kinds": {
+    "unsupported-tag": 42,
+    "css-parse": 11,
+    "unsupported-property": 8
+   }
+  },
+  "iterations": [
+   {
+    "n": 1,
+    "errors": 61,
+    "warnings": 0,
+    "fix": "外枠を外す、table/thead/tr/th/td を div+flex の行とセルに、box-sizing を外してセル幅から padding を引く、box-shadow/overflow/border-collapse/opacity/-webkit-font-smoothing を削る、子孫セレクタをクラスに、head/foot の border を 1px div に",
+    "hints_used": [
+     "box-sizing",
+     "per-side-border(§4.3)"
+    ],
+    "hints_misleading": [],
+    "edit_lines": 148
+   },
+   {
+    "n": 2,
+    "errors": 10,
+    "warnings": 0,
+    "fix": "セル間の border-right を 1px 幅の div 18 本に、vertical-align を削除、even/rowtop の子孫セレクタをクラス化し行間の罫を 1px div 4 本に",
+    "hints_used": [
+     "per-side-border(§4.3)"
+    ],
+    "hints_misleading": [],
+    "edit_lines": 76
+   },
+   {
+    "n": 3,
+    "errors": 0,
+    "warnings": 0,
+    "category": "silent",
+    "fix": "body{} を .page の div に移して背景・余白・字体・文字色を戻す",
+    "undiagnosed": "body タグを外すと body{} のスタイル（背景 #f4f6f8・padding 40px 20px・font-family・color）が誰にも当たらず黙って消え、上下の余白ごと無くなっていた",
+    "edit_lines": 5
+   }
+  ],
+  "rounds_to_exit0": 2,
+  "rounds_to_correct": 3,
+  "final": "pass",
+  "strict_pass": true,
+  "usable": 5,
+  "fidelity": 4,
+  "lost_visuals": [
+   "カードの影"
+  ],
+  "box_sizing_edits": 4,
+  "per_side_border": "横罫 2 本（head 下・foot 上）と行間の罫 4 本を 1px div、列間の border-right 18 か所を 1px 幅の div に。用途（表の罫）は満たせた",
+  "overflow_hidden_damage": null,
+  "undiagnosed": [
+   "body{} のスタイルが黙って消える（診断なし）"
+  ],
+  "notes": "Chrome 参照画像とほぼ一致。折り返し位置が数か所ちがう程度"
+ },
+ {
+  "case": "case02",
+  "html": "case02.html",
+  "png": "case02.png",
+  "cli_args": "--width 1040",
+  "first_try": {
+   "errors": 22,
+   "warnings": 0,
+   "truncated": false,
+   "kinds": {
+    "unsupported-tag": 9,
+    "unsupported-property": 6,
+    "css-parse": 6,
+    "unsupported-value": 1
+   }
+  },
+  "iterations": [
+   {
+    "n": 1,
+    "errors": 22,
+    "warnings": 0,
+    "fix": "外枠を外し body{} を .page へ、box-sizing を外して .sheet の幅から padding+border を引く、min-height を削る、step の border-top 4px（青のアクセント）を削る、position/align-self をやめて矢印を flex コンテナに、破線を実線に、strong を span に、legend の border-top を 1px div に",
+    "hints_used": [
+     "box-sizing",
+     "min-height",
+     "position→flex",
+     "per-side-border(§4.3)"
+    ],
+    "hints_misleading": [],
+    "edit_lines": 92
+   },
+   {
+    "n": 2,
+    "errors": 0,
+    "warnings": 5,
+    "category": "silent",
+    "fix": "flex:1 1 0 をやめて 5 列とも幅を明示（132px 外形になるよう content 幅を計算）",
+    "undiagnosed": "padding を持つ .step と持たない .worker-col が flex:1 1 0 で並ぶと、content-box では外形幅がそろわず ワーカー列だけ 108px（他は 138px）と細くなっていた",
+    "edit_lines": 6
+   },
+   {
+    "n": 3,
+    "errors": 0,
+    "warnings": 5,
+    "category": "silent",
+    "fix": ".arrow に height を明示（329px）して中の線を上下中央に戻す",
+    "undiagnosed": "stretch で伸ばされた flex アイテムの中では align-items: center が効かず、矢印の線が 329px の箱の上端（＝カードの上辺）に張り付いていた",
+    "edit_lines": 1
+   }
+  ],
+  "rounds_to_exit0": 1,
+  "rounds_to_correct": 3,
+  "final": "pass",
+  "strict_pass": false,
+  "usable": 4,
+  "fidelity": 3,
+  "lost_visuals": [
+   "絵文字アイコン（豆腐）",
+   "矢印の三角（border トリック）",
+   "注記の破線枠→実線",
+   "step 上辺の 4px 青アクセント"
+  ],
+  "box_sizing_edits": 3,
+  "per_side_border": ".step の border-top 4px は「枠の一辺」として削除 → 用途を満たせず（段を色で示す意図が消えた）。.legend の border-top は 1px div にして用途を満たせた",
+  "overflow_hidden_damage": null,
+  "undiagnosed": [
+   "stretch で伸びた flex アイテムの中で align-items/justify-content の center が効かない（中身が先頭に寄る）",
+   "flex:1 1 0 の兄弟で padding の有無が違うと content-box では外形幅がそろわない"
+  ],
+  "notes": "矢印の三角は per-side border が無いため再現不能。絵文字は 5 個すべて豆腐で --strict は落ちる"
+ },
+ {
+  "case": "case03",
+  "html": "case03.html",
+  "png": "case03.png",
+  "cli_args": "--width 760",
+  "first_try": {
+   "errors": 23,
+   "warnings": 0,
+   "truncated": false,
+   "kinds": {
+    "unsupported-tag": 8,
+    "unsupported-property": 5,
+    "css-parse": 5,
+    "unsupported-value": 4,
+    "unsupported-layout": 1
+   }
+  },
+  "iterations": [
+   {
+    "n": 1,
+    "errors": 23,
+    "warnings": 0,
+    "fix": "外枠を外し body{} を .page へ、card の幅から border を引く、box-shadow/overflow を削る、::before の帯を実 div に、inline-block の label を flex の子に、baseline を center に、border-left を削る、border-radius を 1 値に、related の border-top を 1px div に、子孫セレクタをクラスに",
+    "hints_used": [
+     "box-sizing",
+     "inline-block→flex の子(§3-(4))",
+     "inline 要素に箱プロパティ(§3-(4))",
+     "per-side-border(§4.3)"
+    ],
+    "hints_misleading": [],
+    "edit_lines": 59
+   },
+   {
+    "n": 2,
+    "errors": 1,
+    "warnings": 0,
+    "fix": "上端の linear-gradient を単色 #637f6f に",
+    "hints_used": [
+     "gradient→単色"
+    ],
+    "hints_misleading": [],
+    "edit_lines": 2
+   }
+  ],
+  "rounds_to_exit0": 2,
+  "rounds_to_correct": 2,
+  "final": "pass",
+  "strict_pass": true,
+  "usable": 5,
+  "fidelity": 4,
+  "lost_visuals": [
+   "上端のグラデーション帯→単色",
+   "明朝（Noto Serif JP）",
+   "具体例ボックスの左アクセント帯",
+   "影",
+   "baseline 揃え"
+  ],
+  "box_sizing_edits": 1,
+  "per_side_border": ".example の border-left（左の緑帯）は「枠の一辺」として削除 → 用途を満たせず。.related の border-top は 1px div にして用途を満たせた",
+  "overflow_hidden_damage": "上端の帯が角丸カードの上角からはみ出し、角が四角く見える（1 か所）",
+  "undiagnosed": [
+   "font-family の明朝が黙ってゴシックに落ちる（警告なし）"
+  ],
+  "notes": "見出しの読み（べきとうせい）は baseline 揃えができないため中央揃えになった"
+ },
+ {
+  "case": "case04",
+  "html": "case04.html",
+  "png": "case04.png",
+  "cli_args": "--width 840",
+  "first_try": {
+   "errors": 40,
+   "warnings": 0,
+   "truncated": false,
+   "kinds": {
+    "unsupported-tag": 19,
+    "css-parse": 10,
+    "unsupported-property": 9,
+    "unsupported-value": 2
+   }
+  },
+  "iterations": [
+   {
+    "n": 1,
+    "errors": 40,
+    "warnings": 0,
+    "fix": "外枠・header/ol/li/code/footer を div/span に、body{} を .page へ、card の幅から padding を引く、box-shadow/list-style/counter-reset/position/z-index を削る、バッジのグラデを単色・50% を 22px に、header と li 間の border を div に、li::before の縦ガイド線は再現不能で削除、子孫セレクタをクラスに",
+    "hints_used": [
+     "box-sizing",
+     "position→flex",
+     "gradient→単色",
+     "per-side-border(§4.3)"
+    ],
+    "hints_misleading": [],
+    "edit_lines": 143
+   },
+   {
+    "n": 2,
+    "errors": 1,
+    "warnings": 0,
+    "fix": "inline の <code> から border を削る",
+    "hints_used": [
+     "inline 要素に箱プロパティ(§3-(4))"
+    ],
+    "hints_misleading": [],
+    "edit_lines": 1
+   },
+   {
+    "n": 3,
+    "errors": 1,
+    "warnings": 0,
+    "fix": "同じ要素から border-radius を削る（前の往復では出ていなかった）",
+    "hints_used": [
+     "inline 要素に箱プロパティ(§3-(4))"
+    ],
+    "hints_misleading": [],
+    "edit_lines": 1
+   },
+   {
+    "n": 4,
+    "errors": 1,
+    "warnings": 0,
+    "fix": "同じ要素から padding を削る（さらに次に出てきた）",
+    "hints_used": [
+     "inline 要素に箱プロパティ(§3-(4))"
+    ],
+    "hints_misleading": [],
+    "edit_lines": 1
+   }
+  ],
+  "rounds_to_exit0": 4,
+  "rounds_to_correct": 4,
+  "final": "pass",
+  "strict_pass": false,
+  "usable": 5,
+  "fidelity": 3,
+  "lost_visuals": [
+   "バッジのグラデーションと影",
+   "バッジ同士をつなぐ縦線",
+   "code の枠・角丸・パディング",
+   "絵文字 🎉（豆腐）",
+   "等幅フォント"
+  ],
+  "box_sizing_edits": 1,
+  "per_side_border": "header の border-bottom 2px と li+li の border-top 1px は div にして用途を満たせた",
+  "overflow_hidden_damage": null,
+  "undiagnosed": [],
+  "notes": "4 往復のうち 3 往復は同じ inline 要素（<code>）の border → border-radius → padding が 1 つずつしか出ないため。3 つまとめて出れば 2 往復で済んだ"
+ },
+ {
+  "case": "case05",
+  "html": "case05.html",
+  "png": "case05.png",
+  "cli_args": "--width 1080 --height 1080",
+  "first_try": {
+   "errors": 20,
+   "warnings": 0,
+   "truncated": false,
+   "kinds": {
+    "unsupported-tag": 8,
+    "unsupported-property": 7,
+    "css-parse": 5
+   }
+  },
+  "iterations": [
+   {
+    "n": 1,
+    "errors": 20,
+    "warnings": 0,
+    "fix": "外枠を外す（card が紙面いっぱいなので body{} は捨てる）、background-image のグラデを単色に、position/overflow/text-indent/min-height を削る、::before の内枠を実 div（padding 56px + border 1px）に、::before/::after の鉤括弧を実 span に",
+    "hints_used": [
+     "box-sizing",
+     "min-height",
+     "position→flex",
+     "background-image→単色"
+    ],
+    "hints_misleading": [],
+    "edit_lines": 69
+   },
+   {
+    "n": 2,
+    "errors": 0,
+    "warnings": 1,
+    "category": "diagnosed(warning)",
+    "fix": "card の width/height から padding 56px×2 を引く（112px はみ出しの警告）",
+    "hints_used": [
+     "box-sizing",
+     "content-overflow の警告"
+    ],
+    "hints_misleading": [],
+    "edit_lines": 4
+   }
+  ],
+  "rounds_to_exit0": 1,
+  "rounds_to_correct": 2,
+  "final": "pass",
+  "strict_pass": true,
+  "usable": 5,
+  "fidelity": 4,
+  "lost_visuals": [
+   "明朝",
+   "和紙風のグラデーション（radial+linear）",
+   "ぶら下げた始め括弧の位置（text-indent と絶対配置）"
+  ],
+  "box_sizing_edits": 4,
+  "per_side_border": null,
+  "overflow_hidden_damage": null,
+  "undiagnosed": [
+   "明朝が黙ってゴシックに落ちる"
+  ],
+  "notes": "1 往復目は exit 0（警告のみ）だが 112px はみ出していた。警告が無ければ気づけない"
+ },
+ {
+  "case": "case06",
+  "html": "case06.html",
+  "png": "case06.png",
+  "cli_args": "--width 1200 --height 630 --image avatar=<R>/bin/assets/avatar.png",
+  "first_try": {
+   "errors": 23,
+   "warnings": 0,
+   "truncated": false,
+   "kinds": {
+    "unsupported-tag": 8,
+    "unsupported-property": 7,
+    "css-parse": 7,
+    "unsupported-value": 1
+   }
+  },
+  "iterations": [
+   {
+    "n": 1,
+    "errors": 23,
+    "warnings": 0,
+    "fix": "外枠を外す、og の width/height から padding を引く、3 枚のグラデ背景を単色に、::before のグリッドを削除、position/z-index/overflow/min-height/text-shadow を削る、max-width を width に、background-clip:text のグラデ文字を単色 color に、dot の 50% を 6px に、bottom の border-top を 1px div に、avatar の 62px から border 2px を引く",
+    "hints_used": [
+     "box-sizing",
+     "min-height",
+     "max-width",
+     "gradient→単色（background-clip:text の注意つき）",
+     "per-side-border(§4.3)"
+    ],
+    "hints_misleading": [],
+    "edit_lines": 94
+   },
+   {
+    "n": 2,
+    "errors": 1,
+    "warnings": 0,
+    "fix": "object-fit を削る",
+    "hints_used": [],
+    "hints_misleading": [],
+    "edit_lines": 1
+   },
+   {
+    "n": 3,
+    "errors": 1,
+    "warnings": 0,
+    "fix": "<img src=\"avatar.png\"> を src=\"avatar\"（--image で渡した名前）に",
+    "hints_used": [],
+    "hints_misleading": [],
+    "edit_lines": 2
+   }
+  ],
+  "rounds_to_exit0": 3,
+  "rounds_to_correct": 3,
+  "final": "pass",
+  "strict_pass": true,
+  "usable": 5,
+  "fidelity": 4,
+  "lost_visuals": [
+   "背景の 2 枚の radial グラデと薄いグリッド",
+   "dot のグラデと光",
+   "見出し後半のグラデ文字→単色",
+   "text-shadow"
+  ],
+  "box_sizing_edits": 4,
+  "per_side_border": ".bottom の border-top を 1px div に。用途を満たせた",
+  "overflow_hidden_damage": null,
+  "undiagnosed": [],
+  "notes": "image-not-found の診断に hint が無く、渡した画像名（avatar）を教えてくれない"
+ },
+ {
+  "case": "case07",
+  "html": "case07.html",
+  "png": "case07.png",
+  "cli_args": "--width 1080 --height 1080",
+  "first_try": {
+   "errors": 32,
+   "warnings": 0,
+   "truncated": false,
+   "kinds": {
+    "css-parse": 13,
+    "unsupported-tag": 8,
+    "unsupported-property": 7,
+    "unsupported-value": 4
+   }
+  },
+  "iterations": [
+   {
+    "n": 1,
+    "errors": 32,
+    "warnings": 0,
+    "fix": "外枠を外す、poster の width/height から padding を引く、3 つのグラデを単色に、::before の光を削除、position/overflow/box-shadow を削る、inline-flex を flex に、sp の border-left（金帯）を削る、foot の border-top を 1px div に、talk の ::before/::after の鉤括弧を実 span に、子孫セレクタをクラスに",
+    "hints_used": [
+     "box-sizing",
+     "gradient→単色",
+     "position→flex",
+     "per-side-border(§4.3)"
+    ],
+    "hints_misleading": [],
+    "edit_lines": 98
+   }
+  ],
+  "rounds_to_exit0": 1,
+  "rounds_to_correct": 1,
+  "final": "pass",
+  "strict_pass": false,
+  "usable": 5,
+  "fidelity": 3,
+  "lost_visuals": [
+   "明朝の大見出し",
+   "登壇者カードの左の金帯",
+   "背景グラデと右上の光",
+   "参加無料 pill のグラデと影",
+   "絵文字 🎟（豆腐）"
+  ],
+  "box_sizing_edits": 2,
+  "per_side_border": ".sp の border-left（4px の金帯）は「枠の一辺」として削除 → 用途を満たせず（カードの識別色が消えた）。.foot の border-top は 1px div で用途を満たせた",
+  "overflow_hidden_damage": null,
+  "undiagnosed": [
+   "明朝が黙ってゴシックに落ちる"
+  ],
+  "notes": "ruby/rt はそのまま通り、Chrome 参照画像とふりがなの位置までほぼ一致した"
+ },
+ {
+  "case": "case08",
+  "html": "case08.html",
+  "png": "case08.png",
+  "cli_args": "--width 840",
+  "first_try": {
+   "errors": 25,
+   "warnings": 0,
+   "truncated": false,
+   "kinds": {
+    "css-parse": 9,
+    "unsupported-tag": 8,
+    "unsupported-property": 6,
+    "unsupported-value": 2
+   }
+  },
+  "iterations": [
+   {
+    "n": 1,
+    "errors": 25,
+    "warnings": 0,
+    "fix": "外枠を外し body{} を .page へ、grid を flex + flex:1 1 0 に、head のグラデを単色に、box-shadow/overflow を削る、message/foot の border-top を 1px div に、inline-block の pill を flex の子に、opacity を削る、子孫セレクタをクラスに",
+    "hints_used": [
+     "grid→flex(§4.3)",
+     "gradient→単色",
+     "per-side-border(§4.3)",
+     "inline-block→flex の子(§3-(4))"
+    ],
+    "hints_misleading": [],
+    "edit_lines": 67
+   },
+   {
+    "n": 2,
+    "errors": 2,
+    "warnings": 0,
+    "fix": "inline 要素（.unit/.ref）の margin-left/margin-right を削る",
+    "hints_used": [
+     "inline 要素に箱プロパティ(§3-(4))"
+    ],
+    "hints_misleading": [],
+    "edit_lines": 2
+   }
+  ],
+  "rounds_to_exit0": 2,
+  "rounds_to_correct": 2,
+  "final": "pass",
+  "strict_pass": false,
+  "usable": 4,
+  "fidelity": 3,
+  "lost_visuals": [
+   "head のグラデーション",
+   "影",
+   "角丸の内側クリップ",
+   "絵文字 📣（豆腐）",
+   "数値と単位の間の 4px"
+  ],
+  "box_sizing_edits": 0,
+  "per_side_border": "metrics の 1px gap はそのまま罫として使え、message/foot の border-top は 1px div にして用途を満たせた",
+  "overflow_hidden_damage": "濃紺の head が角丸カードの上角からはみ出して角が四角く見える（1 か所。overflow:hidden も border-radius のクリップも無いため）",
+  "undiagnosed": [],
+  "notes": "grid の hint（1 行の等幅なら flex + flex:1 1 0）がそのまま使えた"
+ },
+ {
+  "case": "case09",
+  "html": "case09.html",
+  "png": "case09.png",
+  "cli_args": "--width 840",
+  "first_try": {
+   "errors": 19,
+   "warnings": 0,
+   "truncated": false,
+   "kinds": {
+    "unsupported-tag": 12,
+    "unsupported-property": 5,
+    "css-parse": 2
+   }
+  },
+  "iterations": [
+   {
+    "n": 1,
+    "errors": 19,
+    "warnings": 0,
+    "fix": "外枠・ul/li を div に、body{} を .page へ、card の幅から padding+border を引く、h1 の border-bottom と foot の border-top を div に、list-style/position を削る、li::before の菱形を実 div（flex の子）に、li+li の間隔を column gap に",
+    "hints_used": [
+     "box-sizing",
+     "position→flex",
+     "per-side-border(§4.3)"
+    ],
+    "hints_misleading": [],
+    "edit_lines": 64
+   },
+   {
+    "n": 2,
+    "errors": 1,
+    "warnings": 0,
+    "fix": "ビュレットの transform: rotate(45deg) を削る",
+    "hints_used": [],
+    "hints_misleading": [],
+    "edit_lines": 1
+   }
+  ],
+  "rounds_to_exit0": 2,
+  "rounds_to_correct": 2,
+  "final": "pass",
+  "strict_pass": true,
+  "usable": 5,
+  "fidelity": 4,
+  "lost_visuals": [
+   "45 度回転の菱形ビュレット→角丸の四角"
+  ],
+  "box_sizing_edits": 1,
+  "per_side_border": "h1 下の 2px アクセント罫と foot の border-top を div に。用途を満たせた",
+  "overflow_hidden_damage": null,
+  "undiagnosed": [],
+  "notes": "transform の診断に hint が無い（回転の代替が無いことも書かれていない）"
+ },
+ {
+  "case": "case10",
+  "html": "case10.html",
+  "png": "case10.png",
+  "cli_args": "--width 800 --height 1200",
+  "first_try": {
+   "errors": 27,
+   "warnings": 0,
+   "truncated": false,
+   "kinds": {
+    "unsupported-property": 15,
+    "unsupported-tag": 8,
+    "css-parse": 2,
+    "unsupported-layout": 2
+   }
+  },
+  "iterations": [
+   {
+    "n": 1,
+    "errors": 27,
+    "warnings": 0,
+    "fix": "外枠を外す、writing-mode を最上位（.sheet）だけに移す、-webkit-writing-mode/text-orientation/position/left/bottom/opacity/background-image を削る、内枠を実 div（padding 46px + border）に、落款を実 div に、絶対配置だった作者と朱印を「spacer + 歌 + side」の縦書き flex で配置、width/height から padding と border を引く",
+    "hints_used": [
+     "box-sizing",
+     "-webkit- 接頭辞を外す",
+     "position→flex",
+     "background-image→単色"
+    ],
+    "hints_misleading": [
+     "writing-mode の hint が ARCHITECTURE.md A1 を指す（HTML を書く側は読めない。ガイド §4.10 を指すべき）"
+    ],
+    "edit_lines": 86
+   },
+   {
+    "n": 2,
+    "errors": 0,
+    "warnings": 0,
+    "category": "silent",
+    "fix": "poem の height を 880px → 900px に（NOTES が許容する微調整）",
+    "undiagnosed": "1 列目に「立ちつくし」の「し」が入らず 2 列目の頭に 1 文字だけ送られていた（Chrome は収まる）。はみ出しではないので診断は出ない",
+    "edit_lines": 2
+   }
+  ],
+  "rounds_to_exit0": 1,
+  "rounds_to_correct": 2,
+  "final": "pass",
+  "strict_pass": true,
+  "usable": 5,
+  "fidelity": 4,
+  "lost_visuals": [
+   "明朝",
+   "和紙風のグラデーション"
+  ],
+  "box_sizing_edits": 6,
+  "per_side_border": null,
+  "overflow_hidden_damage": null,
+  "undiagnosed": [
+   "縦書きの列に 1 文字入らず 2 列目に 1 文字だけ送られる（診断なし）",
+   "明朝が黙ってゴシックに落ちる"
+  ],
+  "notes": "絶対配置 3 か所を縦書き flex に置き換えても、作者・朱印の位置は Chrome 参照画像とほぼ一致した"
+ }
+]

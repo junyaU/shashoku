@@ -1,0 +1,57 @@
+<style>
+  .page  { padding: 24px 20px; background: #ffffff; }
+  .title { margin: 0 0 18px 0; font-size: 19px; font-weight: bold; color: #1b2733; }
+  .flow  { display: flex; align-items: stretch; gap: 8px; margin: 0 0 10px 0; }
+  .step  { flex: none; width: 132px; display: flex; flex-direction: column; gap: 6px;
+           padding: 14px; border-radius: 10px; background: #f1f4f9; }
+  .step-w { flex: none; width: 132px; display: flex; flex-direction: column; gap: 6px;
+            padding: 14px; border-radius: 10px; background: #fdf0e3; }
+  .no    { font-size: 11px; color: #8a97a8; }
+  .name  { font-size: 16px; font-weight: bold; line-height: 1.5; color: #1b2733; }
+  .desc  { font-size: 12px; line-height: 1.6; color: #44546a; }
+  .arrow { flex: none; width: 24px; display: flex; align-items: center;
+           justify-content: center; }
+  .arrowc { flex: none; font-size: 20px; color: #9aa7b8; }
+  .notes { display: flex; }
+  .sp    { flex: none; width: 600px; }
+  .note  { flex: 1 1 0; padding: 10px 12px; border: 1px solid #e6c9a3; border-radius: 8px;
+           background: #fdf6ec; font-size: 13px; line-height: 1.7; color: #8a5a1a; }
+</style>
+<div class="page">
+  <p class="title">申請受付の処理フロー（設計レビュー資料）</p>
+  <div class="flow">
+    <div class="step">
+      <div class="no">1</div>
+      <div class="name">ユーザー</div>
+      <div class="desc">フォームから申請を送る</div>
+    </div>
+    <div class="arrow"><div class="arrowc">→</div></div>
+    <div class="step">
+      <div class="no">2</div>
+      <div class="name">API サーバー</div>
+      <div class="desc">受け取って検証し、受付 ID を返す</div>
+    </div>
+    <div class="arrow"><div class="arrowc">→</div></div>
+    <div class="step">
+      <div class="no">3</div>
+      <div class="name">キュー</div>
+      <div class="desc">順番に並べて待たせる</div>
+    </div>
+    <div class="arrow"><div class="arrowc">→</div></div>
+    <div class="step-w">
+      <div class="no">4</div>
+      <div class="name">ワーカー</div>
+      <div class="desc">取り出して本処理を実行</div>
+    </div>
+    <div class="arrow"><div class="arrowc">→</div></div>
+    <div class="step">
+      <div class="no">5</div>
+      <div class="name">DB</div>
+      <div class="desc">結果を書き込んで保存する</div>
+    </div>
+  </div>
+  <div class="notes">
+    <div class="sp"></div>
+    <div class="note">▲ 失敗時は 3 回まで再試行し、それでも失敗したら dead letter に送る</div>
+  </div>
+</div>

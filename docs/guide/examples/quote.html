@@ -1,0 +1,18 @@
+<!-- 引用カード。高さを固定した紙面で、本文は縦中央、署名は下端。
+     紙面を column の flex にし、本文を flex: 1 1 0 の箱に入れて余りを全部取らせ、
+     その箱の中で justify-content: center。署名は flex: none で最後に置く。
+     本文が中央に来るのは「署名を除いた領域」の中央（紙面の中央より署名の高さの半分だけ上）。
+     本文は上端のままでよいなら flex: 1 1 0 の箱は要らず、署名に margin-top: auto を書くだけでよい。
+     552 = 600 - 24*2、312 = 360 - 24*2（content-box）。
+     shashoku docs/guide/examples/quote.html -o quote.png --width 600 --height 360 -->
+<style>
+  .sheet { display: flex; flex-direction: column; width: 552px; height: 312px;
+           padding: 24px; background: #fbf8f2; color: #23201a; }
+  .body  { flex: 1 1 0; display: flex; flex-direction: column; justify-content: center; }
+  .quote { margin: 0; font-size: 26px; line-height: 1.9; }
+  .by    { flex: none; text-align: right; font-size: 15px; color: #7a7266; }
+</style>
+<div class="sheet">
+  <div class="body"><p class="quote">おそれるな。おそれは、まだ起きていないことの影にすぎない。</p></div>
+  <div class="by">架空　花『影の書』</div>
+</div>

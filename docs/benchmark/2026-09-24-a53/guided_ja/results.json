@@ -1,0 +1,404 @@
+[
+ {
+  "case": "case01",
+  "title": "比較表（技術選定資料）",
+  "html": "case01.html",
+  "png": "case01.png",
+  "cli_args": "--width 900 --strict --diagnostics json",
+  "first_try": {
+   "status": "pass",
+   "errors": 0,
+   "warnings": 0,
+   "first_error": null
+  },
+  "iterations": [
+   {
+    "n": 1,
+    "status": "pass",
+    "errors": 0,
+    "warnings": 0,
+    "kinds": [],
+    "fix": "（修正なし。初回で通過）",
+    "hint_helped": false
+   }
+  ],
+  "final": "pass",
+  "rounds": 1,
+  "usable": 5,
+  "emphasis": 5,
+  "fidelity": 5,
+  "dropped": [],
+  "warnings": [],
+  "undiagnosed": [],
+  "guide_gaps": [],
+  "hints_used": [],
+  "hints_misleading": [],
+  "notes": "flex の行 + flex:1 1 0 のセル + 高さ1pxの罫（ガイド §4.3）でそのまま組めた。見出し行は align-items:stretch で高さがそろい、縞模様が崩れない。行頭に「、」「。」が来た行は 1 つも無く、禁則は自動で効いている。和欧混植（ACID / API / MongoDB）の前後の空きも自然。セルは各 20〜40 字で 2 行に収まった。ガイド §3-(5) に従い、見出し行に色を敷くので .tbl の border-radius は最初から書かなかった。",
+  "diagnostics_rounds": 1
+ },
+ {
+  "case": "case02",
+  "title": "処理フロー図（設計レビュー資料）",
+  "html": "case02.html",
+  "png": "case02.png",
+  "cli_args": "--width 1000 --strict --diagnostics json",
+  "first_try": {
+   "status": "pass",
+   "errors": 0,
+   "warnings": 0,
+   "first_error": null
+  },
+  "iterations": [
+   {
+    "n": 1,
+    "status": "pass",
+    "errors": 0,
+    "warnings": 0,
+    "kinds": [],
+    "fix": "（修正なし。初回で通過）",
+    "hint_helped": false
+   },
+   {
+    "n": 2,
+    "status": "pass",
+    "errors": 0,
+    "warnings": 0,
+    "kinds": [],
+    "fix": "診断ではなく目視と --dump-stage box による修正: .notes の gap を外して注記を ワーカー に合わせ、.flow を stretch にして段の高さをそろえた",
+    "hint_helped": false
+   }
+  ],
+  "final": "pass",
+  "rounds": 1,
+  "usable": 5,
+  "emphasis": 4,
+  "fidelity": 5,
+  "dropped": [],
+  "warnings": [],
+  "undiagnosed": [
+   "注記の箱が ワーカー の箱より 8px 右にずれていた。spacer を 3*160 + 3*24 + 6*8 = 600px と正しく計算したのに、注記の行（.notes）自身に gap:8px を書いていたため、spacer の直後にもう 8px 入った。診断は 0 件。--dump-stage box の rect 先頭（620 対 628）で気づき、.notes の gap を外して一致させた。",
+   "ガイド §4.13 の定石どおり .flow に align-items:center を書いたため、説明が 1 行の段（99.1px）と 2 行の段（118.3px）で箱の高さが不ぞろいになり、図として締まらなかった。診断は 0 件。align-items:stretch にし、矢印を入れ子 flex（align-items:center / justify-content:center）で中央に置いて解決。"
+  ],
+  "guide_gaps": [
+   "§4.7 の spacer の数え方に「注記の行自身の gap も足し算に入る」が書かれていない。例（.notes）が gap 無しなので気づきにくい。",
+   "§4.13 の flow の定石が align-items:center 固定で、段の高さがそろわないことと、そろえたいときの形（stretch + 矢印を入れ子 flex で中央寄せ）が書かれていない。"
+  ],
+  "hints_used": [],
+  "hints_misleading": [],
+  "notes": "5 段 + 4 矢印を flex:none の固定幅で並べ、注記は §4.7 の spacer で位置合わせ。診断は初回から 0 件だが、PNG と --dump-stage box を見て 2 か所を直した（下記 undiagnosed）。矢印「→」は既定フォントで出る。「dead letter に送る」は欧文込みで自然に折り返した。",
+  "diagnostics_rounds": 1
+ },
+ {
+  "case": "case03",
+  "title": "用語カード（社内 wiki）",
+  "html": "case03.html",
+  "png": "case03.png",
+  "cli_args": "--width 720 --strict --diagnostics json",
+  "first_try": {
+   "status": "pass",
+   "errors": 0,
+   "warnings": 0,
+   "first_error": null
+  },
+  "iterations": [
+   {
+    "n": 1,
+    "status": "pass",
+    "errors": 0,
+    "warnings": 0,
+    "kinds": [],
+    "fix": "（修正なし。初回で通過）",
+    "hint_helped": false
+   }
+  ],
+  "final": "pass",
+  "rounds": 1,
+  "usable": 5,
+  "emphasis": 5,
+  "fidelity": 5,
+  "dropped": [],
+  "warnings": [],
+  "undiagnosed": [],
+  "guide_gaps": [],
+  "hints_used": [],
+  "hints_misleading": [],
+  "notes": "<ruby>冪等性<rt>べきとうせい</rt></ruby> で読みを表示。親文字 3 字 × 34px = 102px、ルビ 6 字 × 17px = 102px で幅がぴたりと合い、配り直しも起きていない。ルビのある行の行ボックスは自動で広がり、上のタグ列と重ならない。落ち着いた配色は生成りの背景 + くすんだ緑で表現。",
+  "diagnostics_rounds": 1
+ },
+ {
+  "case": "case04",
+  "title": "手順カード（オンボーディング）",
+  "html": "case04.html",
+  "png": "case04.png",
+  "cli_args": "--width 800 --strict --diagnostics json",
+  "first_try": {
+   "status": "pass",
+   "errors": 0,
+   "warnings": 0,
+   "first_error": null
+  },
+  "iterations": [
+   {
+    "n": 1,
+    "status": "pass",
+    "errors": 0,
+    "warnings": 0,
+    "kinds": [],
+    "fix": "（修正なし。初回で通過）",
+    "hint_helped": false
+   }
+  ],
+  "final": "pass",
+  "rounds": 1,
+  "usable": 5,
+  "emphasis": 5,
+  "fidelity": 5,
+  "dropped": [],
+  "warnings": [],
+  "undiagnosed": [],
+  "guide_gaps": [],
+  "hints_used": [],
+  "hints_misleading": [],
+  "notes": "§4.6 の badge（width=height=40, border-radius:20, line-height:40px, text-align:center）で番号の丸がきれいに中央に来た。5 ステップとも補足は 1 行に収まった（依頼は 1〜2 行なので範囲内）。区切りは高さ1pxの div。",
+  "diagnostics_rounds": 1
+ },
+ {
+  "case": "case05",
+  "title": "読書メモの引用カード（SNS）",
+  "html": "case05.html",
+  "png": "case05.png",
+  "cli_args": "--width 1080 --height 1080 --strict --diagnostics json",
+  "first_try": {
+   "status": "pass",
+   "errors": 0,
+   "warnings": 0,
+   "first_error": null
+  },
+  "iterations": [
+   {
+    "n": 1,
+    "status": "pass",
+    "errors": 0,
+    "warnings": 0,
+    "kinds": [],
+    "fix": "（修正なし。初回で通過）",
+    "hint_helped": false
+   }
+  ],
+  "final": "pass",
+  "rounds": 1,
+  "usable": 5,
+  "emphasis": 5,
+  "fidelity": 5,
+  "dropped": [],
+  "warnings": [],
+  "undiagnosed": [],
+  "guide_gaps": [
+   "column 方向の flex の子に margin-left:auto（交差軸の auto margin）が効くかが §2.3 から読み取れない。『縦並びの子に margin-top: auto』しか書いていないので、右寄せの 1px 罫は flex 行で包む形に逃げた。"
+  ],
+  "hints_used": [],
+  "hints_misleading": [],
+  "notes": "§4.14 の「本文を flex:1 1 0 の箱で縦中央、署名は下端」で 1080 角に収めた。禁則は完全に効いており、行頭に「、」「。」は無い。3 行目が短く終わるのは「は、」が分かれないよう追い出した結果で正しい。行頭の「 は既定（天付きにしない）なので半角ぶん字下げされて見える（--trim-line-start で詰められる）。依頼文の 「」 は引用符として本文に残し、著者名の 「」 は外した。",
+  "diagnostics_rounds": 1
+ },
+ {
+  "case": "case06",
+  "title": "OG 画像（ブログ記事）",
+  "html": "case06.html",
+  "png": "case06.png",
+  "cli_args": "--width 1200 --height 630 --image avatar=/tmp/claude-1000/-home-junya-src-github-com-junyaU-shashoku/b49b3f24-3adf-4571-b7e4-8f5443e40947/scratchpad/a52/remeasure/bin/assets/avatar.png --strict --diagnostics json",
+  "first_try": {
+   "status": "pass",
+   "errors": 0,
+   "warnings": 0,
+   "first_error": null
+  },
+  "iterations": [
+   {
+    "n": 1,
+    "status": "pass",
+    "errors": 0,
+    "warnings": 0,
+    "kinds": [],
+    "fix": "（修正なし。初回で通過）",
+    "hint_helped": false
+   }
+  ],
+  "final": "pass",
+  "rounds": 1,
+  "usable": 5,
+  "emphasis": 5,
+  "fidelity": 5,
+  "dropped": [],
+  "warnings": [],
+  "undiagnosed": [],
+  "guide_gaps": [],
+  "hints_used": [],
+  "hints_misleading": [],
+  "notes": "§4.9 の骨格そのまま（1072×502 + padding 64）。<img> は flex の直接の子に置け、border-radius:28px で真円にクリップされた。タイトルは 2 行、フッターは下端。タイトルの箱に flex:1 1 0 を与えた定石の結果として、タイトル下に大きな余白が空く（意図どおりだが、中央寄せにしたい場合は justify-content:center が要る）。タグ・日付・サイト名・アイコンすべて掲載。",
+  "diagnostics_rounds": 1
+ },
+ {
+  "case": "case07",
+  "title": "イベント告知（勉強会）",
+  "html": "case07.html",
+  "png": "case07.png",
+  "cli_args": "--width 1080 --height 1080 --strict --diagnostics json",
+  "first_try": {
+   "status": "pass",
+   "errors": 0,
+   "warnings": 0,
+   "first_error": null
+  },
+  "iterations": [
+   {
+    "n": 1,
+    "status": "pass",
+    "errors": 0,
+    "warnings": 0,
+    "kinds": [],
+    "fix": "（修正なし。初回で通過）",
+    "hint_helped": false
+   },
+   {
+    "n": 2,
+    "status": "pass",
+    "errors": 0,
+    "warnings": 0,
+    "kinds": [],
+    "fix": "診断ではなく目視と --dump-stage box による修正: 丸の margin-top を 26px から 35px にしてルビ付きの名前の中心に合わせた",
+    "hint_helped": false
+   }
+  ],
+  "final": "pass",
+  "rounds": 1,
+  "usable": 5,
+  "emphasis": 4,
+  "fidelity": 5,
+  "dropped": [],
+  "warnings": [],
+  "undiagnosed": [
+   "箇条の丸（.dot）が名前の中心より約 10px 上にずれていた。§4.4 の式 (font-size × line-height − 直径) ÷ 2 = 19px を使うところ 26px を置いたが、いずれにせよルビのある行は行ボックスが上に約 15px 広がるため（§4.11 の式）、ルビ無しの式では合わない。診断は 0 件。--dump-stage box で行 rect（537.6）とベースライン（588.5）を見て 35px に直した。"
+  ],
+  "guide_gaps": [
+   "§4.4 の丸の margin-top の式と、§4.11 の『ルビのある行は上側だけ高くなる』が結び付けられていない。ルビ付きの行に丸やアイコンを合わせる式（§4.4 の値 + (max(line-height, A + line-height/2) − line-height) × font-size）が無い。"
+  ],
+  "hints_used": [],
+  "hints_misleading": [],
+  "notes": "登壇者 3 名すべてにルビ。Chen Wei は <ruby>Chen<rt>チェン</rt></ruby> のように語ごとに分けた。欧文親文字のルビは JLREQ の配り方で「チ ェ ン」とかなり広がる（ガイド §4.11 の予告どおり）。「第 12 回」は letter-spacing を使わない（§5 の日本語組版の注意）。参加無料バッジ・日時・場所・申込 URL すべて掲載。申込は margin-top:auto で下端に固定。",
+  "diagnostics_rounds": 1
+ },
+ {
+  "case": "case08",
+  "title": "通知画像（週次レポート）",
+  "html": "case08.html",
+  "png": "case08.png",
+  "cli_args": "--width 800 --strict --diagnostics json",
+  "first_try": {
+   "status": "pass",
+   "errors": 0,
+   "warnings": 0,
+   "first_error": null
+  },
+  "iterations": [
+   {
+    "n": 1,
+    "status": "pass",
+    "errors": 0,
+    "warnings": 0,
+    "kinds": [],
+    "fix": "（修正なし。初回で通過）",
+    "hint_helped": false
+   }
+  ],
+  "final": "pass",
+  "rounds": 1,
+  "usable": 5,
+  "emphasis": 5,
+  "fidelity": 5,
+  "dropped": [],
+  "warnings": [],
+  "undiagnosed": [],
+  "guide_gaps": [],
+  "hints_used": [],
+  "hints_misleading": [],
+  "notes": "3 指標を flex:1 1 0 で等分。数字 + 単位は §3-(2) の「font-size の違う span はベースラインで揃う」を使って 1 行にした（42 件 / 156 件 / 9 回）。前週比は pill（flex:none）で緑・赤・灰に塗り分け。− と ± は §2.4 の一覧どおり豆腐にならずに出た。高さは内容追従（354px）。",
+  "diagnostics_rounds": 1
+ },
+ {
+  "case": "case09",
+  "title": "要約カード（ニュース）",
+  "html": "case09.html",
+  "png": "case09.png",
+  "cli_args": "--width 800 --strict --diagnostics json",
+  "first_try": {
+   "status": "pass",
+   "errors": 0,
+   "warnings": 0,
+   "first_error": null
+  },
+  "iterations": [
+   {
+    "n": 1,
+    "status": "pass",
+    "errors": 0,
+    "warnings": 0,
+    "kinds": [],
+    "fix": "（修正なし。初回で通過）",
+    "hint_helped": false
+   }
+  ],
+  "final": "pass",
+  "rounds": 1,
+  "usable": 5,
+  "emphasis": 5,
+  "fidelity": 5,
+  "dropped": [],
+  "warnings": [],
+  "undiagnosed": [],
+  "guide_gaps": [],
+  "hints_used": [],
+  "hints_misleading": [],
+  "notes": "§4.4 の丸 + flex の箇条書き、§4.5 のタグ、§4.7 の space-between 相当（伸びる空 div）で出典行。見出しの「――」（U+2015 ×2）はつながった 1 本の罫に見える形で出た。見出しの折り返しは「2027 年度」の後ろで、数字と助数詞は割れていない。",
+  "diagnostics_rounds": 1
+ },
+ {
+  "case": "case10",
+  "title": "短歌（縦書き、SNS）",
+  "html": "case10.html",
+  "png": "case10.png",
+  "cli_args": "--width 800 --height 1200 --strict --diagnostics json",
+  "first_try": {
+   "status": "pass",
+   "errors": 0,
+   "warnings": 0,
+   "first_error": null
+  },
+  "iterations": [
+   {
+    "n": 1,
+    "status": "pass",
+    "errors": 0,
+    "warnings": 0,
+    "kinds": [],
+    "fix": "（修正なし。初回で通過）",
+    "hint_helped": false
+   }
+  ],
+  "final": "pass",
+  "rounds": 1,
+  "diagnostics_rounds": 1,
+  "usable": 4,
+  "emphasis": 4,
+  "fidelity": 5,
+  "dropped": [],
+  "warnings": [],
+  "undiagnosed": [],
+  "guide_gaps": [
+   "縦書きで flex 項目の交差軸（字送り方向）が既定の stretch で紙面いっぱいに伸びることが §4.10 に書かれていない。歌の箱は本文の実寸 992px に対して 1008px になっていた（--dump-stage box で確認）。今回は影響しなかったが、箱の端を基準に何かを合わせると 16px ずれる。"
+  ],
+  "hints_used": [],
+  "hints_misleading": [],
+  "notes": "【依頼文の欠落によりやり直した case】最初の測定では依頼文の 3 行目（作者名・配色・余白・寸法）が欠けており、1080×1080・作者名なしで作っていた。退避先は case10_truncated_request/。正しい依頼文で書き直し、やはり初回 1 回で通過（エラー 0・警告 0）。§4.10 の 2 つ目の例（writing-mode:vertical-rl + flex-direction:column + justify-content:space-between で「右端に題・左端に署名」）がそのまま当てはまり、軸を考え直す必要が無かった。作者名の下端寄せは同じく §4.10 の margin-top:auto。--dump-stage box の論理座標で検算: 歌は [96, 96, 1008, 62]（上から 96px・右端から 96px）、作者名は [1049.2, 673.4, 54.8, 30.6] で、字送りの終端が 1104 = 1200−96（下端）、行送りは 673.4+30.6 = 704 で右端から 704px = 左から 96px = padding-left ちょうど。**作者名は左端、寸法は 800×1200 で確認済み**。組版は 1 行 32 字（31px × 32 = 992 ≦ 1008）に収まり、長音「ー」も縦向き、句と句の間の全角空きもそのまま出た。「架空 花」の半角空きは字送り方向の小さな空きとして出る。用途は満たすが、歌が右端・署名が左端で中央が約 515px 空くため、画としてはやや薄い（依頼が「左端に」「余白は広めに」なので指示どおりの結果）。"
+ }
+]

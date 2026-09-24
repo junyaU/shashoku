@@ -97,7 +97,8 @@ CSS 変数（`--x`）、`calc()`。
 - **辺ごとの border はありません**（`border-top` `border-left` などは非対応）。
   罫線は `height: 1px; background: <色>` の `div` で引いてください（§4.3）
 - **隅ごとの border-radius はありません**（`border-radius: 8px` のように 1 値だけ）
-- `margin: auto` は使えます（左右中央寄せ）
+- `margin: auto` は使えます。ブロックの左右中央寄せのほかに、**flex 項目では余りを吸って寄せます**
+  （横並びの子に `margin-left: auto` で右端へ、縦並びの子に `margin-top: auto` で下端へ。§4.14）
 
 ### 2.4 値・単位・色
 
@@ -122,6 +123,32 @@ CSS 変数（`--x`）、`calc()`。
 > `font-size` を基準に計算する」、`em` は「計算済みの px が継承される」という違いがあるので、
 > 文字サイズの違う子を持つ要素では**単位なし**を選んでください。
 > `font-size` はキーワード（`large` など）を受け付けません。
+
+> `font-family` が照合するのは、**渡したフォントが自分で名乗っている family 名**だけです。
+> `serif` / `sans-serif` / `monospace` などの総称ファミリと、渡していないフォントの名前は
+> **エラーにならず黙って読み飛ばされます**（明朝・等幅にする方法は §7）。
+
+**記号は「フォントに入っているものだけ」出ます。** 入っていない字は □（豆腐）になり
+`warning[missing-glyph]` が出ます。埋め込みの既定フォント（Noto Sans JP）で実際に描いて
+確かめた一覧です（`--font` で別のフォントを渡したときは、そのフォント次第で変わります）。
+
+| 分類 | 出る記号 |
+|---|---|
+| 矢印 | `→` `←` `↑` `↓` `⇒` `⇐` `⇔` `↔` `⇨` `➡` |
+| 図形 | `●` `○` `◎` `■` `□` `◆` `◇` `▲` `△` `▼` `▽` `▶` `▷` `◀` `◁` `▪` `▫` `★` `☆` |
+| 記号・数式 | `✓` `×` `✚` `※` `〓` `¬` `∞` `≠` `≦` `≧` `√` `∴` `∵` `−` `±` `÷` `‰` `℃` `°` `′` `″` |
+| ダッシュ・約物 | `–` `—` `―` `…` `〜` `～` `「」` `『』` `（）` `〔〕` `【】` `〈〉` `《》` `・` |
+| 通貨・記載 | `€` `¥` `£` `$` `©` `®` `™` `§` `¶` `†` `‡` `№` `①` `②` `③` `Ⅰ` `Ⅱ` `Ⅲ` |
+| そのほか | `♦` `♥` `♠` `♣` `♪` `☀` `☁` `☂` `☃` `☎` `✂` `⌘` `⏎` `⇧` `⚠` `❖` |
+
+**□ になったもの**（同じ確かめ方で実際に警告が出たもの）:
+
+- 絵文字はすべて。`🎉` `😀` `✅` `❗` `⭐` `❤` `⚡` `⏰` `✈` `✉` `⬛` `⬜`
+- チェック・バツの多く。`✔` `✕` `✗` `✘` `✖` `☑` `☐` `☒`（**出るのは `✓` と `×` だけ**）
+- `≒` `✦` `✳` `✴` `➔` `⌥`
+
+`⚠️` のように異体字セレクタ（`U+FE0F`）を付けた書き方は、セレクタが無視されて
+**白黒の `⚠`** になります。色の付いた絵文字は出せません。
 
 ### 2.5 UA の既定スタイル
 
@@ -177,12 +204,26 @@ rt { font-size: 0.5em }
 インラインに効くのは `color` `background-color` `font-size` `font-family` `font-weight`
 `letter-spacing` などです。`font-size` の違う `span` は**ベースラインで揃います**。
 
-### (3) flex 項目の `span` は block 化されない
+### (3) flex コンテナの**直接の子**は block 化される（孫は (2) のまま）
 
-ブラウザでは flex コンテナの子は自動で block 級になりますが、**shashoku はしません**。
-`display: inline` のままなので、(2) の制限がそのまま効きます。
+`display: flex` の直接の子は、`span` と書いても自動で block 級になります（CSS Display 3 §2.7）。
+`padding` / `border` / `width` を付けてよく、**`div` と `span` でまったく同じ絵**（バイト単位で
+同じ PNG）が出ます。
 
-> **flex コンテナの子は、かならず `div` にしてください。**
+```html
+<!-- どちらも同じ結果 -->
+<div style="display: flex; gap: 8px">
+  <span style="flex: none; padding: 5px 12px; background: #e7f0ff">政策</span>
+  <div style="flex: none; padding: 5px 12px; background: #e7f0ff">AI</div>
+</div>
+```
+
+例外は **`<img>` / `<ruby>` / `<br>`** の 3 つで、flex の直接の子でも inline のままです。
+`<ruby>` に `padding` を書くと `error[unsupported-layout]` になるので、箱が要るなら
+`div` か `span` で包んでください。`<img>` は従来どおりそのまま flex 項目にできます（§4.12）。
+
+**block 化されるのは直接の子だけです。** 文章の中に置いた `span`（= flex コンテナの孫）は
+inline のままなので、(2) の制限がそのまま効きます。
 
 ### (4) `display: inline-block` が無い → 「flex の親 + `flex: none` の子」
 
@@ -245,6 +286,16 @@ rt { font-size: 0.5em }
 `flex: 1 1 0` で等分になります（CSS grid の `1fr` 相当）。`flex: 1` は同じ意味の短縮形です
 （`flex: 1 1 0` に展開されます）。内容ぶんの幅にしたいときは `flex: none`、
 幅を決め打ちにしたいときは `flex: none; width: 180px`。
+子は `div` でも `span` でも同じです（§3-(3)）。
+flex の中に flex を入れて組み立てる形（段の間の矢印、カードの中のタグ列）は §4.13。
+
+**分割できない長い語があると等分になりません。** `flex: 1 1 0` の子は、
+**これ以上縮められない幅**（= 分割できない一番長い語の幅 + `padding` + `border`）より狭くなりません。
+URL・長い英単語・連続する英数字・ハッシュ値が入ると、その子だけ広がって他が縮み、
+合計が親を超えれば**親からはみ出します**（紙面の外まで出れば `warning[content-overflow]`）。
+長い語が入りうる子には **`overflow-wrap: anywhere`** を付けてください。
+**`overflow-wrap: break-word` は `flex: 1 1 0` の子では効きません**（縮められる幅の計算に
+入らないため。CSS Text 3 §5.4）。実例は §4.3。
 
 ### 4.3 表（flex の行 + 1px の罫）— [table.html](examples/table.html)
 
@@ -272,6 +323,31 @@ rt { font-size: 0.5em }
 
 `align-items` の既定は `stretch` なので、**同じ行のセルの高さは自動でそろいます**（縞模様が崩れません）。
 列幅を変えたいときは `flex: 1 1 0` の代わりに `flex: none; width: 180px` や `flex: 2 1 0` を使います。
+
+**空のセルは高さを持ちません。** 中身の無い `div` の内容高さは 0 なので、その行のセルが**全部空**だと、
+行の高さは `padding` のぶんだけになります（上の `.td` なら 10 + 10 = 20px）。
+1 行ぶんの高さを保ちたいときは `&nbsp;` を入れてください
+（文字参照として通り、`font-size × line-height` の高さを持ちます。上の例なら 15 × 1.7 = 25.5px で
+行は 45.5px になります）。同じ行に中身のあるセルが 1 つでもあれば、空のセルも `stretch` で
+引き伸ばされるので `&nbsp;` は要りません。
+
+**長い語が入る列には `overflow-wrap: anywhere` を付けてください。** セルは `flex: 1 1 0` なので、
+分割できない語（URL・ハッシュ・連続する英数字）があるとその列だけ広がり、**見出し行と本文行で
+列がずれます**（§4.2）。上の `.tbl` に 40 桁のコミットハッシュを入れて `--width 400` で描くと:
+
+| | 見出し行の列幅 | 本文行の列幅 | 結果 |
+|---|---|---|---|
+| そのまま | 132.7 / 132.7 / 132.7 | 54.0 / 349.8 / 59.6 | 列がずれ、右に 64.4px はみ出して `warning[content-overflow]` |
+| `overflow-wrap: anywhere` | 132.7 / 132.7 / 132.7 | 132.7 / 132.7 / 132.7 | そろう。ハッシュは途中で折り返す |
+| `overflow-wrap: break-word` | — | そのままと同じ | **効きません** |
+
+```html
+<style>
+  /* 上の .tbl / .tr / .td / .rule に足す */
+  .long { overflow-wrap: anywhere; }
+</style>
+<div class="tr"><div class="td">コミット</div><div class="td long">9f2c1b4e8d7a6503f1e2c9b8a7d6e5f4c3b2a190</div><div class="td">main の先端</div></div>
+```
 
 ### 4.4 箇条書き（flex + 丸）— [list.html](examples/list.html)
 
@@ -314,6 +390,7 @@ rt { font-size: 0.5em }
 ```
 
 `flex-wrap` が無いので**折り返しません**。数が多いときは行ごとに `.tags` を分けてください。
+子を `<span class="pill">` と書いても同じです（flex の直接の子は block 化されます。§3-(3)）。
 
 ### 4.6 縦中央揃え — [vcenter.html](examples/vcenter.html)
 
@@ -338,6 +415,7 @@ rt { font-size: 0.5em }
 
 **箱いっぱいの縦中央**は `display: flex; flex-direction: column; justify-content: center` と、
 親に明示した `height`（content-box なので padding を引いた値）で作ります。
+本文を縦中央に置きつつ、署名や日付だけを下端に張り付けたいときは §4.14。
 
 ### 4.7 左右の位置合わせ・注記の位置決め — [space-between.html](examples/space-between.html)
 
@@ -361,6 +439,36 @@ rt { font-size: 0.5em }
 - **特定の要素の真下に注記を置く** → 注記の前に `flex: none; width: <その位置まで>px` の空の `div` を置く。
   幅は自分で足し算します（content-box なので `padding` と `border` も足す）。
   上の要素の寸法を 1px でも変えたらこの値も直してください
+- **一方だけ右端に寄せる**なら `margin-left: auto` でも同じです（spacer の `div` が要りません）
+
+spacer の幅の出し方:
+
+1. 狙う要素より**前にある兄弟**の外寸を全部足す。1 つぶんの外寸は
+   `width + padding左右 + border左右`（content-box なので `width` に含まれていません）
+2. その間で**またぐ `gap` の数**だけ `gap` を足す（兄弟が n 個なら gap は n 個）
+3. 注記の行の `padding-left` を、上の行の `padding-left` と**同じ**にする（違うとその差だけずれます）
+4. `--dump-stage box` で確かめる。`rect` の 1 つ目の数が、狙った要素の `rect` の 1 つ目と一致すれば合っています
+
+```html
+<style>
+  .row   { display: flex; gap: 12px; padding: 16px; background: #ffffff; }
+  .cell  { flex: none; width: 160px; padding: 10px; border: 1px solid #ccd3dd;
+           border-radius: 8px; font-size: 15px; color: #1b2733; }
+  .notes { display: flex; padding: 0 16px 16px 16px; background: #ffffff; }
+  .sp    { flex: none; width: 194px; }
+  .note  { flex: none; font-size: 13px; color: #c0392b; }
+</style>
+<div class="row">
+  <div class="cell">一次案</div>
+  <div class="cell">二次案</div>
+  <div class="cell">最終案</div>
+</div>
+<div class="notes"><div class="sp"></div><div class="note">▲ ここだけ差し替えた</div></div>
+```
+
+セル 1 つの外寸は `160 + 10×2 + 1×2 = 182`、gap を 1 つまたぐので spacer は `182 + 12 = 194px`。
+`shashoku notes.html --dump-stage box --width 600` で見ると、2 つ目のセルも注記も
+`rect` の先頭が `210`（= 16 + 194）でそろいます。
 
 ### 4.8 見出しと本文 — [heading.html](examples/heading.html)
 
@@ -406,10 +514,11 @@ rt { font-size: 0.5em }
 
 ```html
 <style>
-  .sheet  { writing-mode: vertical-rl; width: 400px; height: 820px; padding: 40px;
+  .sheet  { writing-mode: vertical-rl; display: flex; flex-direction: column;
+            width: 400px; height: 820px; padding: 40px;
             background: #f7f3e8; color: #23201a; }
   .poem   { margin: 0; font-size: 25px; line-height: 2; }
-  .author { margin: 0 28px 0 0; padding: 560px 0 0 0; font-size: 16px; color: #6b6355; }
+  .author { margin: auto 28px 0 0; font-size: 16px; color: #6b6355; }
 </style>
 <div class="sheet">
   <div class="poem">ゆふぐれの　駅のホームに　立ちつくし　届かぬ返事を　もう一度読む</div>
@@ -442,6 +551,49 @@ rt { font-size: 0.5em }
 - **行の太さ** = `font-size × line-height`。行数 × これが `width` に収まる必要があります
 - 縦中横（`text-combine-upright`）はありません
 
+#### 行送り方向（左右）に置き分ける
+
+「右端に題、左端に署名」のような配置は、いちばん外側の要素を `display: flex` にして作ります。
+縦書きでは軸が 90 度回るので、どのプロパティがどちらに効くかを先に押さえてください
+（`--dump-stage box` で確かめた表です）。
+
+| `flex-direction` | 主軸（`justify-content` が効く向き） | 交差軸（`align-items` が効く向き） |
+|---|---|---|
+| `row`（既定） | **縦**（上 → 下）。`flex-start` = 上、`flex-end` = 下 | **横**（右 → 左）。`flex-start` = **右**、`flex-end` = **左** |
+| `column` | **横**（右 → 左）。`flex-start` = **右**、`flex-end` = **左** | **縦**（上 → 下）。`flex-start` = 上、`flex-end` = 下 |
+
+`margin` だけは上の表と無関係に**物理方向のまま**です。行送り方向に空けたいときは
+`margin-right`（右隣との間）と `margin-left`（左隣との間）を使います。
+
+```html
+<style>
+  .sheet { writing-mode: vertical-rl; display: flex; flex-direction: column;
+           justify-content: space-between; width: 400px; height: 520px; padding: 32px;
+           background: #f7f3e8; color: #23201a; }
+  .title { font-size: 30px; font-weight: bold; }
+  .body  { font-size: 20px; line-height: 2; }
+  .by    { font-size: 15px; color: #6b6355; }
+</style>
+<div class="sheet">
+  <div class="title">秋の便り</div>
+  <div class="body">風が冷たくなりました。庭の柿が色づき、夕暮れの早さに驚いています。</div>
+  <div class="by">架空　花</div>
+</div>
+```
+
+`shashoku letter.html -o letter.png --width 464 --height 584` で、題が右端・署名が左端に付きます
+（`column` の主軸が右 → 左なので、`space-between` が寄せるのは左右です）。
+
+**字送り方向（上下）の位置決め**は、同じ flex の `align-items`（全部の子に効く）か、
+子ごとの `margin-top: auto` / `margin-bottom: auto` です。上の例の署名がこれで、
+`margin: auto 28px 0 0` の `auto`（= `margin-top`）が余りを全部吸って**署名を下端に貼り付けます**。
+`padding-top: 560px` のように数えて押すこともできますが、その場合は本文の長さや `font-size` を
+変えるたびに数え直しになります。
+
+> `--dump-stage box` の `rect` は**論理座標**です。縦書きでは
+> `[字送り（上）からの位置, 行送り（右端）からの位置, 字送り方向の大きさ, 行送り方向の大きさ]`
+> の順で、**2 つ目の数が大きいほど左**にあります。
+
 ### 4.11 ルビ — [ruby.html](examples/ruby.html)
 
 ```html
@@ -456,8 +608,17 @@ rt { font-size: 0.5em }
 ```
 
 - `<rt>` の大きさは UA 既定で親の `0.5em` です
-- **ルビのある行は行ボックスが自動で広がる**ので、上の行と重なることはありません。
-  ただし `line-height: 1.0` 前後だと窮屈に見えます。**`line-height: 1.8` 前後**を目安にしてください
+- **ルビのある行は行ボックスが自動で広がる**ので、上の行と重なることはありません
+  （`line-height: 1.0` でも重なりません）。ただし窮屈に見えるので **`line-height: 1.8` 前後**を目安に
+- **行の高さの式**（横書き）: ルビのある行の高さは
+  `font-size × max(line-height, A + line-height ÷ 2)` です。`A` はフォントの
+  **ascent + descent を em で表した値**で、既定フォント（Noto Sans JP）では **約 1.45**。
+  つまり `line-height` が `2 × A ≒ 2.9` 未満だとルビのぶんだけ行が高くなり、**増えるのは上側だけ**です。
+  実測（既定フォント、`font-size: 20px`）: `line-height: 1.8` の行は 36px、同じ行にルビがあると
+  **46.95px**。`line-height: 2.9` なら 58px で、ルビがあっても変わりません
+- そのため、**ルビのある行とない行が混ざると行送りが不ぞろいに見えます**。そろえたいなら
+  段落ごと `line-height` を 2.9 以上にする（かなり空きます）か、不ぞろいを受け入れてください。
+  注記（`<rt>`）そのものは行の高さに参加せず、参加するのは「親文字の外に出るための張り出し」だけです
 - 親文字とルビの幅が違うときは JLREQ 3.3.6 の 1:2:…:2:1 で配り、はみ出したぶんは隣の**仮名**にだけ掛けます。
   親文字が欧文でもルビは付きます（広めに配られます）
 - `<rt>` に `letter-spacing` は効きません
@@ -488,6 +649,84 @@ rt { font-size: 0.5em }
 - `alt` は任意です（書かなくてもエラーになりません。描画にも使われません）
 - `<img>` は inline のまま `width` / `height` / `border-radius` を取れる唯一の要素で、
   `border-radius` は**中身をクリップ**します
+- **`<img>` は flex の直接の子に置けます。** 上の例の `.head` がそのまま flex コンテナで、
+  `<img>` を `div` で包む必要はありません。大きさは `width` / `height` で決めます
+
+### 4.13 flex の入れ子 — [flow.html](examples/flow.html)
+
+`position` も `grid` も無いので、少し込み入った紙面は **flex の中に flex** を入れて作ります。
+入れ子の各段で決めることは 2 つだけです: **並べる向き**（`flex-direction`）と、
+**交差方向の揃え**（`align-items`）。
+
+```html
+<style>
+  .flow  { display: flex; align-items: center; gap: 12px; padding: 20px; background: #ffffff; }
+  .step  { flex: 1 1 0; display: flex; flex-direction: column; gap: 8px;
+           padding: 14px; border-radius: 10px; background: #f1f4f9; }
+  .no    { font-size: 12px; color: #6b7a90; }
+  .name  { font-size: 17px; font-weight: bold; line-height: 1.5; color: #1b2733; }
+  .tags  { display: flex; gap: 6px; }
+  .tag   { flex: none; padding: 2px 8px; border-radius: 9px;
+           background: #e7f0ff; color: #14509b; font-size: 12px; }
+  .arrow { flex: none; font-size: 22px; color: #9aa7b8; }
+</style>
+<div class="flow">
+  <div class="step">
+    <div class="no">1</div>
+    <div class="name">受け取る</div>
+    <div class="tags"><div class="tag">HTML</div><div class="tag">フォント</div></div>
+  </div>
+  <div class="arrow">→</div>
+  <div class="step">
+    <div class="no">2</div>
+    <div class="name">組む</div>
+    <div class="tags"><div class="tag">行分割</div><div class="tag">約物</div></div>
+  </div>
+</div>
+```
+
+- **段の間の矢印**は「`→` を 1 文字入れた `flex: none` の `div`」です。外側の
+  `align-items: center` で段の縦中央に来るので、矢印の位置を計算する必要はありません
+  （§2.4 のとおり `→` は既定フォントで出ます）
+- **段（`.step`）は `flex: 1 1 0`** で等分に。矢印は `flex: none` なので幅を食いません
+- **段の中は `flex-direction: column`** にして、番号・見出し・タグ列を縦に積みます。
+  `gap` が段の中の行間になります
+- **タグ列はさらに内側の flex**（`display: flex` + 子に `flex: none`）。§4.5 と同じ形です
+- 入れ子にしても `flex-wrap` はありません。**入りきらなければはみ出します**（親の箱からの
+  はみ出しは検出されません）。段の数を増やすときは `--width` も増やしてください
+
+### 4.14 引用カード（本文を縦中央、署名を下端）— [quote.html](examples/quote.html)
+
+高さを固定した紙面で「本文は真ん中、署名は下端」にする形です。`position` が無いので、
+**余りを吸う箱**を 1 つ作って解きます。
+
+```html
+<style>
+  .sheet { display: flex; flex-direction: column; width: 552px; height: 312px;
+           padding: 24px; background: #fbf8f2; color: #23201a; }
+  .body  { flex: 1 1 0; display: flex; flex-direction: column; justify-content: center; }
+  .quote { margin: 0; font-size: 26px; line-height: 1.9; }
+  .by    { flex: none; text-align: right; font-size: 15px; color: #7a7266; }
+</style>
+<div class="sheet">
+  <div class="body"><p class="quote">おそれるな。おそれは、まだ起きていないことの影にすぎない。</p></div>
+  <div class="by">架空　花『影の書』</div>
+</div>
+```
+
+`shashoku quote.html -o quote.png --width 600 --height 360` で出します
+（`552 = 600 − 24×2`、`312 = 360 − 24×2`）。
+
+- 紙面を `flex-direction: column` にして、**本文の箱に `flex: 1 1 0`** を与えると、署名以外の
+  余りを全部その箱が取ります。中で `justify-content: center` すれば本文が縦中央、署名は下端です
+- 本文が中央に来るのは「**署名を除いた領域**」の中央で、紙面の中央より署名の高さの半分だけ上です。
+  厳密に紙面の中央に置きたいなら、**署名と同じ高さの空の `div`**（`flex: none; height: <署名の高さ>px`）を
+  本文の箱の**上**に足してください。署名の高さは `height` と `line-height` を同じ px にして決め打ちにすると
+  合わせやすく、上の例なら両方 22px にすると本文の中心が紙面のちょうど中央（180px）に来ます
+- **本文は上端のままでよく、署名だけ下端に張り付けたい**なら、spacer も `flex: 1 1 0` も要りません。
+  署名に `margin-top: auto` を書くだけです（余りをその margin が全部吸います）
+- 縦書きでも `margin-top: auto` は「字送りの終わり = **下端**」に押します（§4.10 で確かめた形）。
+  行送り方向（左右）の端に寄せたいときは、§4.10 の `justify-content` の表を見てください
 
 ---
 
@@ -499,22 +738,24 @@ rt { font-size: 0.5em }
 | `<ul>` `<li>` `<ol>` | エラー | flex の行 + 丸の `div`（§4.4） |
 | `<table>` `<tr>` `<td>` | エラー | flex の行 + `flex: 1 1 0` のセル（§4.3） |
 | `<strong>` `<b>` `<em>` `<code>` `<a>` `<section>` `<header>` | エラー | `span`（+ `font-weight` / `color` / `background-color`）または `div` |
-| 絵文字（🎉 😀 など） | **□ になって警告** | **使わない**。文字（`→` `↓` `▼` `※`）か、色付きの小さな `div` で代用 |
-| `display: inline-block` | エラー | flex の親 + `flex: none` の子（§3-(4)） |
+| 絵文字（🎉 😀 など） | **□ になって警告** | **使わない**。§2.4 の一覧にある記号（`→` `▼` `※` `✓`）か、色付きの小さな `div` で代用 |
+| `display: inline-block` | エラー | **flex コンテナの中なら宣言を削るだけ**（直接の子は block 化され、そのまま箱のプロパティを取ります。§3-(3)）。それ以外は flex の親 + `flex: none` の子（§3-(4)） |
 | `position` / `top` / `left` / `z-index` | エラー | flex と `justify-content` / `align-items` / 空の spacer（§4.7） |
-| `grid` / `grid-template-columns` | エラー | flex + `flex: 1 1 0`（`1fr` 相当） |
+| `grid` / `grid-template-columns` ほか `grid-*` | エラー | **等幅の 1 行**なら親に `display: flex`・子に `flex: 1 1 0`（`1fr` 相当。§4.3）。**複数行**なら 1 行 1 flex コンテナ（§4.2）。**不等幅・セルのまたぎ（`grid-column: span 2`）は代替がありません** |
 | `float` | エラー | flex |
 | `flex-wrap` | エラー | 行ごとに flex コンテナを分ける |
 | `align-self` / `order` / `flex-flow` | エラー | 並び順を HTML の順で書く |
 | `box-sizing` | エラー | 幅・高さから padding と border を引く（§3-(1)） |
-| `min-width` / `max-width` / `min-height` / `max-height` | エラー | 固定値の `width` / `height` |
+| `min-height` | エラー | 親が **既定の `align-items: stretch` の flex** なら**削るだけ**（その子はもう交差方向いっぱいです）。高さが分かっているなら `height`。どちらでもなければ削って内容に高さを決めさせる |
+| `min-width` / `max-width` / `max-height` | エラー | 固定値の `width` / `height` にするか、削る |
 | `overflow` | エラー | はみ出さない寸法にする。角丸のクリップは諦める |
-| `background` のグラデーション（`linear-gradient` ほか） | エラー | **単色**にする |
+| `background` のグラデーション（`linear-gradient` ほか） | エラー | **単色**の `background-color` にする（絵は平坦になります）。`background-clip: text` + `color: transparent` と組で使っているときは**両方**外す（下の「削ると危険な組み合わせ」） |
+| `background-image`（`url(...)` ほか） | エラー | 単色の `background-color` か、`--image` で渡した `<img>`（§4.12） |
 | `box-shadow` / `text-shadow` | エラー | 影は諦める。境界は 1px の枠線か薄い背景色で表す |
 | `opacity` | エラー | 色そのものを薄くする（`#00000099` や淡い色） |
 | `transform`（`rotate` など） | エラー | 傾けない |
 | `::before` / `::after` + `content` | エラー | **実要素**（`span` / `div`）として書く。ただし `position` が無いので**流れの中に落ちる**ことに注意 |
-| `border-top` / `border-left` など辺ごとの枠 | エラー | 高さ（幅）1px の `div` を挟む（§4.3） |
+| `border-top` / `border-left` など辺ごとの枠 | エラー | **箱と箱の区切り線**なら `height: 1px`（横並びなら `width: 1px`）+ 背景色の `div` を挟む（§4.3）。ただし**流れの中で 1px ぶん場所を取ります**。**枠の一辺だけ**を出す代替はありません: 4 辺の `border` にするか、諦めて削る |
 | `border-style: dashed` / `dotted` | エラー | `solid`。破線と実線の描き分けは**色**で代える |
 | 隅ごとの `border-radius`（4 値） | エラー | 1 値の `border-radius` |
 | `border-collapse` | 無い | セルに枠を付けず、1px の `div` で罫を引く |
@@ -523,6 +764,19 @@ rt { font-size: 0.5em }
 | `@media` / `@import` / CSS 変数 / `calc()` / `!important` | エラー | 値を直接書く |
 | 子孫セレクタ（`.card p`） | エラー | 当てたい要素にクラスを直接書く |
 | JPEG / SVG / WebP の画像 | エラー | PNG に変換して `--image` で渡す |
+
+### 絵を代えたら、文章も直す
+
+上の表のとおりに置き換えると、**絵は変わったのに文章がそのまま**になりがちです。
+エラーも警告も出ないので、気づくのは PNG を見たときです。
+
+- 破線の枠（`dashed`）を実線や薄い色に代えた → 「**破線で囲んだ部分**は…」という凡例が嘘になります
+- 矢印の画像や `::before` の飾りを `→` の文字に代えた → 「**下向きの矢印**が…」が合わなくなります
+- 影（`box-shadow`）を枠線に代えた → 「**浮いて見えるカード**が…」が合わなくなります
+- グラデーションを単色に代えた → 「**青から紫へのグラデーション**」が合わなくなります
+
+置き換えは**スタイルと文章の 2 か所で 1 組**だと思ってください。凡例・キャプション・本文のうち、
+見た目を指している言葉を探して同時に直します。
 
 ### 削ると危険な組み合わせ
 
@@ -564,6 +818,25 @@ error[unsupported-value] at 82:77: `border-style: dashed` is not supported (supp
 - **文面**は人と AI が読むためのもので、版が変わると変わりえます
 - 位置が無いエラー（`invalid-option` など）は `at` の部分がありません
 
+直し方が分かるものには、**`  hint: …` の行が続きます**（下は実際の出力そのままです）。
+
+```
+error[unsupported-property] at 3:8: `min-height` is not a supported property
+  hint: no min/max sizes. If the parent is a flex container with the default `align-items: stretch`, drop it (the item already fills the cross size); if the height is known, use `height`; otherwise drop it and let the content decide the height
+error[unsupported-value] at 7:17: `display: grid` is not supported (supported: block, flex, inline, none)
+  hint: no grid. For equal-width columns in one row, use `display: flex` on the parent and `flex: 1 1 0` on each child (guide §4.3); for several rows, one flex row per line (guide §4.2). Unequal or spanning grids have no equivalent
+error[unsupported-layout] at 12:16: `padding-top` is not supported on an inline element (`display: inline`); only `<img>` takes box properties while inline
+  hint: drop the declaration; `display: block` would accept it but breaks the surrounding text flow. If the box is a standalone part (tag / pill / badge), make it a flex item: a `div` inside a `display: flex` parent (guide §3-(4))
+```
+
+- **hint には成立条件が書かれていることがあります。**「親が …なら削る／高さが分かるなら `height`」
+  「不等幅・またぎは代替なし」のように場合分けしてあるので、自分の HTML がどれに当たるかを見てから選んでください
+- 3 つ目の `unsupported-layout` は**文章の中に置いた `span`**（flex コンテナの孫）の例です。
+  flex コンテナの**直接の子**なら block 化されるので、同じ宣言でもエラーになりません（§3-(3)）
+- hint が無いのは「確かめた代替が無い」という意味です。§5 の表を見てください
+- 同じ規則に複数の要素が当たっても、**同一位置・同一文面の診断は 1 件**にまとめられます
+- 機械で読むなら `--diagnostics json`。`hint` は同じ文字列がそのまま入ります（§6.4）
+
 主な識別子:
 
 | 識別子 | 意味 | まずやること |
@@ -572,7 +845,7 @@ error[unsupported-value] at 82:77: `border-style: dashed` is not supported (supp
 | `unsupported-attribute` | 対応外の属性 | 属性を消す（`style` `class` `id` だけ） |
 | `unsupported-property` | 対応外のプロパティ | §5 の代替表。接頭辞なら外す |
 | `unsupported-value` | プロパティは対応、値が対応外 | 文面の `supported: …` に挙がった値にする |
-| `unsupported-layout` | 対応外のレイアウト | inline への箱プロパティ（§3-(2)(3)）／縦書きの向き（§4.10） |
+| `unsupported-layout` | 対応外のレイアウト | 文中の inline への箱プロパティ（§3-(2)）／縦書きの向き（§4.10） |
 | `css-parse` | CSS の構文・セレクタが対応外 | 子孫セレクタ・擬似要素・at-rule・`!important` を外す |
 | `html-parse` / `invalid-utf8` | HTML が壊れている | 閉じタグと文字コードを直す |
 | `image-not-found` | `<img src>` の名前が `--image` に無い | 名前をそろえる（§4.12） |
@@ -609,7 +882,8 @@ warning[content-overflow]: content overflows the canvas by 430.0px (bottom) at 1
 4. 最後に **レイアウト**（`unsupported-layout`）。inline に箱プロパティを付けていた場所は、
    **`display: block` を足すのではなく宣言を削る**のが基本です
    （`display: block` にすると文の流れが切れて、1 文が複数行に割れます）。
-   その箱が独立した部品なら、`div` に変えて flex 項目にします
+   その箱が独立した部品（タグ・pill・バッジ）なら、`display: flex` の親の**直接の子**にします
+   （`div` でも `span` でもよい。§3-(3)）
 5. **エラーが消えたら PNG を見る。** エラーが無いことは「絵が正しい」ことを意味しません
    （重なり・意図と違う位置・文字色と背景色の同化は検出されません）
 
@@ -621,7 +895,10 @@ warning[content-overflow]: content overflows the canvas by 430.0px (bottom) at 1
   問題（対応外のタグ・属性・プロパティ・値・セレクタ）を集めてから失敗します。1 件直すたびに
   走らせ直す必要はありません。ただし**構造が壊れている場合**（閉じ忘れ、`&` の書き忘れ、不正な UTF-8）は
   その場で止まるので、まずそれを直してからもう一度走らせてください
-- **「直し方」（hint）は独立した行**に出ます（`  hint: …`）。確かめた代替があるものにだけ付きます
+- **「直し方」（hint）は独立した行**に出ます（`  hint: …`）。確かめた代替があるものにだけ付き、
+  **成立条件があるときは条件つきで**書かれます（「親が stretch の flex なら削る」「不等幅・またぎは
+  代替なし」など）。代替が無いものには hint が付きません
+- **同じ規則に複数の要素が当たっても、同一位置・同一文面の診断は 1 件**です
 - 警告は 2 種類です。`missing-glyph`（豆腐）と `content-overflow`（**固定した紙面からのはみ出し**）。
   `--height` を固定して中身が多いと、切れる量と辺つきで警告が出ます
 - **`--strict`** を付けると、警告 1 件以上で失敗になり **PNG は作られません**（既にあるファイルも
@@ -630,16 +907,27 @@ warning[content-overflow]: content overflows the canvas by 430.0px (bottom) at 1
 - 成功すると CLI は `wrote out.png (1200x630)` を標準エラーに 1 行出します。
   `--height` を省いたときの実際の高さはここで分かります
 
-診断 JSON の形:
+診断 JSON の形（下は実際の出力を折り返しただけのものです）:
 
 ```json
-{"ok": true, "width": 1200, "height": 630, "truncated": false,
- "errors": [{"kind": "unsupported-property", "message": "…", "hint": "…",
-             "line": 3, "column": 14, "offset": 120, "warning": null}],
- "warnings": [{"kind": "missing-glyph", "detail": "…", "codepoint": 128512,
-               "line": 3, "column": 1, "offset": 88, "overflow_px": 0, "edge": null},
-              {"kind": "content-overflow", "detail": "…", "codepoint": 0,
-               "line": 19, "column": 1, "offset": 700, "overflow_px": 430, "edge": "bottom"}]}
+{"ok": false, "width": null, "height": null, "truncated": false,
+ "errors": [{"kind": "unsupported-property",
+             "message": "`box-sizing` is not a supported property",
+             "hint": "content-box only: subtract padding and border from `width` / `height`",
+             "line": 2, "column": 11, "offset": 18, "warning": null}],
+ "warnings": []}
+```
+
+```json
+{"ok": true, "width": 400, "height": 120, "truncated": false, "errors": [],
+ "warnings": [{"kind": "content-overflow",
+               "detail": "content overflows the canvas by 128.0px (bottom) at 4:1",
+               "codepoint": 0, "line": 4, "column": 1, "offset": 100,
+               "overflow_px": 128, "edge": "bottom"},
+              {"kind": "missing-glyph",
+               "detail": "no font has a glyph for U+1F389 at 4:19",
+               "codepoint": 127881, "line": 4, "column": 19, "offset": 118,
+               "overflow_px": 0, "edge": null}]}
 ```
 
 - `line` / `column` / `offset` は位置が無ければ `null`、`hint` が無ければ `""`
@@ -699,6 +987,35 @@ shashoku og-card.html -o og.png --width 1200 --height 630 --strict
 
 **太字**は `font-weight` を書けば出ます（既定フォントの Bold が選ばれます）。
 `font-family` は family の優先順を変えるだけで、太さの照合は書かなくても働きます。
+
+### 明朝・等幅にする（`--font` と `font-family`）
+
+**埋め込みの既定フォントは Noto Sans JP の Regular と Bold だけです。**
+`font-family: serif` や `font-family: monospace` と書いても、**字面は 1px も変わりません**
+（総称ファミリと、渡していないフォントの名前は**エラーにならず黙って読み飛ばされます**）。
+明朝や等幅にするには、そのフォントファイルを `--font` で渡してください。
+
+- `font-family` が照合するのは、**フォントファイルが自分で名乗っている family 名**です
+  （大文字小文字と前後の空白は無視されます）。`NotoSansJP-Regular.otf` なら `Noto Sans JP`、
+  `NotoSans-Regular.ttf` なら `Noto Sans`。ファイル名でも CSS の総称名でもありません
+- 照合した family が先頭に来るだけで、**残りは `--font` の順で後ろに続きます**。
+  先頭の family に無い字は次のフォントへ落ちます
+- **`--font` を 1 つでも書くと、既定フォントは使われません。** 和文が要るなら和文のフォントも
+  自分で渡してください（欧文フォントだけを渡すと、和文が全部 □ になります）
+- family 名が分からなければ `font-family` を書かず、**`--font` の順だけで決める**のが確実です
+
+```html
+<p style="font-family: 'Noto Sans'">Hamburgefonstiv 0123 / 写植</p>
+```
+
+```bash
+shashoku doc.html -o doc.png --width 460 \
+  --font NotoSansJP-Regular.otf --font NotoSans-Regular.ttf
+```
+
+この 1 行では欧文が Noto Sans で、`写植` は Noto Sans に無いので次の Noto Sans JP に落ちます。
+明朝や等幅も同じで、`--font` にそのファイルを足し、`font-family` にそのファイルの family 名
+（`Noto Serif JP`、`Noto Sans Mono` など）を書きます。
 
 同じ入力（HTML・フォント・画像・オプション）からは、常に**バイト単位で同じ PNG** が出ます。
 

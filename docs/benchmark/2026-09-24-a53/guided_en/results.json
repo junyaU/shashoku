@@ -1,0 +1,141 @@
+[
+  {
+    "case": "en01",
+    "title": "Blog OG image (server-generated)",
+    "html": "en01.html",
+    "png": "en01.png",
+    "cli_args": "--width 1200 --height 630 --image avatar=<R>/bin/assets/avatar.png --strict --diagnostics json",
+    "first_try": {"status": "pass", "errors": 0, "warnings": 0, "first_error": ""},
+    "iterations": [
+      {"n": 1, "status": "pass", "errors": 0, "warnings": 0, "kinds": [], "fix": "（修正なし）", "hint_helped": false}
+    ],
+    "final": "pass",
+    "rounds": 1,
+    "usable": 5,
+    "emphasis": 5,
+    "fidelity": 5,
+    "dropped": [],
+    "warnings": [],
+    "undiagnosed": [
+      "タイトル下に約 146px の空白（--dump-stage box: タイトル箱 y=137.44 h=364.56 に対し 3 行 218.4px）。§4.9 の flex:1 1 0 でフッタを下端に固定する定石の当然の帰結で、OG 画像としては意図どおり。診断は出ないが「大きな空白」に該当するので記録する"
+    ],
+    "guide_gaps": [
+      "line-height: normal の実値が書かれていない（実測 font-size×1.448。§4.11 に「ascent+descent ≒ 1.45em」はあるが normal と結びつけていない）。固定キャンバスの高さ計算で毎回推測になる",
+      "ラテン文字の 1 行あたり文字数の目安がない。縦書き（§4.10）とルビ（§4.11）には計算式があるのに、欧文の font-size 決めに使える「1 文字 ≒ 0.5em」のような目安がなく、OG のタイトル級数は勘で決めることになる"
+    ],
+    "hints_used": [],
+    "hints_misleading": [],
+    "notes": "§4.9 の骨格をほぼそのまま使い、フッタだけ flex（アバター + 日付 + margin-left:auto のタグ群）にした。img の border-radius がクリップするので丸アバターは 1 回で出た。依頼の要素（タイトル・サイト名・アバター・日付・タグ 2 つ・暗色背景・白文字）は全部入っている"
+  },
+  {
+    "case": "en02",
+    "title": "Pricing comparison table (docs)",
+    "html": "en02.html",
+    "png": "en02.png",
+    "cli_args": "--width 900 --strict --diagnostics json",
+    "first_try": {"status": "pass", "errors": 0, "warnings": 0, "first_error": ""},
+    "iterations": [
+      {"n": 1, "status": "pass", "errors": 0, "warnings": 0, "kinds": [], "fix": "（修正なし）", "hint_helped": false}
+    ],
+    "final": "pass",
+    "rounds": 1,
+    "usable": 5,
+    "emphasis": 4,
+    "fidelity": 4,
+    "dropped": [],
+    "warnings": [],
+    "undiagnosed": [],
+    "guide_gaps": [
+      "§4.3 の表は全列 flex:1 1 0 の例しかない。実際の比較表は「項目名の列だけ固定 + 残りを等分」になるので、flex:none;width:Npx と flex:1 1 0 を混ぜた行を 1 つ例に足してほしい（自分で組めたが、混在時にヘッダ行と本文行の桁が揃う保証が書かれていない）",
+      "ゼブラの塗り分けは .tr に背景を置くだけでよいが、セル側に背景を置くと 1px 罫との重なりがどうなるかは書かれていない"
+    ],
+    "hints_used": [],
+    "hints_misleading": [],
+    "notes": "§4.3 のとおり flex 行 + flex:1 1 0 セル + 1px 罫。align-items:stretch で 2 行に折り返したセルがある行も高さが揃い、ゼブラが崩れなかった。fidelity 4 の理由は engine ではなく自分の文面: 依頼は「3〜10 語」だが `Unlimited seats` `Not included` `Unlimited projects` など 2 語のセルが 3 つある。border-radius はトラップ (5)（角がはみ出る）を避けて付けていない"
+  },
+  {
+    "case": "en03",
+    "title": "Incident response flow (design review)",
+    "html": "en03.html",
+    "png": "en03.png",
+    "cli_args": "--width 1000 --strict --diagnostics json",
+    "first_try": {"status": "pass", "errors": 0, "warnings": 0, "first_error": ""},
+    "iterations": [
+      {"n": 1, "status": "pass", "errors": 0, "warnings": 0, "kinds": [], "fix": "（修正なし）", "hint_helped": false}
+    ],
+    "final": "pass",
+    "rounds": 1,
+    "usable": 5,
+    "emphasis": 4,
+    "fidelity": 4,
+    "dropped": [],
+    "warnings": [],
+    "undiagnosed": [
+      "注記は Mitigate カードの左端に正確に揃った（--dump-stage box で両方 x=418 を確認）が、注記の幅が 274.7px でカード幅 161px より広く、右隣の矢印と Communicate カードの下まで伸びる。どのカードへの注記かが絵として弱い。エラーも警告も出ない"
+    ],
+    "guide_gaps": [
+      "§4.7 の「特定の要素の真下に注記」はスペーサ幅を手計算する前提なので、兄弟が固定幅でないと使えない。ところが §4.13 のフロー定石は step を flex:1 1 0 にしている。両者を組み合わせる場合は step を flex:none;width:Npx にする必要がある、と書かれていない（自力で気づいた。気づかなければ --dump-stage box を見て数値を写す往復が 1 回増える）",
+      "§4.7 は注記の左端だけを合わせる方法しか示していない。注記が対象要素より広いときに対応が読み取れなくなる点と、対策（先頭に ▲ を置く / 注記を対象と同じ幅にして折り返す）への言及がない",
+      "矢印を flex:none にしたときの実効幅が分からない。§4.13 は「→ は既定フォントで出る」とあるだけで送り幅（実測 22px = 1em）が書かれていないため、横幅の割り付け計算で安全側に振る必要があった。width:24px + text-align:center で固定して回避した"
+    ],
+    "hints_used": [],
+    "hints_misleading": [],
+    "notes": "step を固定幅（135 + padding 12*2 + border 1*2 = 161）にして 5*161 + 4*24 + 8*6 = 949 ≦ 952 に収め、Mitigate の左端 = 161+24+161+24+6*4 = 394 をスペーサ幅にした。--dump-stage box で step3 と注記がどちらも x=418、最終 step の右端が 973（内容領域 976）で、計算どおり 1 発で合った。説明文は <br> で 2 行に固定し、全カードの高さを揃えた"
+  },
+  {
+    "case": "en04",
+    "title": "Quote card (social, 1080x1080)",
+    "html": "en04.html",
+    "png": "en04.png",
+    "cli_args": "--width 1080 --height 1080 --strict --diagnostics json",
+    "first_try": {"status": "pass", "errors": 0, "warnings": 0, "first_error": ""},
+    "iterations": [
+      {"n": 1, "status": "pass", "errors": 0, "warnings": 0, "kinds": [], "fix": "（修正なし）", "hint_helped": false}
+    ],
+    "final": "pass",
+    "rounds": 1,
+    "usable": 5,
+    "emphasis": 4,
+    "fidelity": 4,
+    "dropped": [
+      "書名 The Breath of Prose のイタリック（font-style が §2.3 の対応表にない）。太さも色も変えずプレーンのままにした",
+      "引用符をカーリークォート “ ” にできなかった。§2.4 の「実際に描いて確かめた記号」の表に “ ” ‘ ’ がなく、§8 の「§2 の表にないものは使わない」に従って ASCII の \" で代用した。文学的なカードとしてはタイプライター調に見える"
+    ],
+    "warnings": [],
+    "undiagnosed": [],
+    "guide_gaps": [
+      "欧文でいちばん使う約物（“ ” ‘ ’ • – の一部）が §2.4 の検証済みリストにない。日本語の約物（「」『』（））は網羅されているのに欧文が抜けており、英語の本文では毎回 ASCII に落とすか、賭けて --strict で試すかになる。「ASCII と Latin-1、General Punctuation は既定フォントにある」の一文が欲しい",
+      "font-style / italic が §5 の代替表にない。<em> → span（font-weight / color / background-color）という行から間接的に「イタリックはない」と読めるだけで、明示がない。書名・強調は欧文で頻出なので「イタリック体は無い。太さか色で代える」と 1 行書いてほしい",
+      "§4.14 の「本文を紙面のど真ん中に置くには署名と同じ高さの空 div を上に足す」は効いた（実測でも本文の中心が 540px = 1080 の中央）。ただし署名の height と line-height を揃える必要がある理由が例の中だけにあり、表に出ていない"
+    ],
+    "hints_used": [],
+    "hints_misleading": [],
+    "notes": "§4.14 の定石そのまま（sheet 888x888、pad 28 → body flex:1 1 0 + justify-content:center → by 28）。引用文は原文どおり 1 文字も削っていない。44px / line-height 1.85 で 4 行、余白は上下とも 96px"
+  },
+  {
+    "case": "en05",
+    "title": "Weekly digest card (server-generated notification)",
+    "html": "en05.html",
+    "png": "en05.png",
+    "cli_args": "--width 800 --strict --diagnostics json",
+    "first_try": {"status": "pass", "errors": 0, "warnings": 0, "first_error": ""},
+    "iterations": [
+      {"n": 1, "status": "pass", "errors": 0, "warnings": 0, "kinds": [], "fix": "（修正なし）", "hint_helped": false}
+    ],
+    "final": "pass",
+    "rounds": 1,
+    "usable": 5,
+    "emphasis": 5,
+    "fidelity": 5,
+    "dropped": [],
+    "warnings": [],
+    "undiagnosed": [],
+    "guide_gaps": [
+      "高さを内容に追従させる（--height 省略）と canvas の縦方向のはみ出し警告が原理的に出ない点は §6.2 に書いてある一方、その場合に「出た高さ」をどこで読むか（stderr の wrote out.png (WxH)、--diagnostics json の height）は §6.4 に分散している。Slack のような縦可変の用途では最初に知りたい情報なので §7 の表に一言あると早い",
+      "– (en dash) − (minus) ± は §2.4 の表にあり、そのまま使えた。ここは表があって助かった側"
+    ],
+    "hints_used": [],
+    "hints_misleading": [],
+    "notes": "カード（padding 32 + border + border-radius 14）の中を、見出し / 1px 罫 / flex:1 1 0 の 3 統計 / 注記の 4 段にした。増減は色だけで区別（緑 #17803d、赤 #c0392b、±0 は灰）。en dash・U+2212・± すべて豆腐なし。出力は 800x368。依頼にない副題「junya.dev engineering digest」を 1 行足した（減らしてはいない）"
+  }
+]

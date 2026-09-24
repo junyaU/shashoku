@@ -1,0 +1,57 @@
+<!-- en02: pricing comparison table, ~900px. <table> is unsupported -> flex rows + flex:1 1 0 cells (guide 4.3) -->
+<style>
+  .tbl   { border: 1px solid #ccd3dd; background: #ffffff; }
+  .tr    { display: flex; }
+  .th    { background: #24406b; }
+  .odd   { background: #f5f7fb; }
+  .hcell { flex: none; width: 196px; padding: 14px 16px; font-size: 15px; line-height: 1.6;
+           font-weight: bold; color: #1b2733; }
+  .hcell-th { flex: none; width: 196px; padding: 14px 16px; font-size: 15px; line-height: 1.6;
+              font-weight: bold; color: #ffffff; }
+  .td    { flex: 1 1 0; padding: 14px 16px; font-size: 15px; line-height: 1.6; color: #2c3a4d; }
+  .td-th { flex: 1 1 0; padding: 14px 16px; font-size: 17px; line-height: 1.6;
+           font-weight: bold; color: #ffffff; }
+  .rule  { height: 1px; background: #e3e8ef; }
+</style>
+<div class="tbl">
+  <div class="tr th">
+    <div class="hcell-th">Plan</div>
+    <div class="td-th">Free</div>
+    <div class="td-th">Team</div>
+    <div class="td-th">Enterprise</div>
+  </div>
+  <div class="tr odd">
+    <div class="hcell">Seats</div>
+    <div class="td">Up to 3 seats</div>
+    <div class="td">Up to 50 seats per workspace</div>
+    <div class="td">Unlimited seats</div>
+  </div>
+  <div class="rule"></div>
+  <div class="tr">
+    <div class="hcell">Projects</div>
+    <div class="td">2 active projects</div>
+    <div class="td">Unlimited projects</div>
+    <div class="td">Unlimited projects and sandboxes</div>
+  </div>
+  <div class="rule"></div>
+  <div class="tr odd">
+    <div class="hcell">History retention</div>
+    <div class="td">7 days of build history</div>
+    <div class="td">12 months of build history</div>
+    <div class="td">Custom retention, up to 7 years</div>
+  </div>
+  <div class="rule"></div>
+  <div class="tr">
+    <div class="hcell">Support</div>
+    <div class="td">Community forum only</div>
+    <div class="td">Email support, next business day</div>
+    <div class="td">Named engineer, 1 hour response</div>
+  </div>
+  <div class="rule"></div>
+  <div class="tr odd">
+    <div class="hcell">SSO</div>
+    <div class="td">Not included</div>
+    <div class="td">Google and GitHub sign-in</div>
+    <div class="td">SAML and SCIM provisioning</div>
+  </div>
+</div>

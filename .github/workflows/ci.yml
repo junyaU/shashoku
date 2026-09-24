@@ -78,6 +78,15 @@ jobs:
           ccache --show-stats
       - name: Test
         run: ctest --preset ${{ matrix.preset }}
+      # examples/server の呼び出し側の実例（診断 JSON を読んで再試行する）は、本物の CLI を
+      # 子プロセスで呼ぶテストを持っている。python3 が要るので ctest には入れていないが、
+      # 診断 JSON の形は呼び出し側との契約なので、壊れたらここで気づきたい。
+      # テスト側の探索順は release → dev → asan で build/gcc を知らないため、
+      # このジョブがビルドしたものを SHASHOKU_BIN で明示する。
+      - name: Test examples/server
+        env:
+          SHASHOKU_BIN: build/${{ matrix.preset }}/tools/shashoku/shashoku
+        run: python3 examples/server/test_render_with_retry.py
 
   # 配布物（#20）と同じ設定で作ったバイナリを検査するジョブ。release.yml は
   # タグを push したときしか走らないので、壊れたことに気づくのはここ。

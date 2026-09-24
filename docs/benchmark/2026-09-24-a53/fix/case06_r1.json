@@ -1,0 +1,1 @@
+{"ok": false, "width": null, "height": null, "truncated": false, "errors": [{"kind": "unsupported-property", "message": "`object-fit` is not a supported property", "hint": "", "line": 77, "column": 5, "offset": 1460, "warning": null}], "warnings": []}

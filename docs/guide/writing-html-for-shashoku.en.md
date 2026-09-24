@@ -101,7 +101,9 @@ pseudo-classes and pseudo-elements (`:hover` `::before`), at-rules (`@media`, `@
 - **There are no per-side borders** (`border-top`, `border-left`, … are unsupported).
   Draw rules with a `div` that has `height: 1px; background: <colour>` (§4.3)
 - **There are no per-corner radii** — `border-radius` takes exactly one length
-- `margin: auto` works (horizontal centring)
+- `margin: auto` works. Besides centring a block horizontally, **on a flex item it absorbs the free
+  space**: `margin-left: auto` on a child of a row pushes it to the right edge, `margin-top: auto`
+  on a child of a column pushes it to the bottom (§4.14)
 
 ### 2.4 Values, units and colours
 
@@ -126,6 +128,33 @@ pseudo-classes and pseudo-elements (`:hover` `::before`), at-rules (`@media`, `@
 > resolves it against its own `font-size`; an `em` value inherits as a resolved px length. Prefer
 > **unitless** whenever the element has children with a different `font-size`.
 > `font-size` does not accept keywords such as `large`.
+
+> `font-family` only matches the **family name a font file declares for itself**. Generic families
+> (`serif`, `sans-serif`, `monospace`, …) and the names of fonts you did not pass are
+> **skipped silently, not reported as an error** (see §7 for serif and monospace).
+
+**A symbol only appears if the font has it.** Anything missing renders as □ (tofu) and produces a
+`warning[missing-glyph]`. The list below was checked by actually drawing it with the embedded
+default font (Noto Sans JP); with a different font passed via `--font` the answer changes.
+
+| Group | Symbols that render |
+|---|---|
+| Arrows | `→` `←` `↑` `↓` `⇒` `⇐` `⇔` `↔` `⇨` `➡` |
+| Shapes | `●` `○` `◎` `■` `□` `◆` `◇` `▲` `△` `▼` `▽` `▶` `▷` `◀` `◁` `▪` `▫` `★` `☆` |
+| Signs and maths | `✓` `×` `✚` `※` `〓` `¬` `∞` `≠` `≦` `≧` `√` `∴` `∵` `−` `±` `÷` `‰` `℃` `°` `′` `″` |
+| Dashes and punctuation | `–` `—` `―` `…` `〜` `～` `「」` `『』` `（）` `〔〕` `【】` `〈〉` `《》` `・` |
+| Currency and reference | `€` `¥` `£` `$` `©` `®` `™` `§` `¶` `†` `‡` `№` `①` `②` `③` `Ⅰ` `Ⅱ` `Ⅲ` |
+| Others | `♦` `♥` `♠` `♣` `♪` `☀` `☁` `☂` `☃` `☎` `✂` `⌘` `⏎` `⇧` `⚠` `❖` |
+
+**These came out as □** (the same check actually produced a warning for each):
+
+- Every emoji. `🎉` `😀` `✅` `❗` `⭐` `❤` `⚡` `⏰` `✈` `✉` `⬛` `⬜`
+- Most check marks and crosses. `✔` `✕` `✗` `✘` `✖` `☑` `☐` `☒`
+  (**only `✓` and `×` render**)
+- `≒` `✦` `✳` `✴` `➔` `⌥`
+
+Writing `⚠️` with a variation selector (`U+FE0F`) drops the selector and gives you the
+**monochrome `⚠`**. There is no way to get a colour emoji.
 
 ### 2.5 The user-agent stylesheet
 
@@ -182,12 +211,26 @@ Doing so gives `error[unsupported-layout]`.
 Inline elements do take `color`, `background-color`, `font-size`, `font-family`, `font-weight`,
 `letter-spacing`. A `span` with a different `font-size` **aligns on the baseline**.
 
-### (3) A `span` that is a flex item is not blockified
+### (3) The **direct children** of a flex container are blockified (grandchildren are not)
 
-Browsers blockify the children of a flex container. **shashoku does not.** They stay
-`display: inline`, so trap (2) still applies to them.
+A direct child of a `display: flex` element is blockified even if you wrote it as a `span`
+(CSS Display 3 §2.7). It takes `padding` / `border` / `width`, and **a `div` and a `span` produce
+exactly the same picture** (a byte-identical PNG).
 
-> **Always make the children of a flex container `div`s.**
+```html
+<!-- these two are the same -->
+<div style="display: flex; gap: 8px">
+  <span style="flex: none; padding: 5px 12px; background: #e7f0ff">Policy</span>
+  <div style="flex: none; padding: 5px 12px; background: #e7f0ff">AI</div>
+</div>
+```
+
+There are three exceptions — **`<img>`, `<ruby>` and `<br>`** — which stay inline even as direct
+children of a flex container. `padding` on a `<ruby>` is still `error[unsupported-layout]`; wrap it
+in a `div` or a `span` if it needs a box. `<img>` works as a flex item exactly as before (§4.12).
+
+**Only direct children are blockified.** A `span` sitting inside running text (a grandchild of the
+flex container) stays inline, and trap (2) applies to it unchanged.
 
 ### (4) No `display: inline-block` — use "flex parent + `flex: none` child"
 
@@ -251,7 +294,16 @@ guide; replace the text with your own — the markup is what matters.
 
 `flex: 1 1 0` gives equal columns (the equivalent of grid's `1fr`). `flex: 1` is the same thing
 (it expands to `flex: 1 1 0`). Use `flex: none` for shrink-to-fit and
-`flex: none; width: 180px` for a fixed column.
+`flex: none; width: 180px` for a fixed column. A child may be a `div` or a `span` (§3-(3)).
+For flex inside flex (arrows between steps, a row of tags inside a card) see §4.13.
+
+**An unbreakable long word breaks the equal split.** A `flex: 1 1 0` child never gets narrower than
+**the width it cannot shrink past** (the longest unbreakable word plus its `padding` and `border`).
+Put a URL, a long English word, a run of alphanumerics or a hash in one and that child grows while
+the others shrink; once the total exceeds the parent it **overflows the parent** (and, if it leaves
+the canvas, raises `warning[content-overflow]`). Add **`overflow-wrap: anywhere`** to any child that
+may receive a long word. **`overflow-wrap: break-word` has no effect on a `flex: 1 1 0` child** (it
+does not count towards the shrinkable width; CSS Text 3 §5.4). Worked example in §4.3.
 
 ### 4.3 Table (flex rows + 1px rules) — [table.html](examples/table.html)
 
@@ -279,6 +331,31 @@ guide; replace the text with your own — the markup is what matters.
 
 `align-items` defaults to `stretch`, so **cells in a row end up the same height** automatically
 (zebra stripes stay intact). For uneven columns use `flex: none; width: 180px` or `flex: 2 1 0`.
+
+**An empty cell has no height.** An empty `div` has a content height of 0, so a row whose cells are
+**all empty** is only as tall as its padding (20px for the `.td` above: 10 + 10). To keep one line
+of height, put a `&nbsp;` in it — it is accepted as a character reference and carries a height of
+`font-size × line-height` (25.5px here, for a 45.5px row). If any cell in the row has content, the
+empty ones are stretched by `stretch` anyway and need no `&nbsp;`.
+
+**Add `overflow-wrap: anywhere` to any column that may hold a long word.** Cells are `flex: 1 1 0`,
+so an unbreakable token (a URL, a hash, a run of alphanumerics) widens that one column and **the
+header row and the body row stop lining up** (§4.2). Putting a 40-character commit hash in the
+`.tbl` above and rendering at `--width 400`:
+
+| | Header row columns | Body row columns | Result |
+|---|---|---|---|
+| as written | 132.7 / 132.7 / 132.7 | 54.0 / 349.8 / 59.6 | columns misaligned, 64.4px past the right edge with `warning[content-overflow]` |
+| `overflow-wrap: anywhere` | 132.7 / 132.7 / 132.7 | 132.7 / 132.7 / 132.7 | aligned; the hash wraps mid-token |
+| `overflow-wrap: break-word` | — | same as "as written" | **no effect** |
+
+```html
+<style>
+  /* add to the .tbl / .tr / .td / .rule above */
+  .long { overflow-wrap: anywhere; }
+</style>
+<div class="tr"><div class="td">コミット</div><div class="td long">9f2c1b4e8d7a6503f1e2c9b8a7d6e5f4c3b2a190</div><div class="td">main の先端</div></div>
+```
 
 ### 4.4 Bulleted list (flex + a dot) — [list.html](examples/list.html)
 
@@ -321,6 +398,8 @@ A good `margin-top` is `(font-size × line-height − dot diameter) ÷ 2`
 ```
 
 There is no `flex-wrap`, so pills **never wrap**. Split them into one `.tags` row per line.
+Writing the children as `<span class="pill">` gives the same result (direct children of a flex
+container are blockified; §3-(3)).
 
 ### 4.6 Vertical centring — [vcenter.html](examples/vcenter.html)
 
@@ -346,6 +425,7 @@ Two cases:
 To centre content in a **full-height** box, use
 `display: flex; flex-direction: column; justify-content: center` plus an explicit `height`
 on the parent (content-box, so subtract the padding).
+To centre the body text and still pin a byline or a date to the bottom edge, see §4.14.
 
 ### 4.7 Left/right alignment and placing a note — [space-between.html](examples/space-between.html)
 
@@ -370,6 +450,39 @@ There is no `position`, so **all placement happens in the flow**.
   `flex: none; width: <offset>px` spacer before the note. You compute the offset yourself
   (content-box, so add the `padding` and `border` of everything to its left).
   Change any of those sizes by 1px and you must update this number too
+- To push **only one** item to the right edge, `margin-left: auto` does the same thing without a
+  spacer `div`
+
+How to compute the spacer width:
+
+1. Add up the outer size of **every preceding sibling**. One sibling's outer size is
+   `width + left/right padding + left/right border` (content-box, so `width` excludes them)
+2. Add one `gap` for **every gap you cross** (n preceding siblings means n gaps)
+3. Give the note's row the **same `padding-left`** as the row above it — any difference shifts
+   the note by exactly that amount
+4. Check it with `--dump-stage box`: the first number of the note's `rect` must equal the first
+   number of the target element's `rect`
+
+```html
+<style>
+  .row   { display: flex; gap: 12px; padding: 16px; background: #ffffff; }
+  .cell  { flex: none; width: 160px; padding: 10px; border: 1px solid #ccd3dd;
+           border-radius: 8px; font-size: 15px; color: #1b2733; }
+  .notes { display: flex; padding: 0 16px 16px 16px; background: #ffffff; }
+  .sp    { flex: none; width: 194px; }
+  .note  { flex: none; font-size: 13px; color: #c0392b; }
+</style>
+<div class="row">
+  <div class="cell">一次案</div>
+  <div class="cell">二次案</div>
+  <div class="cell">最終案</div>
+</div>
+<div class="notes"><div class="sp"></div><div class="note">▲ ここだけ差し替えた</div></div>
+```
+
+One cell measures `160 + 10×2 + 1×2 = 182` on the outside and we cross one gap, so the spacer is
+`182 + 12 = 194px`. With `shashoku notes.html --dump-stage box --width 600`, the second cell and
+the note both start their `rect` at `210` (= 16 + 194).
 
 ### 4.8 Heading and body text — [heading.html](examples/heading.html)
 
@@ -415,10 +528,11 @@ Render with `shashoku og-card.html -o og.png --width 1200 --height 630`.
 
 ```html
 <style>
-  .sheet  { writing-mode: vertical-rl; width: 400px; height: 820px; padding: 40px;
+  .sheet  { writing-mode: vertical-rl; display: flex; flex-direction: column;
+            width: 400px; height: 820px; padding: 40px;
             background: #f7f3e8; color: #23201a; }
   .poem   { margin: 0; font-size: 25px; line-height: 2; }
-  .author { margin: 0 28px 0 0; padding: 560px 0 0 0; font-size: 16px; color: #6b6355; }
+  .author { margin: auto 28px 0 0; font-size: 16px; color: #6b6355; }
 </style>
 <div class="sheet">
   <div class="poem">ゆふぐれの　駅のホームに　立ちつくし　届かぬ返事を　もう一度読む</div>
@@ -454,6 +568,52 @@ The rules:
 - **Line thickness** = `font-size × line-height`; lines × that must fit inside `width`
 - There is no tate-chu-yoko (`text-combine-upright`)
 
+#### Placing things along the block axis (left and right)
+
+"Title at the right edge, signature at the left edge" is built by making the outermost element a
+`display: flex`. The axes rotate by 90° in vertical writing, so settle which property acts in which
+direction first (this table was checked with `--dump-stage box`):
+
+| `flex-direction` | Main axis (`justify-content`) | Cross axis (`align-items`) |
+|---|---|---|
+| `row` (default) | **vertical** (top → bottom). `flex-start` = top, `flex-end` = bottom | **horizontal** (right → left). `flex-start` = **right**, `flex-end` = **left** |
+| `column` | **horizontal** (right → left). `flex-start` = **right**, `flex-end` = **left** | **vertical** (top → bottom). `flex-start` = top, `flex-end` = bottom |
+
+`margin` is the one thing that ignores this table and **stays physical**. To open space along the
+block axis use `margin-right` (gap to the block on its right) and `margin-left` (gap to the block on
+its left).
+
+```html
+<style>
+  .sheet { writing-mode: vertical-rl; display: flex; flex-direction: column;
+           justify-content: space-between; width: 400px; height: 520px; padding: 32px;
+           background: #f7f3e8; color: #23201a; }
+  .title { font-size: 30px; font-weight: bold; }
+  .body  { font-size: 20px; line-height: 2; }
+  .by    { font-size: 15px; color: #6b6355; }
+</style>
+<div class="sheet">
+  <div class="title">秋の便り</div>
+  <div class="body">風が冷たくなりました。庭の柿が色づき、夕暮れの早さに驚いています。</div>
+  <div class="by">架空　花</div>
+</div>
+```
+
+`shashoku letter.html -o letter.png --width 464 --height 584` puts the title at the right edge and
+the signature at the left edge (the main axis of a `column` runs right to left, so `space-between`
+spreads them horizontally).
+
+**Along the inline axis (top and bottom)** use `align-items` on the same flex container (it applies
+to every child) or, per child, `margin-top: auto` / `margin-bottom: auto`. The signature in the
+example above does exactly that: the `auto` in `margin: auto 28px 0 0` (that is `margin-top`)
+absorbs all the free space and **pins the signature to the bottom edge**. You could instead count
+the distance and write `padding-top: 560px`, but then every change of body text or `font-size`
+means counting again.
+
+> The `rect` in `--dump-stage box` is in **logical coordinates**. In vertical writing it reads
+> `[offset along the inline axis (from the top), offset along the block axis (from the right edge),
+> inline size, block size]` — **the larger the second number, the further left**.
+
 ### 4.11 Ruby — [ruby.html](examples/ruby.html)
 
 ```html
@@ -469,7 +629,18 @@ The rules:
 
 - `<rt>` is `0.5em` of its parent by UA default
 - **A line with ruby grows its line box automatically**, so ruby never collides with the line
-  above. It does look cramped below about `line-height: 1.0`; **aim for `line-height: 1.8`**
+  above (not even at `line-height: 1.0`). It does look cramped that tight;
+  **aim for `line-height: 1.8`**
+- **The height of such a line** (horizontal writing) is
+  `font-size × max(line-height, A + line-height ÷ 2)`, where `A` is the font's
+  **ascent + descent expressed in em** — about **1.45** for the default font (Noto Sans JP).
+  So below `2 × A ≈ 2.9` the ruby makes the line taller, and **only the top side grows**.
+  Measured with the default font at `font-size: 20px`: a `line-height: 1.8` line is 36px and the
+  same line with ruby is **46.95px**; at `line-height: 2.9` it stays 58px either way
+- Consequently, **mixing lines with and without ruby makes the leading uneven**. Either set
+  `line-height` to 2.9 or more for the whole paragraph (which is very airy) or accept it.
+  The annotation itself does not participate in the line height — only the overhang that puts it
+  outside the base text does
 - When the ruby and its base differ in width, the ruby is distributed 1:2:…:2:1 (JLREQ 3.3.6) and
   any overhang is allowed only over adjacent **kana** (JLREQ 3.3.8). Latin base text also takes ruby
 - `letter-spacing` has no effect inside `<rt>`
@@ -500,6 +671,89 @@ Render with `shashoku image.html --image icon=examples/icon.png -o out.png --wid
 - `alt` is optional (leaving it out is not an error; it is not drawn either)
 - `<img>` is the only element that takes `width` / `height` / `border-radius` while inline,
   and its `border-radius` **clips the image**
+- **`<img>` can be a direct child of a flex container.** `.head` above *is* the flex container —
+  there is no need to wrap the `<img>` in a `div`. Size it with `width` / `height`
+
+### 4.13 Flex inside flex — [flow.html](examples/flow.html)
+
+With no `position` and no `grid`, anything slightly involved is built by **nesting flex
+containers**. Each level only has two decisions: the **direction** (`flex-direction`) and the
+**cross-axis alignment** (`align-items`).
+
+```html
+<style>
+  .flow  { display: flex; align-items: center; gap: 12px; padding: 20px; background: #ffffff; }
+  .step  { flex: 1 1 0; display: flex; flex-direction: column; gap: 8px;
+           padding: 14px; border-radius: 10px; background: #f1f4f9; }
+  .no    { font-size: 12px; color: #6b7a90; }
+  .name  { font-size: 17px; font-weight: bold; line-height: 1.5; color: #1b2733; }
+  .tags  { display: flex; gap: 6px; }
+  .tag   { flex: none; padding: 2px 8px; border-radius: 9px;
+           background: #e7f0ff; color: #14509b; font-size: 12px; }
+  .arrow { flex: none; font-size: 22px; color: #9aa7b8; }
+</style>
+<div class="flow">
+  <div class="step">
+    <div class="no">1</div>
+    <div class="name">受け取る</div>
+    <div class="tags"><div class="tag">HTML</div><div class="tag">フォント</div></div>
+  </div>
+  <div class="arrow">→</div>
+  <div class="step">
+    <div class="no">2</div>
+    <div class="name">組む</div>
+    <div class="tags"><div class="tag">行分割</div><div class="tag">約物</div></div>
+  </div>
+</div>
+```
+
+- **The arrow between steps** is a `flex: none` `div` holding the single character `→`.
+  `align-items: center` on the outer flex centres it against the steps, so you never compute its
+  position (`→` renders with the default font; see §2.4)
+- **The steps are `flex: 1 1 0`** so they share the width evenly; the arrows are `flex: none` and
+  take only what they need
+- **Inside a step, `flex-direction: column`** stacks the number, the heading and the tag row, and
+  `gap` becomes the spacing between them
+- **The tag row is yet another flex** (`display: flex` with `flex: none` children) — the same shape
+  as §4.5
+- Nesting does not bring `flex-wrap` back. **If it does not fit, it overflows** (overflow out of a
+  parent box is not detected). Raise `--width` when you add steps
+
+### 4.14 Quote card (body centred, byline pinned to the bottom) — [quote.html](examples/quote.html)
+
+A fixed-height canvas with the body in the middle and the byline at the bottom edge. There is no
+`position`, so you solve it with **one box that soaks up the free space**.
+
+```html
+<style>
+  .sheet { display: flex; flex-direction: column; width: 552px; height: 312px;
+           padding: 24px; background: #fbf8f2; color: #23201a; }
+  .body  { flex: 1 1 0; display: flex; flex-direction: column; justify-content: center; }
+  .quote { margin: 0; font-size: 26px; line-height: 1.9; }
+  .by    { flex: none; text-align: right; font-size: 15px; color: #7a7266; }
+</style>
+<div class="sheet">
+  <div class="body"><p class="quote">おそれるな。おそれは、まだ起きていないことの影にすぎない。</p></div>
+  <div class="by">架空　花『影の書』</div>
+</div>
+```
+
+Render with `shashoku quote.html -o quote.png --width 600 --height 360`
+(`552 = 600 − 24×2`, `312 = 360 − 24×2`).
+
+- Make the sheet a `flex-direction: column` and give the **body box `flex: 1 1 0`**: it takes all
+  the space the byline does not. `justify-content: center` inside it centres the body, and the
+  byline lands on the bottom edge
+- The body is centred within **the area left over after the byline**, which sits half the byline's
+  height above the centre of the canvas. To centre it on the canvas exactly, add an empty
+  `flex: none; height: <byline height>px` `div` **above** the body box. Pinning the byline's
+  `height` and `line-height` to the same px makes that easy: 22px for both in the example above
+  puts the centre of the body at exactly 180px, the middle of the canvas
+- If the body may stay at the top and only the byline needs to be pinned, you need neither the
+  spacer nor `flex: 1 1 0` — just `margin-top: auto` on the byline, which absorbs all the free space
+- In vertical writing `margin-top: auto` still pushes to "the end of the inline axis", i.e. the
+  **bottom edge** (checked in §4.10). To reach an edge along the block axis (left or right), read
+  the `justify-content` table in §4.10
 
 ---
 
@@ -511,22 +765,24 @@ Render with `shashoku image.html --image icon=examples/icon.png -o out.png --wid
 | `<ul>` `<li>` `<ol>` | error | Flex rows + a dot `div` (§4.4) |
 | `<table>` `<tr>` `<td>` | error | Flex rows + `flex: 1 1 0` cells (§4.3) |
 | `<strong>` `<b>` `<em>` `<code>` `<a>` `<section>` `<header>` | error | `span` (+ `font-weight` / `color` / `background-color`) or `div` |
-| Emoji (🎉 😀 …) | **drawn as □ with a warning** | **Do not use them.** Use characters (`→` `↓` `▼` `※`) or a small coloured `div` |
-| `display: inline-block` | error | Flex parent + `flex: none` child (§3-(4)) |
+| Emoji (🎉 😀 …) | **drawn as □ with a warning** | **Do not use them.** Use a symbol from the list in §2.4 (`→` `▼` `※` `✓`) or a small coloured `div` |
+| `display: inline-block` | error | **Inside a flex container just drop the declaration** — a direct child is blockified and already takes box properties (§3-(3)). Elsewhere, a flex parent with a `flex: none` child (§3-(4)) |
 | `position` / `top` / `left` / `z-index` | error | Flex with `justify-content` / `align-items` / an empty spacer (§4.7) |
-| `grid` / `grid-template-columns` | error | Flex + `flex: 1 1 0` (the `1fr` equivalent) |
+| `grid` / `grid-template-columns` and the other `grid-*` | error | For **equal-width columns in one row**, `display: flex` on the parent and `flex: 1 1 0` on each child (the `1fr` equivalent; §4.3). For **several rows**, one flex container per row (§4.2). **Unequal columns and spanning cells (`grid-column: span 2`) have no equivalent** |
 | `float` | error | Flex |
 | `flex-wrap` | error | One flex container per row |
 | `align-self` / `order` / `flex-flow` | error | Put the elements in the order you want |
 | `box-sizing` | error | Subtract padding and border from the width/height (§3-(1)) |
-| `min-width` / `max-width` / `min-height` / `max-height` | error | A fixed `width` / `height` |
+| `min-height` | error | If the parent is a **flex container with the default `align-items: stretch`**, just **drop it** (the item already fills the cross size). If the height is known, use `height`. Otherwise drop it and let the content decide |
+| `min-width` / `max-width` / `max-height` | error | A fixed `width` / `height`, or drop it |
 | `overflow` | error | Size it so nothing overflows; give up on clipping rounded corners |
-| Gradients in `background` (`linear-gradient`, …) | error | **A flat colour** |
+| Gradients in `background` (`linear-gradient`, …) | error | **A flat `background-color`** (the picture becomes flat). If it is paired with `background-clip: text` + `color: transparent`, drop **both** (see "Pairs that are dangerous to split" below) |
+| `background-image` (`url(...)`, …) | error | A flat `background-color`, or an `<img>` passed with `--image` (§4.12) |
 | `box-shadow` / `text-shadow` | error | Drop the shadow; show edges with a 1px border or a tinted background |
 | `opacity` | error | Use a lighter colour directly (`#00000099` or a pale value) |
 | `transform` (`rotate`, …) | error | Do not rotate |
 | `::before` / `::after` + `content` | error | Write a **real element** (`span` / `div`). Remember there is no `position`, so it **lands in the flow** |
-| `border-top` / `border-left` and friends | error | Insert a 1px-tall (or 1px-wide) `div` (§4.3) |
+| `border-top` / `border-left` and friends | error | For a **divider between boxes**, insert a `div` with `height: 1px` (`width: 1px` in a row) and a background colour (§4.3) — note it **takes 1px of space in the flow**. For **one edge of a frame** there is no equivalent: use a full four-sided `border` or drop it |
 | `border-style: dashed` / `dotted` | error | `solid`. Distinguish the two kinds of line by **colour** |
 | Per-corner `border-radius` (4 values) | error | One `border-radius` value |
 | `border-collapse` | absent | Do not border the cells; draw rules with 1px `div`s |
@@ -535,6 +791,22 @@ Render with `shashoku image.html --image icon=examples/icon.png -o out.png --wid
 | `@media` / `@import` / custom properties / `calc()` / `!important` | error | Write the resolved value |
 | Descendant selectors (`.card p`) | error | Put a class directly on the element |
 | JPEG / SVG / WebP images | error | Convert to PNG and pass with `--image` |
+
+### Change the picture, change the words
+
+Working through the table above, it is easy to end up with **a new picture and the old wording**.
+Nothing errors and nothing warns, so you find out when you look at the PNG.
+
+- Dashed border (`dashed`) replaced by a solid one or a tint → "the part **inside the dashed box**"
+  is now a lie
+- An arrow image or a `::before` ornament replaced by the character `→` → "the **downward arrow**
+  below" no longer matches
+- A shadow (`box-shadow`) replaced by a border → "the card that **appears to float**" no longer
+  matches
+- A gradient replaced by a flat colour → "**the blue-to-purple gradient**" no longer matches
+
+Treat every substitution as **two edits, the style and the prose**. Scan the legend, the captions
+and the body for any phrase that points at the appearance, and fix them at the same time.
 
 ### Pairs that are dangerous to split
 
@@ -578,6 +850,26 @@ error[unsupported-value] at 82:77: `border-style: dashed` is not supported (supp
 - The **wording** is for humans and AIs and may change between versions
 - Errors without a location (`invalid-option`, …) have no `at` part
 
+Whenever there is a known fix, an indented **`  hint: …` line** follows (verbatim output below).
+
+```
+error[unsupported-property] at 3:8: `min-height` is not a supported property
+  hint: no min/max sizes. If the parent is a flex container with the default `align-items: stretch`, drop it (the item already fills the cross size); if the height is known, use `height`; otherwise drop it and let the content decide the height
+error[unsupported-value] at 7:17: `display: grid` is not supported (supported: block, flex, inline, none)
+  hint: no grid. For equal-width columns in one row, use `display: flex` on the parent and `flex: 1 1 0` on each child (guide §4.3); for several rows, one flex row per line (guide §4.2). Unequal or spanning grids have no equivalent
+error[unsupported-layout] at 12:16: `padding-top` is not supported on an inline element (`display: inline`); only `<img>` takes box properties while inline
+  hint: drop the declaration; `display: block` would accept it but breaks the surrounding text flow. If the box is a standalone part (tag / pill / badge), make it a flex item: a `div` inside a `display: flex` parent (guide §3-(4))
+```
+
+- **A hint may be conditional.** "If the parent is … drop it; if the height is known, use `height`",
+  "unequal or spanning grids have no equivalent" — read the cases and pick the one you are in
+- The third one is a `span` **inside running text** (a grandchild of a flex container). The same
+  declaration on a **direct child** of a flex container is not an error at all (§3-(3))
+- No hint means "there is no verified substitute". Fall back to the table in §5
+- Even when several elements match one rule, **identical diagnostics at one location are reported
+  once**
+- To read them from a program use `--diagnostics json`; `hint` carries the same string (§6.4)
+
 The identifiers you will actually see:
 
 | Identifier | Meaning | First thing to do |
@@ -586,7 +878,7 @@ The identifiers you will actually see:
 | `unsupported-attribute` | unsupported attribute | Delete it (only `style` `class` `id` survive) |
 | `unsupported-property` | unsupported property | §5. If it is prefixed, drop the prefix |
 | `unsupported-value` | property is fine, value is not | Use one of the values in the `supported: …` list |
-| `unsupported-layout` | unsupported layout | Box properties on an inline (§3-(2)(3)) or writing mode (§4.10) |
+| `unsupported-layout` | unsupported layout | Box properties on an inline inside running text (§3-(2)) or writing mode (§4.10) |
 | `css-parse` | unsupported CSS syntax / selector | Remove descendant selectors, pseudo-elements, at-rules, `!important` |
 | `html-parse` / `invalid-utf8` | broken HTML | Fix the closing tags and the encoding |
 | `image-not-found` | `<img src>` names no image passed via `--image` | Make the names match (§4.12) |
@@ -624,7 +916,8 @@ edges are checked.
 4. Then **layout** (`unsupported-layout`). Where box properties sat on an inline element,
    **delete the declaration rather than adding `display: block`**
    (`display: block` breaks the run of text and splits one sentence across lines).
-   If the box really is a standalone component, turn it into a `div` and make it a flex item
+   If the box really is a standalone component (a tag / pill / badge), make it a **direct child**
+   of a `display: flex` parent — a `div` or a `span`, either works (§3-(3))
 5. **Once the errors are gone, look at the PNG.** No errors does not mean the picture is right
    (overlaps, unintended placement and text the same colour as its background are not detected)
 
@@ -636,8 +929,12 @@ shashoku 0.1.0 today:
   can step over (unsupported tags, attributes, properties, values, selectors) before failing, so you
   do not have to rerun after every single fix. **Structural breakage stops the run on the spot**
   though (an unclosed tag, a bare `&`, invalid UTF-8) — fix that first and run again
-- **Hints ("write this instead") are on their own line** (`  hint: …`), only for the properties
-  that have a verified substitute
+- **Hints ("write this instead") are on their own line** (`  hint: …`), only where there is a
+  verified substitute, and **conditional when the substitute depends on the situation** ("if the
+  parent is a stretch flex container, drop it", "unequal or spanning grids have no equivalent").
+  No hint means there is no substitute
+- **Identical diagnostics at one location are reported once**, even when several elements match the
+  same rule
 - There are two warnings: `missing-glyph` (tofu) and `content-overflow` (**content that does not fit
   the fixed canvas**). Set `--height` too small and you are told how much is cut off, and on which edge
 - **`--strict`** turns any warning into a failure and **writes no PNG** (an existing file is left
@@ -646,16 +943,27 @@ shashoku 0.1.0 today:
 - On success the CLI writes one line to stderr: `wrote out.png (1200x630)`. That is where you read
   the actual height when you omitted `--height`
 
-The diagnostics JSON:
+The diagnostics JSON (real output, only line-wrapped here):
 
 ```json
-{"ok": true, "width": 1200, "height": 630, "truncated": false,
- "errors": [{"kind": "unsupported-property", "message": "…", "hint": "…",
-             "line": 3, "column": 14, "offset": 120, "warning": null}],
- "warnings": [{"kind": "missing-glyph", "detail": "…", "codepoint": 128512,
-               "line": 3, "column": 1, "offset": 88, "overflow_px": 0, "edge": null},
-              {"kind": "content-overflow", "detail": "…", "codepoint": 0,
-               "line": 19, "column": 1, "offset": 700, "overflow_px": 430, "edge": "bottom"}]}
+{"ok": false, "width": null, "height": null, "truncated": false,
+ "errors": [{"kind": "unsupported-property",
+             "message": "`box-sizing` is not a supported property",
+             "hint": "content-box only: subtract padding and border from `width` / `height`",
+             "line": 2, "column": 11, "offset": 18, "warning": null}],
+ "warnings": []}
+```
+
+```json
+{"ok": true, "width": 400, "height": 120, "truncated": false, "errors": [],
+ "warnings": [{"kind": "content-overflow",
+               "detail": "content overflows the canvas by 128.0px (bottom) at 4:1",
+               "codepoint": 0, "line": 4, "column": 1, "offset": 100,
+               "overflow_px": 128, "edge": "bottom"},
+              {"kind": "missing-glyph",
+               "detail": "no font has a glyph for U+1F389 at 4:19",
+               "codepoint": 127881, "line": 4, "column": 19, "offset": 118,
+               "overflow_px": 0, "edge": null}]}
 ```
 
 - `line` / `column` / `offset` are `null` when there is no location, `hint` is `""` when there is none
@@ -715,6 +1023,36 @@ shashoku og-card.html -o og.png --width 1200 --height 630 --strict
 
 **Bold** comes from `font-weight` alone (the default font's Bold is selected).
 `font-family` only reorders the family preference; weight matching works with or without it.
+
+### Serif and monospace (`--font` and `font-family`)
+
+**The embedded default font is only Noto Sans JP, Regular and Bold.** Writing
+`font-family: serif` or `font-family: monospace` changes **not one pixel** (generic families, and
+the names of fonts you did not pass, are **skipped silently rather than reported as an error**).
+To get a serif or a monospace face, pass that font file with `--font`.
+
+- `font-family` matches the **family name the font file declares for itself** (case and surrounding
+  whitespace are ignored): `Noto Sans JP` for `NotoSansJP-Regular.otf`, `Noto Sans` for
+  `NotoSans-Regular.ttf`. Not the file name, and not a CSS generic name
+- A match only moves that family to the front; **the rest follow in `--font` order**. Characters the
+  first family does not have fall through to the next font
+- **Passing even one `--font` drops the default font.** Pass a Japanese font yourself if you need
+  Japanese (a Latin-only font leaves every Japanese character as □)
+- If you do not know the family name, omit `font-family` and let **`--font` order decide** — that
+  always works
+
+```html
+<p style="font-family: 'Noto Sans'">Hamburgefonstiv 0123 / 写植</p>
+```
+
+```bash
+shashoku doc.html -o doc.png --width 460 \
+  --font NotoSansJP-Regular.otf --font NotoSans-Regular.ttf
+```
+
+Here the Latin text is set in Noto Sans and `写植`, which Noto Sans does not have, falls through to
+Noto Sans JP. Serif and monospace work the same way: add the file to `--font` and put that file's
+family name (`Noto Serif JP`, `Noto Sans Mono`, …) in `font-family`.
 
 The same input (HTML, fonts, images, options) always produces a **byte-identical PNG**.
 

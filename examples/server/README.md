@@ -26,14 +26,15 @@ attempt 1/3: 3 error(s)
 attempt 2/3: ok, wrote out.png (640x141)
 ```
 
-テスト（ctest には入っていません。手で走らせます）:
+テスト（python3 が要るので ctest には入っていませんが、**CI が 4 プリセットのジョブすべてで
+走らせます**）:
 
 ```bash
 python3 examples/server/test_render_with_retry.py
 ```
 
 CLI の場所は `SHASHOKU_BIN` で指定できます。指定が無ければ `build/release/` → `build/dev/` →
-`build/asan/` の順に探します。
+`build/asan/` の順に探します（CI はビルドしたプリセットを `SHASHOKU_BIN` で明示しています）。
 
 ## 2 つの使い方
 

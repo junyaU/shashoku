@@ -1,6 +1,8 @@
-<!-- OG 画像 1200x630 の骨格。box-sizing は content-box だけなので、
+<!-- OG 画像 1200x630 の骨格。この例は既定の content-box なので、
      width / height には padding と border を引いた値を書く:
      1200 - 64*2 = 1072、630 - 64*2 = 502。
+     先頭に `* { box-sizing: border-box }` を書けば引き算は要らず、
+     width: 1200px; height: 630px と書ける（ガイド §3-(1)）。
      shashoku docs/guide/examples/og-card.html -o og-card.png --width 1200 --height 630 -->
 <style>
   .card  { display: flex; flex-direction: column; width: 1072px; height: 502px;

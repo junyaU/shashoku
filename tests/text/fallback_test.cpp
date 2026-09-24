@@ -356,5 +356,127 @@ TEST(TextFallback, SwitchesFontsRepeatedlyWithinOneRun) {
   EXPECT_EQ(cluster_font(shaped, 4), japanese);
 }
 
+// ---- font-family の要求を満たせたか（A57）-------------------------------------------
+// 「満たせた」= 並びのどれかが FontStore の family 名に一致した、または `sans-serif` /
+// `system-ui` / `ui-sans-serif` があった（フォールバック列の先頭がサンセリフ）。
+// Shaper は事実を返すだけで溜めない（警告を組み立てるのは ③ レイアウト）。
+
+// 具体名が一致したら満たしている。大文字小文字と前後の空白は無視する（既存の照合と同じ）。
+TEST(TextFamilyRequest, ConcreteFamilyMatchIsMet) {
+  FontStore store;
+  ASSERT_TRUE(store.load(noto_sans_jp_regular()).has_value());
+  Shaper shaper(store);
+
+  TextStyle style = style_at();
+  style.font_family = {"Noto Sans JP"};
+  EXPECT_FALSE(shape_ok(shaper, U"あ", style).family_request_unmet);
+
+  style.font_family = {"  nOtO sAnS jP  "};
+  EXPECT_FALSE(shape_ok(shaper, U"あ", style).family_request_unmet);
+
+  // 2 番目以降で一致しても満たしている
+  style.font_family = {"Hiragino Mincho ProN", "Noto Sans JP"};
+  EXPECT_FALSE(shape_ok(shaper, U"あ", style).family_request_unmet);
+}
+
+// `sans-serif` / `system-ui` / `ui-sans-serif` は既定のフォールバック（サンセリフ）で満たす。
+TEST(TextFamilyRequest, SansSerifGenericsAreMet) {
+  FontStore store;
+  ASSERT_TRUE(store.load(noto_sans_jp_regular()).has_value());
+  Shaper shaper(store);
+
+  TextStyle style = style_at();
+  for (const char* generic : {"sans-serif", "system-ui", "ui-sans-serif", "Sans-Serif"}) {
+    style.font_family = {"Hiragino Mincho ProN", generic};
+    EXPECT_FALSE(shape_ok(shaper, U"あ", style).family_request_unmet) << generic;
+  }
+}
+
+// 解釈できない総称だけ（`serif` / `monospace` など）は満たせていない。
+// **総称だけの並びを一律に免除しない**（それは黙った fallback の温存になる。A57）。
+TEST(TextFamilyRequest, OtherGenericsAloneAreUnmet) {
+  FontStore store;
+  ASSERT_TRUE(store.load(noto_sans_jp_regular()).has_value());
+  Shaper shaper(store);
+
+  TextStyle style = style_at();
+  for (const char* generic : {"serif", "monospace", "cursive", "fantasy", "ui-serif",
+                              "ui-monospace", "ui-rounded", "math", "emoji", "fangsong"}) {
+    style.font_family = {generic};
+    EXPECT_TRUE(shape_ok(shaper, U"あ", style).family_request_unmet) << generic;
+  }
+}
+
+// 読み込んでいない具体名だけ（実際に起きる形: 明朝の指定）も満たせていない。
+TEST(TextFamilyRequest, UnknownConcreteFamiliesAreUnmet) {
+  FontStore store;
+  ASSERT_TRUE(store.load(noto_sans_jp_regular()).has_value());
+  Shaper shaper(store);
+
+  TextStyle style = style_at();
+  style.font_family = {"Hiragino Mincho ProN"};
+  EXPECT_TRUE(shape_ok(shaper, U"あ", style).family_request_unmet);
+
+  style.font_family = {"Hiragino Mincho ProN", "Yu Mincho", "serif"};
+  EXPECT_TRUE(shape_ok(shaper, U"あ", style).family_request_unmet);
+
+  // テキストが空でも事実は同じ（要求を満たせたかは style だけで決まる）
+  EXPECT_TRUE(shape_ok(shaper, U"", style).family_request_unmet);
+}
+
+// 未指定（空の並び）は満たしている。綴りが空になる要素だけの並びも「要求が無い」扱い。
+TEST(TextFamilyRequest, EmptyStackIsMet) {
+  FontStore store;
+  ASSERT_TRUE(store.load(noto_sans_jp_regular()).has_value());
+  Shaper shaper(store);
+
+  TextStyle style = style_at();
+  ASSERT_TRUE(style.font_family.empty());
+  EXPECT_FALSE(shape_ok(shaper, U"あ", style).family_request_unmet);
+
+  style.font_family = {"", "   "};
+  EXPECT_FALSE(shape_ok(shaper, U"あ", style).family_request_unmet);
+}
+
+// `sans-serif` / `system-ui` / `ui-sans-serif` は「フォールバック列の先頭で描いてよい」という
+// 意味（A57 の shashoku 固有の解釈）。**先頭がどんなフォントでも満たしている**ことを固定する:
+// ここでは Noto Sans だけを読み込む（既定の Noto Sans JP は無い）= `--font` を 1 つだけ渡した状態。
+TEST(TextFamilyRequest, SansSerifGenericsAreMetWhateverTheFirstFontIs) {
+  FontStore store;
+  ASSERT_TRUE(store.load(noto_sans()).has_value());  // 読み込むのはこの 1 本だけ
+  Shaper shaper(store);
+
+  TextStyle style = style_at();
+  style.font_family = {"sans-serif"};
+  EXPECT_FALSE(shape_ok(shaper, U"A", style).family_request_unmet);
+  style.font_family = {"system-ui"};
+  EXPECT_FALSE(shape_ok(shaper, U"A", style).family_request_unmet);
+  style.font_family = {"ui-sans-serif"};
+  EXPECT_FALSE(shape_ok(shaper, U"A", style).family_request_unmet);
+
+  // 読み込んでいない具体名は、解釈できない総称と並べても満たせない
+  style.font_family = {"Noto Sans JP", "serif"};
+  EXPECT_TRUE(shape_ok(shaper, U"A", style).family_request_unmet);
+  // 読み込んだ family 名は一致する
+  style.font_family = {"Noto Sans"};
+  EXPECT_FALSE(shape_ok(shaper, U"A", style).family_request_unmet);
+}
+
+// フォントを 2 つ以上積んでいても判定は family 名の一致で、太さの違いは関係ない。
+TEST(TextFamilyRequest, MatchesAnyLoadedFamilyRegardlessOfWeight) {
+  FontStore store;
+  ASSERT_TRUE(store.load(noto_sans_jp_bold()).has_value());
+  ASSERT_TRUE(store.load(noto_sans()).has_value());
+  Shaper shaper(store);
+
+  TextStyle style = style_at();
+  style.font_family = {"Noto Sans"};
+  EXPECT_FALSE(shape_ok(shaper, U"A", style).family_request_unmet);
+  style.font_family = {"Noto Sans JP"};  // Bold だけ積んでいても family 名は一致する
+  EXPECT_FALSE(shape_ok(shaper, U"あ", style).family_request_unmet);
+  style.font_family = {"Noto Serif JP"};
+  EXPECT_TRUE(shape_ok(shaper, U"あ", style).family_request_unmet);
+}
+
 }  // namespace
 }  // namespace shashoku::text

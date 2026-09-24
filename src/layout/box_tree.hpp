@@ -217,6 +217,21 @@ struct MissingGlyph {
   }
 };
 
+// `font-family` の要求をどのフォントでも満たせなかった記録 1 件（A57 / DESIGN.md §3-6）。
+// 「満たせた」の定義は text_measurer.hpp（`ShapedText::family_request_unmet`）に書いてある。
+//
+// 報告の粒度は「**`font-family` の並びごとに 1 件**」: 同じ並びを使うテキストノードが何個
+// あっても 1 件（宣言は 1 つのことが多く、直し方も 1 つなので）。api が Warning にする。
+struct FontFallback {
+  // 満たせなかった `font-family` の並び（計算値のまま。綴りも順序も入力どおり）。
+  std::vector<std::string> families;
+  // その並びを使うテキストノードのうち、入力順で最初のものの先頭（`StyledNode::location`）。
+  // 宣言の位置ではない（③ は宣言の位置を持っていない。A57）。
+  SourceLocation location;
+
+  bool operator==(const FontFallback&) const = default;
+};
+
 // 紙面（= 出力の矩形）からはみ出した箱 1 件（A46 / DESIGN.md §3-6）。
 // 「固定した高さ・幅の外に出た部分は PNG
 // で切れる」という**結果**の問題を、警告として返すための記録。
@@ -260,6 +275,10 @@ struct BoxTree {
   // 紙面からのはみ出しの記録（A46）。入力位置の昇順に並び、同じ位置は 1 件にまとめてある。
   // paint は読まない（絵には影響しない）。api が Warning{ContentOverflow} にし、dump_json が出す。
   std::vector<ContentOverflow> overflows;
+  // font-family の要求を満たせなかった記録（A57）。`font-family` の並びごとに 1 件で、
+  // 入力位置の昇順に並ぶ（同じ位置なら並びの辞書順）。paint は読まない（絵には影響しない）。
+  // api が Warning{FontNotFound} にし、dump_json が出す。
+  std::vector<FontFallback> font_fallbacks;
 
   // 内容の block 方向の大きさ（api が画像の高さを決めるのに使う。ARCHITECTURE.md §3.10）。
   [[nodiscard]] float content_block_size() const { return root.rect.block_end(); }

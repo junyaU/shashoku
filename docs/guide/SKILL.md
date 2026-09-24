@@ -16,7 +16,7 @@ shashoku（HTML→PNG エンジン、v0.1.0）向けの HTML を書き、CLI で
 1. **HTML を書く前に**
    [writing-html-for-shashoku.md](writing-html-for-shashoku.md) を読む（英語版:
    [writing-html-for-shashoku.en.md](writing-html-for-shashoku.en.md)）。
-   対応表は §2、落とし穴は §3、定石の最小例は §4、代替表は §5 にある。
+   対応表は §2、先に知っておくことは §3、定石の最小例は §4、代替表は §5 にある。
    LLM に書かせるなら、この文書を丸ごとプロンプトに貼る
 2. **骨格は [examples/](examples/) から写す**。14 個の定石（カード・横並び・表・箇条書き・
    タグ・縦中央揃え・左右の位置合わせ・見出しと本文・OG 画像・縦書き・ルビ・画像・
@@ -25,8 +25,11 @@ shashoku（HTML→PNG エンジン、v0.1.0）向けの HTML を書き、CLI で
 4. **失敗したらガイド §6**（エラーの読み方・直す順序・現状と予定）
 5. **成功しても PNG を開いて目で見る**。エラーが無いことは絵が正しいことを意味しない
 
-つまずきやすい 2 点（ガイド §3-(3) / §4.2）:
+先に知っておく 3 点（ガイド §3-(1) / §3-(3) / §4.2）:
 
+- **`box-sizing` は `content-box`（既定。ブラウザと同じ）と `border-box` の両方が使える。**
+  先頭に `* { box-sizing: border-box }` を書けば、`width` / `height` から padding と border を
+  引く必要はない（`flex-basis` と `<img>` にも効く）。ガイド §4 の例は content-box のまま
 - **`display: flex` の直接の子は block 化される。** `span` でも `div` でも同じ絵になり、
   `padding` / `border` / `width` を付けてよい。例外は `<img>` / `<ruby>` / `<br>`（inline のまま）。
   文章の中に置いた `span`（flex の孫）は inline のままで、箱のプロパティは `unsupported-layout`
@@ -69,10 +72,11 @@ shashoku --version                                              # 版（この s
 
 ```
 error[unsupported-value] at 82:77: `border-style: dashed` is not supported (supported: solid, none)
-error[unsupported-property] at 84:6: `box-sizing` is not a supported property
-  hint: content-box only: subtract padding and border from `width` / `height`
+error[unsupported-property] at 84:6: `max-width` is not a supported property
+  hint: no min/max sizes: use a fixed `width` / `height`, or drop it
 warning[missing-glyph]: no font has a glyph for U+1F600 at 1:6
 warning[content-overflow]: content overflows the canvas by 430.0px (bottom) at 19:1
+warning[font-not-found]: no requested font family is loaded (`Hiragino Mincho ProN`, `serif`); text uses `Noto Sans JP` instead at 1:57
 ```
 
 - 機械が頼ってよいのは **識別子**（`unsupported-value` など）と **位置**（`行:桁`）。文面は変わりうる
@@ -81,7 +85,10 @@ warning[content-overflow]: content overflows the canvas by 430.0px (bottom) at 1
 - **hint は成立条件つき**のことがある（「親が stretch の flex なら削る」「不等幅・またぎは代替なし」）。
   条件を読んでから選ぶ。hint が無いのは「確かめた代替が無い」という意味
 - 同じ規則に複数の要素が当たっても、**同一位置・同一文面の診断は 1 件**にまとまる
-- 警告は `missing-glyph`（豆腐）と `content-overflow`（紙面からのはみ出し。切れる量と辺つき）。
+- 警告は `missing-glyph`（豆腐）、`content-overflow`（紙面からのはみ出し。切れる量と辺つき）、
+  `font-not-found`（`font-family` の要求をどれも満たせず別のフォントで描いた。`sans-serif` /
+  `system-ui` / `ui-sans-serif` は「渡したフォントの先頭で描いてよい」という意味なので出ない。
+  エンジンは書体を判定しないので、明朝だけを渡して `sans-serif` と書いても明朝で描いて警告なし）。
   警告が出ても PNG は作られ、終了コードは 0
 - **`--strict`** を付けると警告 1 件以上で失敗になり、PNG は作られない（配信前の門に使う）
 - **`--diagnostics json`** で標準出力に 1 オブジェクト（成功でも失敗でも。人向けの stderr は出ない）。

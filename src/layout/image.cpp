@@ -38,17 +38,22 @@ Result<ResolvedImage> LayoutEngine::resolve_image(const StyledNode& node,
   if (css_height.kind == Dimension::Kind::Percent) {
     return fail(ErrorKind::UnsupportedValue, "percentage height is not supported", node.location);
   }
+  // `box-sizing` は `<img>` にも効く（A56）。`width` / `height` 属性は presentational hint で
+  // 同じプロパティなので同じ扱い。`width` / `height` は**物理**なので、引く padding の辺も
+  // 物理で選ぶ（縦書きでは論理の block 側が横幅になる）
+  const SizeAxis width_axis = map_.vertical() ? SizeAxis::Block : SizeAxis::Inline;
+  const SizeAxis height_axis = map_.vertical() ? SizeAxis::Inline : SizeAxis::Block;
   std::optional<float> width;
   std::optional<float> height;
   if (!css_width.is_auto()) {
-    width = std::max(resolve_length(css_width, percent_basis), 0.0F);
+    width = content_from_specified(node.style, css_width, percent_basis, width_axis);
   } else if (node.attr_width) {
-    width = std::max(*node.attr_width, 0.0F);
+    width = std::max(*node.attr_width - border_box_extra(node.style, width_axis), 0.0F);
   }
   if (!css_height.is_auto()) {
-    height = std::max(css_height.value, 0.0F);
+    height = content_from_specified(node.style, css_height, 0, height_axis);
   } else if (node.attr_height) {
-    height = std::max(*node.attr_height, 0.0F);
+    height = std::max(*node.attr_height - border_box_extra(node.style, height_axis), 0.0F);
   }
 
   const float intrinsic_width = std::max(info->width, 0.0F);

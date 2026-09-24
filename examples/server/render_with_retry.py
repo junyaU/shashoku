@@ -303,7 +303,7 @@ def _remove_quietly(path: str) -> None:
 # 実際の LLM もこの手の宣言を書くので、1 回目は必ず失敗します。
 CARD_TEMPLATE = """<style>
   .card  { padding: 24px; border: 1px solid #dfe3e8; border-radius: 12px; background: #ffffff;
-           box-sizing: border-box; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08); }
+           max-width: 720px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08); }
   .title { margin: 0 0 8px 0; font-size: 20px; font-weight: bold; color: #1b2733;
            text-transform: uppercase; }
   .body  { margin: 0; font-size: 15px; line-height: 1.8; color: #44546a; }

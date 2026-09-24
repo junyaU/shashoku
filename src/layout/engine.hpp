@@ -1,6 +1,8 @@
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <optional>
 #include <set>
@@ -57,6 +59,11 @@ struct ResolvedImage {
 
 enum class ChildKind : std::uint8_t { Skip, Inline, Block };
 
+// `box-sizing: border-box` で引く padding の辺を選ぶ軸（A56）。border は 4 辺共通（A11）。
+// **論理方向**なので、物理の `width` / `height` から引くときは writing-mode で読み替える
+// （`image.cpp` がそうしている）。
+enum class SizeAxis : std::uint8_t { Inline, Block };
+
 [[nodiscard]] ChildKind classify(const style::StyledNode& node);
 // 無名ブロック / 無名 flex アイテムを作らなくてよい「空白だけのインラインの連続」か。
 [[nodiscard]] bool is_blank(std::span<const style::StyledNode> nodes);
@@ -75,6 +82,17 @@ void translate(BlockBox& box, float delta_inline, float delta_block);
 // レイアウト 1 回のあいだだけ生きるメモ（A29）。定義は layout_cache.hpp。
 // engine.hpp は中身を知らない（layout_cache.hpp が engine.hpp を include するため）。
 class LayoutCache;
+
+// 入力位置の前後（報告順。MissingGlyph::operator< と同じ並べ方）。
+[[nodiscard]] inline bool is_earlier(const SourceLocation& a, const SourceLocation& b) {
+  if (a.offset != b.offset) {
+    return a.offset < b.offset;
+  }
+  if (a.line != b.line) {
+    return a.line < b.line;
+  }
+  return a.column < b.column;
+}
 
 class LayoutEngine {
  public:
@@ -136,6 +154,29 @@ class LayoutEngine {
     return {missing_glyphs_.begin(), missing_glyphs_.end()};
   }
 
+  // font-family の要求を満たせなかった記録（A57）。豆腐と同じで、同じ段落が計測と配置で
+  // 何度組まれても増えないよう **`font-family` の並びをキーに** 1 件だけ溜め、位置は
+  // 入力順で最初のテキストノードの先頭（= offset が最小のもの）を採る。
+  void record_font_fallback(const std::vector<std::string>& families,
+                            const SourceLocation& location) {
+    const auto [at, inserted] = font_fallbacks_.try_emplace(families, location);
+    if (!inserted && is_earlier(location, at->second)) {
+      at->second = location;
+    }
+  }
+  // 位置の昇順（同じ位置なら並びの辞書順 = std::map の順）。決定的であること。
+  [[nodiscard]] std::vector<FontFallback> font_fallbacks() const {
+    std::vector<FontFallback> out;
+    out.reserve(font_fallbacks_.size());
+    for (const auto& [families, location] : font_fallbacks_) {
+      out.push_back(FontFallback{.families = families, .location = location});
+    }
+    std::stable_sort(out.begin(), out.end(), [](const FontFallback& a, const FontFallback& b) {
+      return is_earlier(a.location, b.location);
+    });
+    return out;
+  }
+
   // CSS 2.1 §10.3.3（inline 方向）と §10.5（block 方向）の使用値。
   // override_inline / override_block は置換要素（<img>）と flex アイテムのように、
   // サイズが width / height プロパティの外で決まっている箱に使う。
@@ -143,6 +184,18 @@ class LayoutEngine {
       const style::ComputedStyle& style, float containing_inline_size,
       const SourceLocation& location, std::optional<float> override_inline = std::nullopt,
       std::optional<float> override_block = std::nullopt) const;
+
+  // `box-sizing: border-box` のときに指定値から引く量（A56）。
+  // content-box なら 0、border-box なら「その軸の padding 2 辺 + border x 2」。
+  // 指定値が長さで与えられていない（`auto`）箱には関係しない。
+  [[nodiscard]] float border_box_extra(const style::ComputedStyle& style, SizeAxis axis) const;
+
+  // `width` / `height` / `flex-basis` の指定値 → content サイズ（A56。CSS Box Sizing 3 §3）。
+  // `%` は先に percent_basis で解決し、そのあとで引く。下限は 0。
+  // `Auto` の扱いは呼び出し側の責任（resolve_length と同じく 0 を返す）。
+  [[nodiscard]] float content_from_specified(const style::ComputedStyle& style,
+                                             const style::Dimension& size, float percent_basis,
+                                             SizeAxis axis) const;
 
   // 論理方向のマージン（auto は 0）と、どの辺が auto だったか。
   [[nodiscard]] LogicalEdges<float> resolve_margin(const style::ComputedStyle& style,
@@ -187,6 +240,9 @@ class LayoutEngine {
   std::set<MissingGlyph> missing_glyphs_;
   // measure_block_size() の入れ子の深さ（0 なら本番の配置中）。measuring() を参照。
   std::uint32_t measuring_ = 0;
+  // 満たせなかった font-family の並び（A57）。キーは並びそのもので、値は最初の位置。
+  // std::map なのでポインタ値も unordered の反復順も出力に出ない（DESIGN.md §3-5）。
+  std::map<std::vector<std::string>, SourceLocation> font_fallbacks_;
   bool memo_ = true;
 };
 

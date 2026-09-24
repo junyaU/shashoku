@@ -91,6 +91,7 @@ struct SpecFontFamily {
 // longhand プロパティ。ショートハンドは宣言パースの時点でここまで展開する。
 enum class PropertyId : std::uint8_t {
   Display,
+  BoxSizing,
   Width,
   Height,
   MarginTop,
@@ -132,12 +133,16 @@ enum class GlobalKeyword : std::uint8_t { None, Inherit, Initial };
 using SpecifiedValue =
     std::variant<std::monostate,  // inherit / initial のときのプレースホルダ
                  SpecDimension, SpecLength, SpecNumber, SpecWeight, SpecColor, SpecLineHeight,
-                 SpecFontFamily, Display, FlexDirection, JustifyContent, AlignItems, TextAlign,
-                 LineBreak, OverflowWrap, WritingMode, BorderStyle>;
+                 SpecFontFamily, Display, BoxSizing, FlexDirection, JustifyContent, AlignItems,
+                 TextAlign, LineBreak, OverflowWrap, WritingMode, BorderStyle>;
 
 struct Declaration {
   PropertyId property = PropertyId::Display;
   GlobalKeyword global = GlobalKeyword::None;
+  // 作者が書いた 1 宣言を展開した longhand 列の先頭か（`border: …` なら border-width）。
+  // 「作者が書いた宣言 1 つにつき診断 1 件」を数えるための印（A55）。`style` 属性の中では
+  // 宣言の位置が全部同じ（属性を指す）ので、位置では宣言を区別できない
+  bool source_head = false;
   SpecifiedValue value;
   SourceLocation location;  // 値の先頭（入力 HTML 上の位置）
 };

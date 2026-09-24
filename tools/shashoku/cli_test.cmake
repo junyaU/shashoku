@@ -133,17 +133,17 @@ elseif(CASE STREQUAL "unsupported_css")
     message(FATAL_ERROR "stderr に原因のプロパティ名がありません: ${stderr_text}")
   endif()
   # 未対応と分かっているプロパティには代替案が一言つく（#20）。手がかりがゼロだと
-  # 試用の最初の 1 枚で詰まる。box-sizing は「既知の制限」の筆頭。
+  # 試用の最初の 1 枚で詰まる（box-sizing は A56 で対応したので max-width を例にする）。
   # 代替案は message ではなく `  hint: …` の独立した行に出る（A46 / A48）。
-  set(box_sizing_html "${WORK_DIR}/box_sizing.html")
-  file(WRITE "${box_sizing_html}"
-       "<div style=\"box-sizing: border-box; width: 200px\">あ</div>\n")
+  set(hinted_html "${WORK_DIR}/hinted.html")
+  file(WRITE "${hinted_html}"
+       "<div style=\"max-width: 200px; width: 200px\">あ</div>\n")
   execute_process(
-    COMMAND "${CLI}" "${box_sizing_html}" --font "${font}" -o "${WORK_DIR}/never.png"
+    COMMAND "${CLI}" "${hinted_html}" --font "${font}" -o "${WORK_DIR}/never.png"
     RESULT_VARIABLE status ERROR_VARIABLE stderr_text)
-  expect_equal("${status}" "1" "exit code for box-sizing")
-  if(NOT stderr_text MATCHES "[\r\n]  hint: content-box only")
-    message(FATAL_ERROR "box-sizing のエラーに hint の行がありません: ${stderr_text}")
+  expect_equal("${status}" "1" "exit code for max-width")
+  if(NOT stderr_text MATCHES "[\r\n]  hint: no min/max sizes")
+    message(FATAL_ERROR "max-width のエラーに hint の行がありません: ${stderr_text}")
   endif()
 
   # 一度に全部（A46 の 1）: ① html と ② style の問題が 1 回の実行でまとめて出る。
@@ -151,13 +151,13 @@ elseif(CASE STREQUAL "unsupported_css")
   set(many_html "${WORK_DIR}/many.html")
   file(WRITE "${many_html}"
        "<div style=\"float: left\">あ</div>\n"
-       "<table><span style=\"box-sizing: border-box\">い</span></table>\n"
+       "<table><span style=\"max-width: 200px\">い</span></table>\n"
        "<div onclick=\"x\" style=\"position: absolute\">う</div>\n")
   execute_process(
     COMMAND "${CLI}" "${many_html}" --font "${font}" -o "${WORK_DIR}/never.png"
     RESULT_VARIABLE status ERROR_VARIABLE stderr_text)
   expect_equal("${status}" "1" "exit code for many.html")
-  foreach(needle "at 1:6: `float`" "at 2:1: `<table>`" "at 2:14: `box-sizing`"
+  foreach(needle "at 1:6: `float`" "at 2:1: `<table>`" "at 2:14: `max-width`"
                  "at 3:6: `onclick`" "at 3:18: `position`")
     if(NOT stderr_text MATCHES "${needle}")
       message(FATAL_ERROR "1 回の実行に ${needle} がありません: ${stderr_text}")
@@ -266,7 +266,7 @@ elseif(CASE STREQUAL "diagnostics_json")
   set(html "${WORK_DIR}/json_errors.html")
   file(WRITE "${html}"
        "<div style=\"float: left\">あ</div>\n"
-       "<div onclick=\"x\" style=\"box-sizing: border-box\">い</div>\n")
+       "<div onclick=\"x\" style=\"max-width: 200px\">い</div>\n")
   execute_process(
     COMMAND "${CLI}" "${html}" --font "${font}" -o "${WORK_DIR}/never.png" --diagnostics json
     RESULT_VARIABLE status OUTPUT_VARIABLE stdout_text ERROR_VARIABLE stderr_text)
@@ -278,7 +278,7 @@ elseif(CASE STREQUAL "diagnostics_json")
   string(JSON truncated GET "${stdout_text}" truncated)
   expect_equal("${truncated}" "OFF" "truncated")
   string(JSON error_count LENGTH "${stdout_text}" errors)
-  expect_equal("${error_count}" "3" "errors の件数（float / onclick / box-sizing）")
+  expect_equal("${error_count}" "3" "errors の件数（float / onclick / max-width）")
   string(JSON first_kind GET "${stdout_text}" errors 0 kind)
   expect_equal("${first_kind}" "unsupported-property" "errors[0].kind")
   string(JSON first_line GET "${stdout_text}" errors 0 line)
@@ -286,7 +286,7 @@ elseif(CASE STREQUAL "diagnostics_json")
   string(JSON second_kind GET "${stdout_text}" errors 1 kind)
   expect_equal("${second_kind}" "unsupported-attribute" "errors[1].kind")
   string(JSON third_hint GET "${stdout_text}" errors 2 hint)
-  if(NOT third_hint MATCHES "content-box")
+  if(NOT third_hint MATCHES "no min/max sizes")
     message(FATAL_ERROR "errors[2].hint に代替案がありません: ${third_hint}")
   endif()
   string(JSON warning_type TYPE "${stdout_text}" errors 0 warning)

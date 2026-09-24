@@ -69,6 +69,15 @@ constexpr char32_t kTofu = 0x25A1;  // □
   return folded;
 }
 
+// 「フォールバック列の先頭で描いてよい」と読む総称ファミリ（A57）。shashoku 固有の解釈で、
+// **先頭がどんな書体でも要求を満たしている**と見なす（`--font` で明朝だけを渡しても警告しない）。
+// エンジンは書体を判定しない（OS/2 の分類も panose も読まない）。`serif` / `monospace` などの
+// 他の総称は「先頭で描いてよい」とは読めない具体的な要求で、shashoku には満たせたか判定できない
+// （読み飛ばす。A15）ので、ここには入れない。名前は fold_family_name 済みの綴り。
+[[nodiscard]] bool is_sans_serif_generic(std::string_view folded) {
+  return folded == "sans-serif" || folded == "system-ui" || folded == "ui-sans-serif";
+}
+
 // CSS Fonts 4 §5.2 の font-weight 照合順。tier が小さいほど、同じ tier なら
 // distance が小さいほど望ましい。
 struct WeightRank {
@@ -193,7 +202,10 @@ struct ShaperImpl {
   }
 
   [[nodiscard]] std::vector<FamilyGroup> build_family_groups(int font_weight) const;
-  [[nodiscard]] std::vector<FontId> resolve_stack(const TextStyle& style) const;
+  // font_family の並びから探索順を作る。`family_request_unmet` が非 nullptr なら、
+  // 「要求をどれも満たせなかったか」（A57）をそこに書く。
+  [[nodiscard]] std::vector<FontId> resolve_stack(const TextStyle& style,
+                                                  bool* family_request_unmet = nullptr) const;
   [[nodiscard]] Result<FontMetrics> font_metrics(FontId font, float font_size);
   [[nodiscard]] Result<std::vector<hb_codepoint_t>> probe_glyphs(const FontEntry& entry,
                                                                  char32_t cp,
@@ -243,7 +255,8 @@ std::vector<FamilyGroup> ShaperImpl::build_family_groups(int font_weight) const 
   return groups;
 }
 
-std::vector<FontId> ShaperImpl::resolve_stack(const TextStyle& style) const {
+std::vector<FontId> ShaperImpl::resolve_stack(const TextStyle& style,
+                                              bool* family_request_unmet) const {
   const std::vector<FamilyGroup> groups = build_family_groups(style.font_weight);
 
   // font-family は family（グループ）の優先順を変えるだけ。FontStore にない名前や
@@ -256,17 +269,29 @@ std::vector<FontId> ShaperImpl::resolve_stack(const TextStyle& style) const {
     }
   };
 
+  // A57: 「要求を満たせたか」。空の並び（未指定）と、綴りが空になる要素だけの並びは
+  // 「要求が無い」= 満たしている扱い（`requested` が 1 つも無いのと同じ）。
+  bool any_request = false;
+  bool met = false;
   for (const std::string& requested : style.font_family) {
     const std::string wanted = fold_family_name(requested);
     if (wanted.empty()) {
       continue;
     }
+    any_request = true;
+    if (is_sans_serif_generic(wanted)) {
+      met = true;  // 「フォールバック列の先頭で描いてよい」= 満たしている（書体は判定しない）
+    }
     for (std::size_t i = 0; i < groups.size(); ++i) {
       if (groups[i].folded_name == wanted) {
         push_group(i);
+        met = true;
         break;
       }
     }
+  }
+  if (family_request_unmet != nullptr) {
+    *family_request_unmet = any_request && !met;
   }
   for (std::size_t i = 0; i < groups.size(); ++i) {
     push_group(i);  // 指定を使い切ったら残りのグループを追加順で足す
@@ -715,11 +740,14 @@ Result<void> check_contract(const std::vector<FontId>& stack, const TextStyle& s
 }  // namespace
 
 Result<ShapedText> ShaperImpl::shape(std::u32string_view text, const TextStyle& style) {
-  const std::vector<FontId> stack = resolve_stack(style);
+  bool family_request_unmet = false;
+  const std::vector<FontId> stack = resolve_stack(style, &family_request_unmet);
   if (const Result<void> ok = check_contract(stack, style); !ok) {
     return std::unexpected(ok.error());
   }
   ShapedText out;
+  // A57: 要求を満たせたかは style だけで決まるので、テキストが空でも返す（事実は溜めない）。
+  out.family_request_unmet = family_request_unmet;
   if (text.empty()) {
     return out;  // 「正常に 0 グリフ」。失敗と区別する（text_measurer.hpp）
   }

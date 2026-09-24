@@ -52,6 +52,7 @@ void write_line_height(JsonWriter& writer, const LineHeight& line_height) {
 
 void write_box_style(JsonWriter& writer, const ComputedStyle& style) {
   writer.key("display").value(to_css(style.display));
+  writer.key("box-sizing").value(to_css(style.box_sizing));
   writer.key("width");
   write_dimension(writer, style.width);
   writer.key("height");

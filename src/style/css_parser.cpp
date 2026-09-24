@@ -11,6 +11,7 @@
 #include "core/diagnostics.hpp"
 #include "core/result.hpp"
 #include "core/utf8.hpp"
+#include "html/tags.hpp"
 #include "shashoku/error.hpp"
 #include "style/css_chars.hpp"
 #include "style/declaration.hpp"
@@ -19,6 +20,26 @@
 
 namespace shashoku::style {
 namespace {
+
+// 対応タグの表は ① html と共有する（`html/tags.hpp`。ヘッダのみの依存で、dom.hpp と同じ扱い）。
+// タイプセレクタがこの表に無いタグを名指ししていたら、① はそのタグを要素にしない
+// （透過か `UnsupportedTag`）ので、その規則は**決して一致しない**（A55）。
+std::string supported_tags_text() {
+  std::string out;
+  for (const std::string_view tag : html::kSupportedTags) {
+    if (!out.empty()) {
+      out += ", ";
+    }
+    out += tag;
+  }
+  return out;
+}
+
+// 読めた複合セレクタと、その入力上の位置（対応外のタグの名指しをその場所で報告する。A55）。
+struct ParsedSelector {
+  Selector selector;
+  std::size_t offset = 0;
+};
 
 class Parser {
  public:
@@ -44,11 +65,19 @@ class Parser {
 
   Result<bool> skip_trivia();
   std::string_view read_ident();
-  Result<std::vector<Selector>> parse_selector_list();
+  Result<void> parse_one_rule(std::uint32_t& order, Stylesheet& out);
+  Result<std::vector<ParsedSelector>> parse_selector_list();
   Result<Selector> parse_compound_selector();
+  // 対応外のタグを名指ししたセレクタ（決して一致しない）を報告して落とす。A55
+  Result<std::vector<Selector>> keep_usable_selectors(std::vector<ParsedSelector> parsed);
+  [[nodiscard]] Error unsupported_tag_selector(std::size_t offset, std::string_view tag) const;
   Result<void> parse_declaration_block(bool braced, std::vector<Declaration>& out);
   Result<void> read_declaration_or_skip(std::vector<Declaration>& out);
   Result<void> parse_one_declaration(std::vector<Declaration>& out);
+  // セレクタを使えない規則の宣言を、報告だけして捨てる（A55）
+  Result<void> report_dropped_rule();
+  bool seek_declaration_block();
+  [[nodiscard]] std::size_t after_literal(std::size_t index) const;
   bool skip_value_literal();
   void scan_value_end();
   void skip_rule();
@@ -175,8 +204,8 @@ Result<Selector> Parser::parse_compound_selector() {
   return selector;
 }
 
-Result<std::vector<Selector>> Parser::parse_selector_list() {
-  std::vector<Selector> selectors;
+Result<std::vector<ParsedSelector>> Parser::parse_selector_list() {
+  std::vector<ParsedSelector> selectors;
   while (true) {
     if (Result<bool> trivia = skip_trivia(); !trivia) {
       return std::unexpected(trivia.error());
@@ -184,11 +213,12 @@ Result<std::vector<Selector>> Parser::parse_selector_list() {
     if (eof()) {
       return bad(pos_, "expected `{` after a selector");
     }
+    const std::size_t start = pos_;
     Result<Selector> selector = parse_compound_selector();
     if (!selector) {
       return std::unexpected(selector.error());
     }
-    selectors.push_back(*std::move(selector));
+    selectors.push_back(ParsedSelector{.selector = *std::move(selector), .offset = start});
 
     const Result<bool> space = skip_trivia();
     if (!space) {
@@ -219,25 +249,43 @@ Result<std::vector<Selector>> Parser::parse_selector_list() {
   }
 }
 
-// 値の中のコメントか文字列を読み飛ばす。読み飛ばしたら true。
-// 閉じていないものは、あとで値のトークナイザが CssParse にする。
-bool Parser::skip_value_literal() {
-  const char c = peek();
-  if (c == '/' && at(pos_ + 1) == '*') {
-    const std::size_t end = text_.find("*/", pos_ + 2);
-    pos_ = end == std::string_view::npos ? text_.size() : end + 2;
-    return true;
+Error Parser::unsupported_tag_selector(std::size_t offset, std::string_view tag) const {
+  return error_with_hint(
+      ErrorKind::UnsupportedTag,
+      std::format("selector `{}` names a tag that is not supported, so this rule never applies "
+                  "(supported tags: {})",
+                  tag, supported_tags_text()),
+      loc_at(offset),
+      "these tags are not elements here: put the declarations on your outermost `div` (give it a "
+      "class) or delete the rule");
+}
+
+// index からコメントか文字列を読み飛ばした次の位置。リテラルでなければ index のまま。
+// 閉じていないコメントは入力の終わりまで、閉じていない文字列は行末まで（あとで値の
+// トークナイザが CssParse にする）。
+std::size_t Parser::after_literal(std::size_t index) const {
+  const char c = at(index);
+  if (c == '/' && at(index + 1) == '*') {
+    const std::size_t end = text_.find("*/", index + 2);
+    return end == std::string_view::npos ? text_.size() : end + 2;
   }
   if (c != '"' && c != '\'') {
+    return index;
+  }
+  std::size_t i = index + 1;
+  while (i < text_.size() && text_[i] != c && text_[i] != '\n') {
+    ++i;
+  }
+  return (i < text_.size() && text_[i] == c) ? i + 1 : i;
+}
+
+// 値の中のコメントか文字列を読み飛ばす。読み飛ばしたら true。
+bool Parser::skip_value_literal() {
+  const std::size_t next = after_literal(pos_);
+  if (next == pos_) {
     return false;
   }
-  ++pos_;
-  while (!eof() && peek() != c && peek() != '\n') {
-    ++pos_;
-  }
-  if (!eof() && peek() == c) {
-    ++pos_;
-  }
+  pos_ = next;
   return true;
 }
 
@@ -296,6 +344,9 @@ Result<void> Parser::read_declaration_or_skip(std::vector<Declaration>& out) {
     // 途中まで展開された longhand を残さない（捨てた宣言は「書かれなかった」扱い）
     out.resize(written);
     scan_value_end();  // 次の `;` / `}` / 入力の終わりまで捨てる
+  } else if (out.size() > written) {
+    // 展開した longhand 列の先頭に「作者が書いた 1 宣言の始まり」の印を付ける（A55）
+    out[written].source_head = true;
   }
   if (peek() == ';') {
     ++pos_;
@@ -345,7 +396,66 @@ Result<void> Parser::parse_declaration_block(bool braced, std::vector<Declaratio
   }
 }
 
-// 規則 1 つ分を読み飛ばす（セレクタが読めなかったとき）。`{` が来たら対応する `}` まで、
+// この規則の宣言ブロックが「安全に読める `{…}`」なら pos_ をその `{` に置いて true（A55）。
+// 安全とは、`{` の前に `;` `}` が無く（宣言ブロックを持たない規則ではない）、対応する `}` が
+// 見つかること（入れ子の `{` があるもの・閉じていないものは安全に読めない）。
+// 走査の規則は値の走査（scan_value_end）と同じ: リテラルを飛ばし、`(` の中は数えない。
+bool Parser::seek_declaration_block() {
+  std::size_t open = pos_;
+  while (open < text_.size()) {
+    if (const std::size_t next = after_literal(open); next != open) {
+      open = next;
+      continue;
+    }
+    const char c = text_[open];
+    if (c == '{') {
+      break;
+    }
+    if (c == ';' || c == '}') {
+      return false;  // `@import …;` のような波括弧の無い規則、または壊れた入れ子
+    }
+    ++open;
+  }
+  if (open >= text_.size()) {
+    return false;  // `{` が無い
+  }
+  int depth = 0;  // `(` の入れ子
+  for (std::size_t i = open + 1; i < text_.size();) {
+    if (const std::size_t next = after_literal(i); next != i) {
+      i = next;
+      continue;  // 閉じていないコメントなら text_.size() に飛ぶので、ここで終わる
+    }
+    const char c = text_[i];
+    if (c == '(') {
+      ++depth;
+    } else if (c == ')') {
+      depth = depth > 0 ? depth - 1 : 0;
+    } else if (depth == 0 && c == '{') {
+      return false;  // 入れ子のブロック（`@media` など）。どこまでが宣言か決められない
+    } else if (depth == 0 && c == '}') {
+      pos_ = open;
+      return true;
+    }
+    ++i;
+  }
+  return false;  // 閉じていない
+}
+
+// セレクタを使えない規則（読めなかった / 対応外のタグを名指しした）の宣言を、**報告だけ**して
+// 捨てる（A55）。宣言ブロックが安全に読めるときだけ通常の宣言パーサに通し、結果は使わない
+// （カスケードに入れないので、その規則を適用した前提の計算値の検査は出ない）。
+// 安全に読めないときは今までどおり規則ごと読み飛ばす（推測して「著者が書いていない宣言」を
+// 報告しかねないので。A48）。
+Result<void> Parser::report_dropped_rule() {
+  if (!seek_declaration_block()) {
+    skip_rule();
+    return {};
+  }
+  std::vector<Declaration> discarded;
+  return parse_declaration_block(true, discarded);
+}
+
+// 規則 1 つ分を読み飛ばす（宣言ブロックが安全に読めなかったとき）。`{` が来たら対応する `}` まで、
 // `;` が来たらそこまで（`@import …;` のような波括弧の無い規則）。
 void Parser::skip_rule() {
   int depth = 0;
@@ -396,24 +506,63 @@ Result<void> Parser::parse_rules(std::uint32_t& order, Stylesheet& out) {
       continue;
     }
 
-    Result<std::vector<Selector>> selectors = parse_selector_list();
-    if (!selectors) {
-      // セレクタが読めなければ、その規則の宣言はどの要素に当たるか決められない。
-      // 規則の単位で読み飛ばす（A46）
-      if (Result<void> noted = note(selectors.error()); !noted) {
-        return noted;
+    if (Result<void> rule = parse_one_rule(order, out); !rule) {
+      return rule;
+    }
+  }
+}
+
+// 規則 1 つ（セレクタ + 宣言ブロック）。読めたものだけ out に足し、捨てた規則の宣言は
+// 報告だけする（A55）。読み進めるのは必ずこの規則の終わりまでなので、呼び出し側は次へ進める。
+Result<void> Parser::parse_one_rule(std::uint32_t& order, Stylesheet& out) {
+  Result<std::vector<ParsedSelector>> selectors = parse_selector_list();
+  if (!selectors) {
+    // セレクタが読めなければ、その規則の宣言はどの要素に当たるか決められないので適用しない
+    // （規則の単位で捨てる。A46）。ただし宣言ブロックが安全に読めるなら、**宣言レベルの
+    // 診断だけ**は出す（A55。セレクタを直した次の往復まで隠さない）
+    if (Result<void> noted = note(selectors.error()); !noted) {
+      return noted;
+    }
+    return report_dropped_rule();
+  }
+
+  Result<std::vector<Selector>> usable = keep_usable_selectors(*std::move(selectors));
+  if (!usable) {
+    return std::unexpected(usable.error());
+  }
+  if (usable->empty()) {
+    // どのセレクタも一致しえないので適用しない。宣言は報告だけする（読めないセレクタと同じ）
+    return report_dropped_rule();
+  }
+
+  Rule rule;
+  rule.selectors = *std::move(usable);
+  rule.order = order++;
+  if (Result<void> block = parse_declaration_block(true, rule.declarations); !block) {
+    return block;
+  }
+  out.push_back(std::move(rule));
+  return {};
+}
+
+// A55: 対応外のタグを名指しするタイプセレクタは、① がそのタグを要素にしない（透過するか
+// `UnsupportedTag`）ので**決して一致しない**。「未使用の CSS」ではなく「shashoku に存在しない
+// タグへの指定」なので報告して落とす。カンマ区切りのうち残ったものは通常どおり適用する
+// （空が返ったら、その規則はどの要素にも一致しない）。
+Result<std::vector<Selector>> Parser::keep_usable_selectors(std::vector<ParsedSelector> parsed) {
+  std::vector<Selector> usable;
+  usable.reserve(parsed.size());
+  for (ParsedSelector& entry : parsed) {
+    const std::string_view tag = entry.selector.tag;
+    if (!tag.empty() && !html::is_supported_tag(tag)) {
+      if (Result<void> noted = note(unsupported_tag_selector(entry.offset, tag)); !noted) {
+        return std::unexpected(noted.error());
       }
-      skip_rule();
       continue;
     }
-    Rule rule;
-    rule.selectors = *std::move(selectors);
-    rule.order = order++;
-    if (Result<void> block = parse_declaration_block(true, rule.declarations); !block) {
-      return block;
-    }
-    out.push_back(std::move(rule));
+    usable.push_back(std::move(entry.selector));
   }
+  return usable;
 }
 
 Result<std::vector<Declaration>> Parser::parse_inline_block() {

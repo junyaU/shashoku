@@ -89,7 +89,7 @@ pseudo-classes and pseudo-elements (`:hover` `::before`), at-rules (`@media`, `@
 
 | Group | Properties |
 |---|---|
-| Box | `display` `width` `height` `margin` `padding` `border` `border-width` `border-style` `border-color` `border-radius` `background` `background-color` |
+| Box | `display` `box-sizing` `width` `height` `margin` `padding` `border` `border-width` `border-style` `border-color` `border-radius` `background` `background-color` |
 | Per-side margin / padding | `margin-top` `margin-right` `margin-bottom` `margin-left`, `padding-top` `padding-right` `padding-bottom` `padding-left` |
 | Flexbox | `flex-direction` `justify-content` `align-items` `gap` `row-gap` `column-gap` `flex` `flex-grow` `flex-shrink` `flex-basis` |
 | Text | `color` `font-size` `font-family` `font-weight` `line-height` `letter-spacing` `text-align` `line-break` `overflow-wrap` (`word-wrap` is an alias) |
@@ -129,9 +129,13 @@ pseudo-classes and pseudo-elements (`:hover` `::before`), at-rules (`@media`, `@
 > **unitless** whenever the element has children with a different `font-size`.
 > `font-size` does not accept keywords such as `large`.
 
-> `font-family` only matches the **family name a font file declares for itself**. Generic families
-> (`serif`, `sans-serif`, `monospace`, …) and the names of fonts you did not pass are
-> **skipped silently, not reported as an error** (see §7 for serif and monospace).
+> `font-family` only matches the **family name a font file declares for itself**. If nothing in the
+> list can be satisfied (names you did not pass, plus generics shashoku cannot interpret such as
+> `serif` or `monospace`), you get **`warning[font-not-found]` and the text is drawn with the first
+> font you passed** (rendering continues). `sans-serif`, `system-ui` and `ui-sans-serif` mean
+> **"the first font passed is fine"** in shashoku, so they raise nothing — pass only a serif face
+> with `--font` and that serif face draws the text, still without a warning. **The engine never
+> classifies a font's style** (see §7 for serif and monospace).
 
 **A symbol only appears if the font has it.** Anything missing renders as □ (tofu) and produces a
 `warning[missing-glyph]`. The list below was checked by actually drawing it with the embedded
@@ -178,14 +182,17 @@ Margins collapse **only between adjacent sibling blocks** (never between a paren
 
 ---
 
-## 3. Five traps to know before you start
+## 3. Five things to know before you start
 
 In the order real AI-written HTML tripped over them during testing.
 **Getting these right removes most of the retry loop.**
+(1) is not a trap but a shortcut: knowing it saves you arithmetic.
 
-### (1) `box-sizing` is content-box, always
+### (1) `box-sizing` accepts both values; the default is content-box
 
-`width` / `height` **exclude padding and border**. Subtract them yourself to hit an outer size.
+Both `content-box` (the default) and `border-box` work. **The default is content-box, same as a
+browser**, so if you write nothing, `width` / `height` **exclude padding and border** and you
+subtract them yourself to hit an outer size.
 
 ```
 1200×630 OG image, padding 64px, no border
@@ -194,6 +201,26 @@ In the order real AI-written HTML tripped over them during testing.
 Add a 2px border and subtract another 2×2 = 4px
   → width: 1068px;  height: 498px;  padding: 64px;  border: 2px solid #333;
 ```
+
+**Put `* { box-sizing: border-box }` at the top and none of that subtraction is needed** —
+`width` / `height` then *are* the outer size of the box.
+
+```html
+<style>
+  * { box-sizing: border-box }
+  .card { width: 600px; height: 160px; padding: 24px; border: 2px solid #333;
+          background: #ffffff; font-size: 17px; line-height: 1.8; color: #1b2733; }
+</style>
+<div class="card">外寸（600×160）をそのまま書けます。padding と border は内側に入ります。</div>
+```
+
+- `border-box` applies to `flex-basis` and to `<img>` as well (both the CSS `width` / `height` and
+  the `width` / `height` attributes), not just to `width` / `height` on a box
+- If there is nothing left to subtract (`width: 10px; padding: 20px`), the content size stops at 0
+  and the box ends up larger than the value you wrote. Browsers do the same
+- It works the same in vertical writing (the padding subtracted is the one on the inline axis)
+- **Every example in §4 below is written for content-box.** If you switch to `border-box`, add the
+  padding and border back into the `width` / `height`
 
 ### (2) Inline elements do not take box properties
 
@@ -424,7 +451,8 @@ Two cases:
 
 To centre content in a **full-height** box, use
 `display: flex; flex-direction: column; justify-content: center` plus an explicit `height`
-on the parent (content-box, so subtract the padding).
+on the parent (content-box, so subtract the padding; with `box-sizing: border-box` you write the
+outer size directly and subtract nothing — §3-(1)).
 To centre the body text and still pin a byline or a date to the bottom edge, see §4.14.
 
 ### 4.7 Left/right alignment and placing a note — [space-between.html](examples/space-between.html)
@@ -448,7 +476,8 @@ There is no `position`, so **all placement happens in the flow**.
 - Push one item right → insert an empty growing `div` (`flex: 1 1 0`)
 - **Put a note directly under one particular element** → insert an empty
   `flex: none; width: <offset>px` spacer before the note. You compute the offset yourself
-  (content-box, so add the `padding` and `border` of everything to its left).
+  (content-box, so add the `padding` and `border` of everything to its left; with
+  `box-sizing: border-box` each `width` is already the outer size, so there is nothing to add).
   Change any of those sizes by 1px and you must update this number too
 - To push **only one** item to the right edge, `margin-left: auto` does the same thing without a
   spacer `div`
@@ -456,7 +485,8 @@ There is no `position`, so **all placement happens in the flow**.
 How to compute the spacer width:
 
 1. Add up the outer size of **every preceding sibling**. One sibling's outer size is
-   `width + left/right padding + left/right border` (content-box, so `width` excludes them)
+   `width + left/right padding + left/right border` (content-box, so `width` excludes them;
+   with `border-box`, `width` *is* the outer size)
 2. Add one `gap` for **every gap you cross** (n preceding siblings means n gaps)
 3. Give the note's row the **same `padding-left`** as the row above it — any difference shifts
    the note by exactly that amount
@@ -521,7 +551,8 @@ For Japanese body text, `line-height: 1.7`–`1.9` reads well.
 ```
 
 Render with `shashoku og-card.html -o og.png --width 1200 --height 630`.
-`1072 = 1200 − 64×2`, `502 = 630 − 64×2` (§3-(1)).
+`1072 = 1200 − 64×2`, `502 = 630 − 64×2` (§3-(1)). Add `* { box-sizing: border-box }` at the top and
+you can write `width: 1200px; height: 630px` instead.
 `flex: 1 1 0` on the title **makes it grow so the footer sticks to the bottom**.
 
 ### 4.10 Vertical writing — [vertical.html](examples/vertical.html)
@@ -739,7 +770,8 @@ A fixed-height canvas with the body in the middle and the byline at the bottom e
 ```
 
 Render with `shashoku quote.html -o quote.png --width 600 --height 360`
-(`552 = 600 − 24×2`, `312 = 360 − 24×2`).
+(`552 = 600 − 24×2`, `312 = 360 − 24×2`; with `* { box-sizing: border-box }` at the top you write
+`width: 600px; height: 360px` and subtract nothing — §3-(1)).
 
 - Make the sheet a `flex-direction: column` and give the **body box `flex: 1 1 0`**: it takes all
   the space the byline does not. `justify-content: center` inside it centres the body, and the
@@ -772,7 +804,6 @@ Render with `shashoku quote.html -o quote.png --width 600 --height 360`
 | `float` | error | Flex |
 | `flex-wrap` | error | One flex container per row |
 | `align-self` / `order` / `flex-flow` | error | Put the elements in the order you want |
-| `box-sizing` | error | Subtract padding and border from the width/height (§3-(1)) |
 | `min-height` | error | If the parent is a **flex container with the default `align-items: stretch`**, just **drop it** (the item already fills the cross size). If the height is known, use `height`. Otherwise drop it and let the content decide |
 | `min-width` / `max-width` / `max-height` | error | A fixed `width` / `height`, or drop it |
 | `overflow` | error | Size it so nothing overflows; give up on clipping rounded corners |
@@ -905,6 +936,18 @@ cut content, `right` means raise `--width` or shrink the box's width and padding
 `--height` (the height follows the content) nothing can overflow vertically, so only the horizontal
 edges are checked.
 
+```
+warning[font-not-found]: no requested font family is loaded (`Hiragino Mincho ProN`, `serif`); text uses `Noto Sans JP` instead at 1:57
+```
+
+`font-not-found` means **none of the families in `font-family` could be satisfied, so another font
+drew the text** (asking for a serif face and getting the sans default is the typical case). Fix it by
+passing that font with `--font`, by dropping `font-family`, or by writing `sans-serif`.
+`sans-serif`, `system-ui` and `ui-sans-serif` mean **"the first font passed is fine"**, so they raise
+nothing whatever that font is (**the engine does not classify font styles**). `serif`, `monospace`
+and the other generics are a concrete request that shashoku cannot check, so on their own they are
+not satisfied (§7).
+
 **A warning still produces a PNG and still exits 0.** If you publish automatically, read stderr too.
 **`--strict` turns warnings into failures**: no PNG is written and an existing file is left untouched.
 
@@ -935,8 +978,9 @@ shashoku 0.1.0 today:
   No hint means there is no substitute
 - **Identical diagnostics at one location are reported once**, even when several elements match the
   same rule
-- There are two warnings: `missing-glyph` (tofu) and `content-overflow` (**content that does not fit
-  the fixed canvas**). Set `--height` too small and you are told how much is cut off, and on which edge
+- There are three warnings: `missing-glyph` (tofu), `content-overflow` (**content that does not fit
+  the fixed canvas**) and `font-not-found` (**no requested `font-family` could be satisfied**).
+  Set `--height` too small and you are told how much is cut off, and on which edge
 - **`--strict`** turns any warning into a failure and **writes no PNG** (an existing file is left
   untouched). That is the "do not publish" signal for a server
 - **`--diagnostics json`** writes one JSON object to stdout (on success and on failure)
@@ -948,8 +992,8 @@ The diagnostics JSON (real output, only line-wrapped here):
 ```json
 {"ok": false, "width": null, "height": null, "truncated": false,
  "errors": [{"kind": "unsupported-property",
-             "message": "`box-sizing` is not a supported property",
-             "hint": "content-box only: subtract padding and border from `width` / `height`",
+             "message": "`max-width` is not a supported property",
+             "hint": "no min/max sizes: use a fixed `width` / `height`, or drop it",
              "line": 2, "column": 11, "offset": 18, "warning": null}],
  "warnings": []}
 ```
@@ -1027,9 +1071,15 @@ shashoku og-card.html -o og.png --width 1200 --height 630 --strict
 ### Serif and monospace (`--font` and `font-family`)
 
 **The embedded default font is only Noto Sans JP, Regular and Bold.** Writing
-`font-family: serif` or `font-family: monospace` changes **not one pixel** (generic families, and
-the names of fonts you did not pass, are **skipped silently rather than reported as an error**).
+`font-family: serif` or `font-family: monospace` changes **not one pixel** (generics shashoku cannot
+interpret, and the names of fonts you did not pass, are skipped). It is not silent about it, though:
+if nothing in the list can be satisfied you get **`warning[font-not-found]`**.
 To get a serif or a monospace face, pass that font file with `--font`.
+
+`sans-serif`, `system-ui` and `ui-sans-serif` are the exception that raises nothing: in shashoku they
+mean **"the first font passed is fine"**. **Pass only a Mincho face and write
+`font-family: sans-serif` and you get Mincho, with no warning** — shashoku never classifies a font's
+style. When the face matters, write the **family name the font declares** instead of a generic.
 
 - `font-family` matches the **family name the font file declares for itself** (case and surrounding
   whitespace are ignored): `Noto Sans JP` for `NotoSansJP-Regular.otf`, `Noto Sans` for

@@ -47,6 +47,8 @@ struct Dimension {
 };
 
 enum class Display : std::uint8_t { Block, Flex, Inline, None };
+// CSS Box Sizing 3 §3: `width` / `height` / `flex-basis` がどの箱の寸法かを決める（A56）。
+enum class BoxSizing : std::uint8_t { ContentBox, BorderBox };
 enum class FlexDirection : std::uint8_t { Row, Column };
 enum class JustifyContent : std::uint8_t {
   FlexStart,
@@ -75,7 +77,10 @@ struct LineHeight {
 struct ComputedStyle {
   // ---- ボックス（継承しない）-------------------------------------------------
   Display display = Display::Inline;
-  Dimension width;   // content-box の幅（box-sizing は content-box のみ）
+  // border-box なら width / height / flex-basis は border box の寸法（A56）。
+  // content への引き算は ③ layout が行う（`%` の解決が要るため）
+  BoxSizing box_sizing = BoxSizing::ContentBox;
+  Dimension width;   // box_sizing がどの箱の幅かを決める
   Dimension height;  // Percent は非対応（② がエラーにする）
   Edges<Dimension> margin{Dimension::px(0), Dimension::px(0), Dimension::px(0), Dimension::px(0)};
   Edges<float> padding;         // px

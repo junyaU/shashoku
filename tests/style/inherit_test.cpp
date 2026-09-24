@@ -58,8 +58,10 @@ TEST(StyleInherit, BoxPropertiesAreNotInherited) {
   const ComputedStyle style = child_of(
       "width: 100px; height: 50px; margin: 5px; padding: 6px; border: 2px solid red; "
       "border-radius: 4px; background-color: blue; flex-direction: column; "
-      "justify-content: center; align-items: center; gap: 3px; flex: 2 2 10px",
+      "justify-content: center; align-items: center; gap: 3px; flex: 2 2 10px; "
+      "box-sizing: border-box",
       "", "div");
+  EXPECT_EQ(style.box_sizing, BoxSizing::ContentBox);  // A56: 継承しない
   EXPECT_EQ(style.width, Dimension::auto_());
   EXPECT_EQ(style.height, Dimension::auto_());
   EXPECT_EQ(style.margin.top, Dimension::px(0));
@@ -91,6 +93,9 @@ TEST(StyleInherit, InheritKeywordOnNonInheritedProperties) {
             (Color{0, 0, 255, 255}));
   EXPECT_FLOAT_EQ(child_of("padding: 7px", "padding: inherit", "div").padding.left, 7.0F);
   EXPECT_FLOAT_EQ(child_of("border: 3px solid red", "border: inherit", "div").border_width, 3.0F);
+  // A56: box-sizing は継承しないが、`inherit` は全プロパティで書ける
+  EXPECT_EQ(child_of("box-sizing: border-box", "box-sizing: inherit", "div").box_sizing,
+            BoxSizing::BorderBox);
 }
 
 TEST(StyleInherit, InitialKeywordResetsToTheInitialValue) {
@@ -98,6 +103,10 @@ TEST(StyleInherit, InitialKeywordResetsToTheInitialValue) {
   EXPECT_FLOAT_EQ(child_of("font-size: 40px", "font-size: initial").font_size, 16.0F);
   EXPECT_EQ(child_of("text-align: center", "text-align: initial").text_align, TextAlign::Start);
   EXPECT_TRUE(child_of("font-family: serif", "font-family: initial").font_family.empty());
+  // A56: initial は content-box
+  EXPECT_EQ(child_of("box-sizing: border-box", "box-sizing: border-box; box-sizing: initial", "div")
+                .box_sizing,
+            BoxSizing::ContentBox);
   // ショートハンドの initial は全 longhand に配る
   const ComputedStyle margin = child_of("", "margin: 5px; margin: initial", "div");
   EXPECT_EQ(margin.margin.top, Dimension::px(0));

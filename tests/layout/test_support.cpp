@@ -1,8 +1,10 @@
 #include "layout/test_support.hpp"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <string>
 #include <utility>
 #include <variant>
 
@@ -103,6 +105,11 @@ Result<text::ShapedText> FakeMeasurer::shape(std::u32string_view text,
     return fail(ErrorKind::FontLoad, "FakeMeasurer: shape() を失敗させました");
   }
   text::ShapedText out;
+  // A57: 要求を満たせたかは style だけで決まる（実物の Shaper と同じで、テキストには依らない）
+  out.family_request_unmet =
+      std::any_of(style.font_family.begin(), style.font_family.end(), [this](const std::string& f) {
+        return std::find(unmet_families.begin(), unmet_families.end(), f) != unmet_families.end();
+      });
   for (std::size_t i = 0; i < text.size(); ++i) {
     const char32_t cp = text[i];
     const bool combining = is_combining(cp) && !out.clusters.empty();

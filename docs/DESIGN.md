@@ -104,6 +104,7 @@ Satori 系への不満は「対応外の CSS を書くと無言で変な絵が�
 
 ```
 display (block | flex | inline | none)
+box-sizing (content-box | border-box)
 width, height, margin*, padding*
 font-size, font-family, font-weight, line-height, color
 background-color, border, border-radius

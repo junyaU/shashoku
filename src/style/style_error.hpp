@@ -42,6 +42,9 @@ inline bool is_recoverable(ErrorKind kind) noexcept {
     case ErrorKind::UnsupportedProperty:
     case ErrorKind::UnsupportedValue:
     case ErrorKind::UnsupportedLayout:
+    // 対応外のタグを名指しするセレクタ（A55）。要素側の `<body>` と同じ識別子で報告して、
+    // AI が同じ往復で両方を直せるようにする（`ErrorKind` は増やさない）
+    case ErrorKind::UnsupportedTag:
       return true;
     default:
       return false;

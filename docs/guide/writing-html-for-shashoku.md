@@ -85,7 +85,7 @@ CSS 変数（`--x`）、`calc()`。
 
 | 分類 | プロパティ |
 |---|---|
-| ボックス | `display` `width` `height` `margin` `padding` `border` `border-width` `border-style` `border-color` `border-radius` `background` `background-color` |
+| ボックス | `display` `box-sizing` `width` `height` `margin` `padding` `border` `border-width` `border-style` `border-color` `border-radius` `background` `background-color` |
 | margin / padding の個別辺 | `margin-top` `margin-right` `margin-bottom` `margin-left`、`padding-top` `padding-right` `padding-bottom` `padding-left` |
 | flexbox | `flex-direction` `justify-content` `align-items` `gap` `row-gap` `column-gap` `flex` `flex-grow` `flex-shrink` `flex-basis` |
 | テキスト | `color` `font-size` `font-family` `font-weight` `line-height` `letter-spacing` `text-align` `line-break` `overflow-wrap`（`word-wrap` は別名） |
@@ -125,8 +125,11 @@ CSS 変数（`--x`）、`calc()`。
 > `font-size` はキーワード（`large` など）を受け付けません。
 
 > `font-family` が照合するのは、**渡したフォントが自分で名乗っている family 名**だけです。
-> `serif` / `sans-serif` / `monospace` などの総称ファミリと、渡していないフォントの名前は
-> **エラーにならず黙って読み飛ばされます**（明朝・等幅にする方法は §7）。
+> 並びのどれも満たせないと（渡していない名前と、`serif` / `monospace` などの解釈できない総称しか
+> 書いていないと）**`warning[font-not-found]` が出て、渡したフォントの先頭で描かれます**（描画は続きます）。
+> `sans-serif` / `system-ui` / `ui-sans-serif` は**「渡したフォントの先頭で描いてよい」**という意味なので
+> 警告は出ません（`--font` で明朝だけを渡していれば明朝で描きます。**shashoku はフォントの書体を
+> 判定しません**）（明朝・等幅にする方法は §7）。
 
 **記号は「フォントに入っているものだけ」出ます。** 入っていない字は □（豆腐）になり
 `warning[missing-glyph]` が出ます。埋め込みの既定フォント（Noto Sans JP）で実際に描いて
@@ -172,13 +175,15 @@ rt { font-size: 0.5em }
 
 ---
 
-## 3. 先に知っておく 5 つの落とし穴
+## 3. 先に知っておく 5 つのこと
 
 検証で AI が実際に引っかかった順です。**ここだけで反復の大半が消えます。**
+(1) だけは落とし穴ではなく「知っていると書く量が減ること」です。
 
-### (1) `box-sizing` は content-box だけ
+### (1) `box-sizing` は両方使える。既定は content-box
 
-`width` / `height` は **padding と border を含みません**。外寸を決めたいときは引き算します。
+`content-box`（既定）と `border-box` の両方が使えます。**既定はブラウザと同じ content-box** なので、
+何も書かなければ `width` / `height` は **padding と border を含みません**。外寸を決めたいときは引き算します。
 
 ```
 1200×630 の OG 画像、padding 64px、枠なし
@@ -187,6 +192,26 @@ rt { font-size: 0.5em }
 枠 2px を足すなら、さらに 2×2 = 4px を引く
   → width: 1068px;  height: 498px;  padding: 64px;  border: 2px solid #333;
 ```
+
+**先頭に `* { box-sizing: border-box }` を 1 行書けば、この引き算は要りません。**
+`width` / `height` が箱の外寸そのものになります。
+
+```html
+<style>
+  * { box-sizing: border-box }
+  .card { width: 600px; height: 160px; padding: 24px; border: 2px solid #333;
+          background: #ffffff; font-size: 17px; line-height: 1.8; color: #1b2733; }
+</style>
+<div class="card">外寸（600×160）をそのまま書けます。padding と border は内側に入ります。</div>
+```
+
+- `border-box` は `width` / `height` のほか **`flex-basis` と `<img>`**（CSS の `width` / `height` と
+  `width` / `height` 属性の両方）にも同じように効きます
+- 引ききれないとき（`width: 10px; padding: 20px` など）は中身の幅が 0 で止まり、箱は指定値より
+  大きくなります。ブラウザと同じです
+- 縦書きでも同じです（字送り方向の寸法から、その方向の padding 2 辺と border を引きます）
+- この文書の §4 の例は**すべて content-box のまま**書いてあります。`border-box` に切り替えるなら
+  `width` / `height` に padding と border を足し戻してください
 
 ### (2) `display: inline` の要素に箱のプロパティは付かない
 
@@ -414,7 +439,8 @@ URL・長い英単語・連続する英数字・ハッシュ値が入ると、�
 ```
 
 **箱いっぱいの縦中央**は `display: flex; flex-direction: column; justify-content: center` と、
-親に明示した `height`（content-box なので padding を引いた値）で作ります。
+親に明示した `height`（content-box なので padding を引いた値。`box-sizing: border-box` を書けば
+引き算は不要で、外寸をそのまま書けます。§3-(1)）で作ります。
 本文を縦中央に置きつつ、署名や日付だけを下端に張り付けたいときは §4.14。
 
 ### 4.7 左右の位置合わせ・注記の位置決め — [space-between.html](examples/space-between.html)
@@ -437,14 +463,16 @@ URL・長い英単語・連続する英数字・ハッシュ値が入ると、�
 - 両端に寄せる → `justify-content: space-between`
 - 一方だけ右に押す → 伸びる空の `div`（`flex: 1 1 0`）を挟む
 - **特定の要素の真下に注記を置く** → 注記の前に `flex: none; width: <その位置まで>px` の空の `div` を置く。
-  幅は自分で足し算します（content-box なので `padding` と `border` も足す）。
+  幅は自分で足し算します（content-box なので `padding` と `border` も足す。`box-sizing: border-box` を
+  書いているなら `width` がすでに外寸なので足す必要はありません）。
   上の要素の寸法を 1px でも変えたらこの値も直してください
 - **一方だけ右端に寄せる**なら `margin-left: auto` でも同じです（spacer の `div` が要りません）
 
 spacer の幅の出し方:
 
 1. 狙う要素より**前にある兄弟**の外寸を全部足す。1 つぶんの外寸は
-   `width + padding左右 + border左右`（content-box なので `width` に含まれていません）
+   `width + padding左右 + border左右`（content-box なので `width` に含まれていません。
+   `border-box` なら `width` がそのまま外寸です）
 2. その間で**またぐ `gap` の数**だけ `gap` を足す（兄弟が n 個なら gap は n 個）
 3. 注記の行の `padding-left` を、上の行の `padding-left` と**同じ**にする（違うとその差だけずれます）
 4. `--dump-stage box` で確かめる。`rect` の 1 つ目の数が、狙った要素の `rect` の 1 つ目と一致すれば合っています
@@ -508,6 +536,8 @@ spacer の幅の出し方:
 
 `shashoku og-card.html -o og.png --width 1200 --height 630` で出します。
 `1072 = 1200 − 64×2`、`502 = 630 − 64×2`（§3-(1)）。
+先頭に `* { box-sizing: border-box }` を足せばこの引き算は要らず、`width: 1200px; height: 630px` と
+書けます。
 タイトルに `flex: 1 1 0` を付けると、**タイトルが伸びてフッターが下端に張り付きます**。
 
 ### 4.10 縦書き — [vertical.html](examples/vertical.html)
@@ -715,7 +745,8 @@ spacer の幅の出し方:
 ```
 
 `shashoku quote.html -o quote.png --width 600 --height 360` で出します
-（`552 = 600 − 24×2`、`312 = 360 − 24×2`）。
+（`552 = 600 − 24×2`、`312 = 360 − 24×2`。`* { box-sizing: border-box }` を先頭に書けば
+引き算は不要で、`width: 600px; height: 360px` と書けます。§3-(1)）。
 
 - 紙面を `flex-direction: column` にして、**本文の箱に `flex: 1 1 0`** を与えると、署名以外の
   余りを全部その箱が取ります。中で `justify-content: center` すれば本文が縦中央、署名は下端です
@@ -745,7 +776,6 @@ spacer の幅の出し方:
 | `float` | エラー | flex |
 | `flex-wrap` | エラー | 行ごとに flex コンテナを分ける |
 | `align-self` / `order` / `flex-flow` | エラー | 並び順を HTML の順で書く |
-| `box-sizing` | エラー | 幅・高さから padding と border を引く（§3-(1)） |
 | `min-height` | エラー | 親が **既定の `align-items: stretch` の flex** なら**削るだけ**（その子はもう交差方向いっぱいです）。高さが分かっているなら `height`。どちらでもなければ削って内容に高さを決めさせる |
 | `min-width` / `max-width` / `max-height` | エラー | 固定値の `width` / `height` にするか、削る |
 | `overflow` | エラー | はみ出さない寸法にする。角丸のクリップは諦める |
@@ -871,6 +901,18 @@ warning[content-overflow]: content overflows the canvas by 430.0px (bottom) at 1
 `right` なら `--width` を増やすか箱の幅・余白を減らします。`--height` を省いていれば
 （内容の高さに追従）縦には出られないので、この警告は横方向だけになります。
 
+```
+warning[font-not-found]: no requested font family is loaded (`Hiragino Mincho ProN`, `serif`); text uses `Noto Sans JP` instead at 1:57
+```
+
+`font-not-found` は**`font-family` に書いた名前をどれも満たせず、別のフォントで描いた**という
+意味です（明朝を指定したのにゴシックで出る、が典型）。`--font` でそのフォントを渡すか、
+`font-family` を外すか、`sans-serif` にします。`sans-serif` / `system-ui` / `ui-sans-serif` は
+shashoku では**「渡したフォントの先頭で描いてよい」**という意味なので、警告は出ません
+（明朝だけを渡していれば明朝で描きます。**エンジンは書体を判定しません**）。`serif` / `monospace`
+などの総称は「先頭で描いてよい」とは読めない具体的な要求で、shashoku には満たせたか判定できないので、
+それだけでは満たせていません（§7）。
+
 **警告が出ても PNG は作られ、終了コードは 0 です。** 自動配信するなら stderr も見てください。
 **`--strict` を付ければ警告も失敗**になり、PNG は作られません（既にあるファイルも上書きされません）。
 
@@ -899,7 +941,8 @@ warning[content-overflow]: content overflows the canvas by 430.0px (bottom) at 1
   **成立条件があるときは条件つきで**書かれます（「親が stretch の flex なら削る」「不等幅・またぎは
   代替なし」など）。代替が無いものには hint が付きません
 - **同じ規則に複数の要素が当たっても、同一位置・同一文面の診断は 1 件**です
-- 警告は 2 種類です。`missing-glyph`（豆腐）と `content-overflow`（**固定した紙面からのはみ出し**）。
+- 警告は 3 種類です。`missing-glyph`（豆腐）、`content-overflow`（**固定した紙面からのはみ出し**）、
+  `font-not-found`（**`font-family` の要求をどれも満たせなかった**）。
   `--height` を固定して中身が多いと、切れる量と辺つきで警告が出ます
 - **`--strict`** を付けると、警告 1 件以上で失敗になり **PNG は作られません**（既にあるファイルも
   上書きしません）。サーバーで「検出した問題のある画像は配らない」判断に使えます
@@ -912,8 +955,8 @@ warning[content-overflow]: content overflows the canvas by 430.0px (bottom) at 1
 ```json
 {"ok": false, "width": null, "height": null, "truncated": false,
  "errors": [{"kind": "unsupported-property",
-             "message": "`box-sizing` is not a supported property",
-             "hint": "content-box only: subtract padding and border from `width` / `height`",
+             "message": "`max-width` is not a supported property",
+             "hint": "no min/max sizes: use a fixed `width` / `height`, or drop it",
              "line": 2, "column": 11, "offset": 18, "warning": null}],
  "warnings": []}
 ```
@@ -992,8 +1035,15 @@ shashoku og-card.html -o og.png --width 1200 --height 630 --strict
 
 **埋め込みの既定フォントは Noto Sans JP の Regular と Bold だけです。**
 `font-family: serif` や `font-family: monospace` と書いても、**字面は 1px も変わりません**
-（総称ファミリと、渡していないフォントの名前は**エラーにならず黙って読み飛ばされます**）。
-明朝や等幅にするには、そのフォントファイルを `--font` で渡してください。
+（解釈できない総称と、渡していないフォントの名前は読み飛ばされます）。ただし黙ってはいません:
+並びのどれも満たせないと **`warning[font-not-found]` が出ます**。明朝や等幅にするには、そのフォント
+ファイルを `--font` で渡してください。
+
+`sans-serif` / `system-ui` / `ui-sans-serif` だけは警告が出ません。この 3 つは shashoku では
+**「渡したフォントの先頭で描いてよい」**という意味だからです。**明朝だけを `--font` で渡して
+`font-family: sans-serif` と書いた場合も、明朝で描かれて警告は出ません**（shashoku はフォントの
+書体を判定しません）。書体を確実に指定したいなら、総称ではなく**そのフォントが名乗っている
+family 名**を書いてください。
 
 - `font-family` が照合するのは、**フォントファイルが自分で名乗っている family 名**です
   （大文字小文字と前後の空白は無視されます）。`NotoSansJP-Regular.otf` なら `Noto Sans JP`、

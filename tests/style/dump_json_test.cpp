@@ -26,6 +26,7 @@ TEST(StyleDump, GoldenOutput) {
   "tag": "#root",
   "style": {
     "display": "block",
+    "box-sizing": "content-box",
     "width": "auto",
     "height": "auto",
     "margin": [
@@ -77,6 +78,7 @@ TEST(StyleDump, GoldenOutput) {
       "tag": "p",
       "style": {
         "display": "block",
+        "box-sizing": "content-box",
         "width": {
           "percent": 50
         },
@@ -128,6 +130,7 @@ TEST(StyleDump, GoldenOutput) {
           "text": "写植",
           "style": {
             "display": "inline",
+            "box-sizing": "content-box",
             "width": "auto",
             "height": "auto",
             "margin": [
@@ -186,6 +189,7 @@ TEST(StyleDump, GoldenOutput) {
       "attr-height": null,
       "style": {
         "display": "inline",
+        "box-sizing": "content-box",
         "width": "auto",
         "height": "auto",
         "margin": [

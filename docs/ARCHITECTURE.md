@@ -86,7 +86,8 @@ flex の固有寸法計測がその外側から同じ段落を何度も組み直
 flex コンテナの中では一切相殺しない。ブラウザとのピクセル一致は目標ではない（DESIGN.md §4）。
 
 **A11. 枠線と角丸は 4 辺・4 隅共通のみ。** `border-top` や隅ごとの半径は `UnsupportedProperty`。
-`box-sizing` は content-box のみ（プロパティ自体が対応外）。
+~~`box-sizing` は content-box のみ（プロパティ自体が対応外）。~~ → **A56 で上書き**
+（`box-sizing: border-box` に対応した。既定は content-box のまま）。
 
 **A12. 画像は名前で参照する。** `render()` に `ImageSet`（名前 → PNG バイト列）を渡し、
 `<img src="名前">` で引く。ネットワークにもファイルシステムにも触れない。対応形式は PNG のみ。
@@ -116,8 +117,9 @@ FontSet にない名前を飛ばすのは「黙って崩す」に当たらない
 
 **A18. `<img>` は交差軸の stretch で歪めない。** flex アイテムの `<img>` は `align-items: stretch` でも
 縦横比を保つ（CSS では歪むが、OG 画像でアイコンが潰れるのは誰も望まない）。主軸方向の grow / shrink は
-CSS どおりに効く。`box-sizing` は content-box のみ（A11）なので、1200×630 の箱に padding 80px を
-入れるなら `width: 1040px; height: 470px` と書く。
+CSS どおりに効く。（A56 より前は `box-sizing` が content-box のみだったので、1200×630 の箱に
+padding 80px を入れるには `width: 1040px; height: 470px` と書く必要があった。いまは
+`box-sizing: border-box` を書けば `width: 1200px; height: 630px` でよい。）
 
 **A19. `GlyphSource::rasterize()` は `Result<GlyphBitmap>` を返し、「成功して空のビットマップ」は
 空白グリフだけを意味する。** 値返しの契約では、不正な `FontId`・`FT_Load_Glyph` の失敗・輪郭を
@@ -1614,7 +1616,6 @@ definite ならその値」で、**`flex-basis` は含まれない**。
 - **残った不整合**: `docs/guide/writing-html-for-shashoku.md` §3-(3)「flex 項目の `span` は block 化されない」は
   この判断で失効する（ガイドは別の作業で直す）
 
-
 **A54. stretch で伸びた flex 項目は、行の交差サイズを definite として中身を組み直す
 （CSS Flexbox 1 §9.4 step 11）。**
 （2026-09-24）
@@ -1758,6 +1759,141 @@ row の flex で `align-items: stretch`（既定）のアイテムは、箱の�
   実文書の入れ子は数段なので、この対策で増える「計測 1 回」も、A54 の指数も、フォント読み込みと
   PNG エンコードに埋もれる。指数が効くのは深い入れ子だけだが、
   **深い入れ子を書くのは AI なので、上限は測って固定しておく**
+
+**A55. 診断の取りこぼしを 3 つ塞ぐ: inline の箱プロパティは全部、捨てる規則の宣言は構文の診断だけ、
+対応外タグのセレクタは決して一致しないので報告する。**（2026-09-24、A52 / A53 の次の回）
+
+A52 / A53 後の再測定（`docs/benchmark/results_a53_2026-09-24.md` §2 / §3）で、普段の AI の HTML を
+「診断が指した箇所だけ直す」と往復が増える原因が 3 つ分かった。いずれも A46 の「一度に全部」の取りこぼしで、
+**対応している指定が黙って効かない / 診断が次の往復まで隠れる**という信頼性の問題なので最優先で塞いだ。
+
+- **経緯（数字）**: (a) inline への箱プロパティが 1 つずつしか出ず、case04 は border → border-radius →
+  padding で 3 往復（case08 も同型）。(b) セレクタが読めない規則を丸ごと捨てるので、中の対応外プロパティは
+  セレクタを直した次の往復で初めて出る（case01 / 03 / 06 / 09）。(c) `<body>` を外すと `body { … }` が
+  誰にも当たらず、背景・余白・本文色が**黙って消える**（a_plain 10 件中 7 件に同型の HTML、case01 で実害）
+- **(a) 作者が書いた箱プロパティは全部覚えて全部報告する。** 数える単位は**作者が書いた宣言 1 つ**で、
+  ショートハンドを展開した longhand 列は先頭（`border` なら border-width、`padding: 2px 6px` なら
+  padding-top）だけを数える。`style` 属性の中では宣言の位置がすべて属性を指すので**位置では宣言を
+  区別できない**。そこで `Declaration` に `source_head`（展開列の先頭か）を足し、css パーサが印を付ける。
+  message の形・位置・hint は今までどおりで、並びは api の `Diagnostics::sort()`（位置順）に任せる。
+  A48 の重複除去（同じ (kind, location, message) は 1 回）はそのまま効くので、1 つの規則が複数の要素に
+  当たっても増えない。UA 由来は今までどおり数えない
+- **(b) セレクタを使えない規則の宣言は、「報告だけ」して捨てる。** 宣言ブロックの括弧が対応していて
+  安全に読めるなら、通常の宣言パーサに通して宣言レベルの診断（`unsupported-property` /
+  `unsupported-value` / 宣言単位の `css-parse`。hint も通常どおり）を出し、**結果はカスケードに入れない**。
+  適用しないので「その規則を適用した前提のレイアウト診断」（計算値の検査）は出ない ——
+  ここが A48 の「どの要素に当たるか決められないものは推測しない」との両立点で、**構文は要素を知らなくても
+  読めるが、計算値は要素を知らないと言えない**。ブロックが安全に読めないとき（閉じていない、
+  入れ子の `{`、未終了のコメント）は今までどおり規則ごと捨てる（推測して「著者が書いていない宣言」を
+  報告しない。A48）。セレクタの `css-parse` は今までどおり 1 件出す
+- **(c) 対応外のタグを名指しするタイプセレクタは `UnsupportedTag` で報告する。** ① html は対応外の要素を
+  透過するので、`body` `table` `ul` `li` `section` … を名指しした規則は**決して一致しない**。
+  これは「未使用の CSS」ではなく「shashoku に存在しないタグへの指定」なので黙らない。
+  **「正常な選択」と「黙った無視」の線引き**: クラス / ID / `*` が一致しないのは正常（報告しない。
+  未使用の CSS を毎回警告すると `--strict` が使えなくなる）、対応外タグの名指しは無視（報告する）。
+  種類は **`UnsupportedTag` を再利用**した（`ErrorKind` を増やさない。要素側の `<body>` と同じ識別子なので
+  AI が同じ往復で両方を直せる）。位置はセレクタ、カンマ区切りは**その部分だけ**落として残りは適用する
+  （`body, div { … }` は body の 1 件を報告して div には当てる）。宣言は (b) と同じく報告だけする。
+  hint は「外側の `div` にクラスを付けて移す or 規則を削る」で、**移して同じ絵になることを CLI で確かめた**
+  （背景・padding・本文色が外側の div で出る）
+- **対応タグの表は ① html と共有する**（`src/html/tags.hpp`）。写しを持つと食い違ったときに style が
+  誤報するので、`parser.cpp` の `kSupportedTags` / `is_supported_tag()` を**ヘッダのみ**の
+  `html/tags.hpp`（`constexpr` の配列と `constexpr` 関数だけ。リンクする実体は置かない）に移し、
+  style からも引く。style → html の依存は `dom.hpp` と同じ「ヘッダのみ」のままで、§2 の向きも変わらない
+  （テストは `SupportedTagSelectorsAreNotReported` が 15 タグを通す）
+- **確かめたこと**: `docs/benchmark/2026-09-23/inputs/a_plain/case01.html` は 1 回の実行で出る診断が
+  **61 → 71 件**（`unsupported-tag` +2 = `body` / `table` のセレクタ、`unsupported-property` +8 =
+  捨てていた規則の中の `border-right` / `vertical-align`）、case04 は **40 → 55 件**（タグのセレクタ +6、
+  宣言 +9）。消えた診断は 0 件。case04 の r1（`<code>` を `span` にした版）は **1 → 3 件**で、
+  前は 3 往復かかった border-width → border-radius → padding-top が 1 回で出る。
+  `examples/*.html` 5 本の PNG は main（2c7066c）の release バイナリの出力と**バイト一致**（絵は変えていない）
+
+**A56. `box-sizing: border-box` に対応する。A11 の「content-box のみ」を上書きする。**（2026-09-24）
+
+`width` / `height` / `flex-basis` が **border box の寸法**になる書き方に対応する。初期値は `content-box`
+（ブラウザと同じ）で、**継承しない**。既定のままの絵は 1 ビットも変わらない。
+
+- **経緯**: A52 / A53 後の再測定（`docs/benchmark/results_a53_2026-09-24.md`）で、**普段の AI の HTML は
+  10/10 が `* { box-sizing: border-box }` を書き**、hint に従った手の引き算が 26 か所に及んだ。
+  `*` セレクタはすでに対応しているので、`box-sizing` を足せばその 1 行がそのまま通る。
+  ガイドと利用者の手計算（§3-(1)、§4.6 / §4.7 / §4.9 / §4.14 の「552 = 600 − 24×2」のような計算）が
+  まとめて要らなくなる。A47 の関門「対象用途で成功率・修正の手間を改善するか」に Yes
+- **決めたこと**（CSS Box Sizing 3 §3）:
+  - 値は `content-box | border-box` の 2 つだけ。初期値 `content-box`、**継承しない**。
+    `inherit` / `initial` は既存の global keyword の経路をそのまま通る
+  - `border-box` のとき content = **max(指定値 − padding（その軸の 2 辺）− border×2, 0)**。
+    `%` の `width` は**先に解決してから**引く。引ききれないときは content が 0 で止まり、
+    箱は指定値より大きくなる（仕様どおり）
+  - **`flex-basis` も同じ扱い**（CSS Flexbox 1 §7.2.3: `flex-basis` は `width` / `height` と同じく
+    `box-sizing` の影響を受ける）。`auto` / 内容サイズはそのまま
+  - **`<img>` も同じ**。CSS の `width` / `height` と、`width` / `height` 属性
+    （presentational hint = 同じプロパティ）を区別しない
+  - **縦書きでも式は論理軸で同じ**。引く padding の辺は `LogicalMap` で読み替える
+    （`vertical-rl` の inline は上下、block は右左）。border は 4 辺共通のまま（A11）
+  - **`box-sizing` は「箱のプロパティ」に数えない**。数えると `* { box-sizing: border-box }` が
+    文中の `span` に当たって `unsupported-layout` になり、この 1 行が通らなくなる
+- **ヘルパの置き場所**: 引き算は `LayoutEngine::border_box_extra()` と
+  `LayoutEngine::content_from_specified()`（`src/layout/engine.cpp`）の **2 つだけ**に置く。
+  block（`resolve_box()`）・flex（`item_intrinsic()` / `prepare_cross_row|column()` /
+  `prepare_base_row|column()`）・固有寸法（`outer_intrinsic()`）・`<img>`（`resolve_image()`）が
+  すべてここを通る。軸は `SizeAxis{Inline, Block}`（**論理**）で、物理の `width` / `height` から
+  引く `<img>` だけが writing-mode で読み替える
+- **確かめたこと**: `dev` / `asan` とも全件通り、**ゴールデン画像は 1 枚も変わらない**。
+  `examples/*.html` 5 本と `docs/guide/examples/*.html` 14 本を修正前のバイナリ（`build/release`）と
+  描き比べて **19 本すべてバイト単位で一致**（既定が content-box のままなので）。
+  `* { box-sizing: border-box }` を足した入力で `width: 200px; padding: 20px; border: 2px` の箱は
+  `--dump-stage box` で border box 200 / 行の content 156（開始 22）。
+  `docs/benchmark/2026-09-23/inputs/a_plain/case03.html` は修正前に `box-sizing` の
+  `unsupported-property` が出ていたが、修正後は出ない（診断の行が 29 → 27）。
+  **`border-box` で外寸をそのまま書いた紙面と、引き算を手でやった `content-box` の紙面の PNG が
+  バイト一致する**ことを統合テストで固定した（`tests/integration/box_sizing_test.cpp`）
+- **A11 の訂正**: A11 の「`box-sizing` は content-box のみ（プロパティ自体が対応外）」はこの判断で失効する。
+  A11 のうち「枠線と角丸は 4 辺・4 隅共通のみ」は今までどおり
+
+**A57. `font-family` の要求をどのフォントでも満たせなかったら警告する（`FontNotFound`）。
+線引きは「要求を満たせたか」で、クラスが当たらないような「正常な選択」は警告しない。**
+（2026-09-24、ユーザーの決定。契約はオーケストレーターが先に書いた。実装は別作業）
+
+- **経緯**: 再測定（`docs/benchmark/results_a53_2026-09-24.md` §3）で、普段の AI の HTML 10 件中 4 件が明朝を
+  指定していたのに、黙ってゴシック（既定の Noto Sans JP）で描かれた。豆腐は警告するのに、フォント名の取りこぼしは
+  無言だった。ユーザー: 「黙って fallback は原則（fail loudly）に反する。新しい警告 + strict で失敗、が妥当」
+- **線引き**: 警告するのは「要求を満たせなかった」ときだけ。満たせた = `font-family` の並びのどれかが読み込んだ
+  フォントの family 名に一致した、または並びに `sans-serif` / `system-ui` / `ui-sans-serif` があった。
+  `serif` / `monospace` などの他の総称は shashoku が解釈できない（読み飛ばす。A15）ので、それしか無ければ
+  満たせていない。**総称だけの並びを一律に免除しない**（それは黙った fallback の温存になる）。
+  `sans-serif` だけは「満たしている」から警告しないのであって、例外ではない
+- **`sans-serif` / `system-ui` / `ui-sans-serif` を満たす理由（shashoku 固有の解釈）**: この 3 つは
+  **「読み込んだフォントの先頭（フォールバック列の先頭）で描いてよい」という意味**に読む。だから
+  `--font` で明朝だけを渡していても警告は出ず、**明朝で描く**。「既定フォントがサンセリフだから」ではない
+  （その理由は `--font` を渡した場合に成り立たない）。**エンジンはフォントの書体を判定しない**:
+  OS/2 の分類も panose も読まず、`serif` / `sans-serif` の別をフォントから推測しない（A15 の延長。
+  推測は環境依存の分岐を持ち込むので、決定性と「fail loudly」のどちらにも合わない）。
+  `serif` / `monospace` などを同じようには扱えないのは、「先頭で描いてよい」とは読めないから
+  （明朝・等幅という**具体的な要求**であり、満たしたかどうかを shashoku は判定できない）
+- **草案からの仕様変更（記録として残す）**: 最初の草案（オーケストレーター）は「総称だけの並び
+  （`serif` だけ、`monospace` だけ）は、AI が書きがちな定型で実害も薄いので警告しない」だった。
+  ユーザーの指摘「黙って fallback は原則（fail loudly）に反する」で線引きを**「要求を満たせたか」**に変え、
+  総称だけでも満たせなければ警告するようにした。これは実装の細部ではなく **`--strict` で成功する入力が変わる
+  仕様変更**である: `font-family: serif` だけを書いた入力は、草案では `--strict` で通り、いまは
+  `warning[font-not-found]` が 1 件出て**落ちる**。`sans-serif` / `system-ui` / `ui-sans-serif` だけの入力は
+  どちらでも通る（上の解釈で満たしているため）
+- **種類**: 公開ヘッダに `WarningKind::FontNotFound`（`font-not-found`）を足す。警告（描画は続く）。
+  `--strict` / `warnings_as_errors` で失敗にできる。明朝 → ゴシックは「読める」壊れ方なのでエラーにしない
+- **位置と件数**: 並びごとに 1 件。位置は、その並びを使うテキストノードのうち入力順で最初のものの先頭
+  （豆腐と同じ流儀。宣言の位置は ② が持っていないので、AI は文面の family 名で宣言を探す）
+- **段**: ④ が `ShapedText::family_request_unmet` で事実を返し（溜めない）、③ が `BoxTree::font_fallbacks` に
+  並びごとに溜め（重複除去・順序）、api が `Warning` に写す（A31 / A43 と同じ経路）。layout のテストは
+  偽の TextMeasurer でフラグを立てて確かめる
+- **文面**: `no requested font family is loaded (\`A\`, \`B\`); text uses \`Noto Sans JP\` instead at L:C`。
+  直し方は文面に含める（`--font` でそのフォントを渡す、または `font-family` を外す）
+- **確かめたこと（2026-09-24、release の CLI で実測）**: `c_fix` の case03 / 05 / 07 / 10 で
+  `warning[font-not-found]` が **1 件ずつ**出た（どれも `Noto Serif JP` / `Hiragino Mincho ProN` /
+  `Yu Mincho` …）。**case04 でも 1 件出た**（`JetBrains Mono`, `Consolas`, `monospace` のコード欄。
+  規則どおりで、明朝 4 件に加えて取りこぼしがもう 1 件あったということ）。`sans-serif` だけ・
+  `system-ui` だけ・未指定では出ない。guided 15 件（日本語 10 + 英語 5。記録どおりの `cli_args` に
+  `--strict`）は**全件 exit 0 で警告 0 件**（ガイドどおり `font-family` を書いていない）。
+  `examples/*.html` 5 本は修正前後の CLI で **PNG がバイト単位で同一**、ゴールデン 16 枚は
+  dev / asan の全テスト（各 1294 件）が通った = 1 ピクセルも変わっていない
 
 ---
 
@@ -1982,6 +2118,12 @@ class FreeTypeGlyphSource final : public raster::GlyphSource { /* FontStore を�
   描けないので次のフォントに送る（`FontStore::has_drawable_glyph()`。A43）。
   同じフォントが続く区間をまとめて HarfBuzz に渡す。結合文字・異体字セレクタ・ZWJ は直前の
   文字と同じ run に入れる（別フォントに割らない）
+- **フォントの要求を満たせたか**（A57）: `ShapedText::family_request_unmet` で返す。満たせた = `font-family` の
+  並びのどれかが FontStore の family 名に一致した、または並びに `sans-serif` / `system-ui` / `ui-sans-serif` が
+  あった（この 3 つは**「読み込んだフォントの先頭で描いてよい」という意味**に読む。`--font` で明朝だけを
+  渡していても警告せず明朝で描く。**書体の判定はしない**: OS/2 の分類も panose も読まない）。空の並びは
+  満たしている。`serif` / `monospace` などの他の総称は解釈できず読み飛ばす（A15）ので、具体名の一致も
+  無ければ「満たせなかった」。**Shaper は溜めない**（警告を組み立てるのは ③。豆腐と同じ）
 - 豆腐: どのフォントでも描けないコードポイントは `ShapedCluster::missing` と
   `missing_reason`（`NotInAnyFont` / `ColorOnly`。文面のためだけの値。A43）で返し（**Shaper は
   溜めない**。警告を組み立てるのは ③ レイアウト。A31）、`□`（U+25A1）を
@@ -2037,7 +2179,8 @@ std::string dump_json(const Node& root);
 - 入力は断片（`<html>` / `<body>` なしで `<div>…` から始まる）。トップレベルに複数ノード可
 - 対応タグ: `div span p h1-h6 img ruby rt rp br style`。それ以外は `UnsupportedTag`
   （`html head body script …` も含めてエラー。集めて続行し、要素は透過にする。下記）。
-  コメントと `<!DOCTYPE>` は読み飛ばす
+  コメントと `<!DOCTYPE>` は読み飛ばす。表は `src/html/tags.hpp`（ヘッダのみ）に置き、
+  ② style も引く（対応外のタグを名指しするセレクタの検査。A55）
 - 対応属性: 共通 `style class id`、`img` は加えて `src width height alt`。それ以外は
   `UnsupportedAttribute`。属性の重複は `HtmlParse`（**残す属性だけ**。A49）。引用符は `"` `'` なし の 3 形式
 - 空要素 `br img` は閉じタグなし（`<br/>` も可）。それ以外の要素の閉じ忘れ・対応しない終了タグ・
@@ -2094,6 +2237,10 @@ std::string dump_json(const StyledNode& root);
 - UA スタイル: `div p h1-h6` は block。`h1`〜`h6` は font-size `2 / 1.5 / 1.17 / 1 / 0.83 / 0.67 em`・
   bold・上下 margin（ブラウザの既定値）。`p` は上下 margin 1em。`rt` は font-size 50%。
   `rp` と `style` は display: none
+- **`box-sizing`**（`content-box | border-box`。初期値 `content-box`、**継承しない**。A56）。
+  計算値は値をそのまま持ち、**引き算は ③ layout が行う**（`%` の解決に包含ブロックが要るため）。
+  `box-sizing` は `display: inline` への検査でいう「箱のプロパティ」には**数えない**:
+  数えると `* { box-sizing: border-box }` が文中の `span` に当たって `unsupported-layout` になる
 - 対応プロパティは DESIGN.md §4 の一覧 + 次のショートハンド / 別名:
   `margin` `padding`（1〜4 値）、`border`（`<幅> solid <色>` / `none`）、`border-width`
   `border-style`（solid / none）`border-color`、`flex`（`none` / `auto` / 1〜3 値）、
@@ -2102,8 +2249,9 @@ std::string dump_json(const StyledNode& root);
   カスケード・継承・計算値・ダンプの名前はすべて `overflow-wrap` と同じ。A35）。
   一覧にないプロパティは `UnsupportedProperty`、値が対応外なら `UnsupportedValue`
   （別名に対応外の値を書いたときの文面は**著者の綴り**のまま。`` `word-wrap: foo` is not supported … ``）
-- **集めて続行するもの（A46 / A48）**: `CssParse`（宣言の単位で読み飛ばす。セレクタが読めなければ規則の単位）、
-  `UnsupportedProperty` / `UnsupportedValue`（その宣言を捨てる）、`img` の `src` の欠落と
+- **集めて続行するもの（A46 / A48 / A55）**: `CssParse`（宣言の単位で読み飛ばす。セレクタが読めなければ規則の単位）、
+  `UnsupportedProperty` / `UnsupportedValue`（その宣言を捨てる）、`UnsupportedTag`（対応外のタグを
+  名指しするセレクタ。A55）、`img` の `src` の欠落と
   `width` / `height` 属性の不正、計算値の検査で分かる `UnsupportedLayout`（inline への箱プロパティ、
   `writing-mode` の途中変更・トップレベルの食い違い）は `diagnostics.add_error()` に足して続行する。
   返る木は errors が 1 件でもあれば描画されない（判定は api の `Diagnostics::has_errors()`）。
@@ -2112,6 +2260,20 @@ std::string dump_json(const StyledNode& root);
     **後ろの宣言は効かせる**。セレクタが読めなければ規則の単位（`{…}` を対応づけて丸ごと、`;` で終わる
     `@import` はそこまで）。未終了のコメントだけは読み飛ばし先が決められないので、記録して残りを捨てる。
     捨てた宣言は「**書かれなかった**」扱いで、途中まで展開された longhand も残さない
+  - **捨てる規則の宣言も、構文の診断だけは出す**（**A55 で A48 の「規則ごと捨てる」を改めた**）。
+    セレクタが読めない規則と、対応外のタグしか名指ししていない規則は、**宣言ブロックの括弧が対応していて
+    安全に読めるなら**通常の宣言パーサに通し、宣言レベルの診断（`UnsupportedProperty` /
+    `UnsupportedValue` / 宣言単位の `CssParse`。hint も通常どおり）を出す。**適用はしない**
+    （カスケードに入れないので、その規則を適用した前提の計算値の検査は出ない）。
+    安全に読めないとき（閉じていない `{`、入れ子の `{`、未終了のコメント）は今までどおり規則ごと捨てる。
+    位置順・`max_diagnostics` の扱いは他の診断と同じ
+  - **対応外のタグを名指しするタイプセレクタは `UnsupportedTag`**（A55）。① は対応外の要素を透過するので、
+    `body` `table` `ul` `li` `section` … を名指しした規則は**決して一致しない**。位置はセレクタ、
+    1 セレクタにつき 1 件（要素ごとには増えない）。カンマ区切りは**その部分だけ**落として残りは適用する。
+    hint は「外側の `div` にクラスを付けて移す or 規則を削る」。**一致しないクラス / ID / `*` は
+    「正常な選択の結果」なので報告しない**（未使用の CSS を毎回警告すると `--strict` が使えなくなる）。
+    対応タグの表は ① と共有する（`src/html/tags.hpp`。ヘッダのみの依存で `dom.hpp` と同じ扱い。
+    写しを持たないので食い違わない）
   - **順序**: 診断は「足した順」（`<style>` の規則 → トップレベルの `writing-mode` の食い違い → 木を
     前順に辿った各要素の `style` 属性と計算値の検査）。入力位置での整列は api が `Diagnostics::sort()` で行う
   - **二重に出さない**: 文書の `writing-mode` を決める先読み（`document_writing_mode`）は同じ要素を
@@ -2165,7 +2327,12 @@ std::string dump_json(const StyledNode& root);
   無名アイテムの中へ inline のまま入れる）、`br`（強制改行）。`display: none` は none のまま
 - `display: inline` の要素への `width height margin padding border` 指定は `UnsupportedLayout`
   （`img` を除く）。A53 のあと、ここに来るのは**文中の inline 要素**（と flex の子の `ruby` / `br`）だけで、
-  flex の子の `span` は block 化されて通る。`writing-mode` の途中変更も `UnsupportedLayout`（A1）
+  flex の子の `span` は block 化されて通る。`writing-mode` の途中変更も `UnsupportedLayout`（A1）。
+  **作者が書いた箱の宣言は全部報告する**（A55。1 宣言 = 1 件で、ショートハンドは展開列の先頭の名前で
+  1 件。`<span style="border: …; border-radius: …; padding: …; margin: …">` なら border-width /
+  border-radius / padding-top / margin-top の 4 件が 1 回で出る）。数える単位が「作者が書いた宣言」なのは
+  `style` 属性の中では位置がすべて属性を指すからで、`Declaration::source_head`（展開列の先頭か）で数える。
+  UA 由来は数えない
 - `<style>` から読んだ規則が `max_style_rules` を超えたら `LimitExceeded`（位置つき）。
   セレクタの照合は「規則数 x 要素数」なので、規則の数そのものに上限が要る（A25）
 - **出力の不変条件（A36）**: 返る木の `ComputedStyle` に入っている長さは、`font-size` を除いて
@@ -2204,6 +2371,11 @@ std::string dump_json(const BoxTree&);
   （`text::MissingReason`。A43））を持つ。**絵には影響しない**
   （paint は読まない）が、api が `Warning` にし、`dump_json()` が出す。
   理由は報告順にも重複除去にも効かない（順序は今までどおり位置 → コードポイント）
+- **フォントの要求を満たせなかった記録（`BoxTree::font_fallbacks`。A57）**: `struct FontFallback {
+  std::vector<std::string> families; SourceLocation location; }`。④ の `ShapedText::family_request_unmet` が
+  true だったテキストの `font-family` の並びを、**並びごとに 1 件**（同じ並びなら入力順で最初のテキストノードの
+  先頭の位置を採る）溜める。同じ段落が何度も組まれても重複しない（豆腐と同じ。キーは並び）。並びは位置の昇順。
+  絵には影響しない。`dump_json()` が出し、api が `Warning`（`FontNotFound`）にする
 - **紙面からのはみ出しの記録（`BoxTree::overflows`。A46）**: `struct ContentOverflow { SourceLocation location;
   float overflow_px; OverflowEdge edge; }` の列（`edge` は実装時に足した。下の細目）。layout の出口で箱を走査し、**箱の border box が出力の矩形の外に 0.5 px を超えて
   出ている**ものを見つける。出力の矩形は幅 `viewport_width`、高さは `viewport_height`（固定のときだけ。省略
@@ -2238,6 +2410,19 @@ std::string dump_json(const BoxTree&);
 - **block**: 幅は親から降り、高さは子から戻る。`width: auto` は利用可能幅いっぱい。
   `margin: 0 auto` の中央寄せ。兄弟間のマージン相殺（A10）。子が inline と block の混在なら
   inline の連続を無名ブロックで包む
+- **`box-sizing`（A56。CSS Box Sizing 3 §3）**: `border-box` のとき `width` / `height` /
+  `flex-basis` は **border box** の寸法なので、content = `max(指定値 − padding（その軸の 2 辺）
+  − border×2, 0)`。`%` は**先に解決してから**引く。引ききれなければ content は 0 で、箱は
+  指定値より大きくなる。**引き算は `LayoutEngine::border_box_extra()` と
+  `LayoutEngine::content_from_specified()` の 2 つだけに置き**、block（`resolve_box()`）・
+  flex（`item_intrinsic()` / `prepare_cross_row|column()` / `prepare_base_row|column()`）・
+  固有寸法（`outer_intrinsic()`）・`<img>`（`resolve_image()`）がすべてここを通る。
+  軸は `SizeAxis{Inline, Block}`（**論理**）で、縦書きでも同じ式になる。物理の `width` /
+  `height` から引く `<img>` だけが writing-mode で軸を読み替える。
+  `<img>` は CSS の `width` / `height` と `width` / `height` **属性**を区別しない
+  （presentational hint = 同じプロパティ）。**flex アイテムの stretch と `flex-grow` /
+  `flex-shrink` の結果は content サイズとして扱う**ので `box-sizing` の影響を受けない
+  （指定された寸法にだけ効く）
 - **inline**: インライン整形文脈ごとに、(a) 空白の畳み込み（A14。文字を 1 つも持たない
   インラインボックスは「文字のない支柱」として位置つきで別に記録する。A42）
   → (b) **シェーピング属性**が
@@ -2386,6 +2571,11 @@ HarfBuzz / `src/` の型は名前も出さない（`tests/api/public_header_chec
 どちらも `MissingGlyph`。
 api は並べ替えない（順序を決めるのは ③ の仕事）。CLI は `warning[missing-glyph]: <detail>` を
 stderr に出す。
+**フォントの要求を満たせなかった警告（A57）**: `BoxTree::font_fallbacks` を `WarningKind::FontNotFound`
+（識別子 `font-not-found`）に写す。`detail` は
+`no requested font family is loaded (\`Hiragino Mincho ProN\`, \`serif\`); text uses \`Noto Sans JP\` instead`
+（実際に描いたフォールバック列の先頭の family 名）+ ` at L:C`。`codepoint` は 0、`overflow_px` は 0、`edge` は null。
+警告なので描画は続き、`warnings_as_errors` で失敗にできる（豆腐と同じ）。CLI は `warning[font-not-found]: <detail>`。
 
 **診断の組み立て（A46）**: api は `Diagnostics diag{opts.limits.max_diagnostics}` を作り、`html::parse` と
 `style::resolve` に渡す。**②の出口のゲートは 1 か所**（`check_computed_limits` のあと）で、`diag.has_errors()` なら
@@ -2394,7 +2584,8 @@ layout に進まず `RenderFailure`（`std::move(diag).into_failure()`。整列�
 （`to_failure(diag, error)`。`LimitExceeded` などもこの経路なので、集めた対応外と一緒に出る）。
 ③ 以降の失敗は今までどおり 1 件で、`RenderFailure{errors = {その 1 件}} + 集まっていた警告`。
 
-警告は ③ が成功した直後に `BoxTree::missing_glyphs`（A31）と `BoxTree::overflows`（A46 / A50）から作り、
+警告は ③ が成功した直後に `BoxTree::missing_glyphs`（A31）・`BoxTree::overflows`（A46 / A50）・
+`BoxTree::font_fallbacks`（A57）から作り、
 `diag.add_warning()` に通してから（= 上限が掛かる）(offset, kind, codepoint, detail) で安定に整列する
 （豆腐だけの列では A31 の順序と同じ）。一度上限に達したらその段の残りは作らない。ここで診断に入れておくので、
 ④以降で失敗したときも `RenderFailure::warnings` に載る。`ContentOverflow` の `detail` は

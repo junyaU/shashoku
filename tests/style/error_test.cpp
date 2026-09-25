@@ -172,6 +172,7 @@ TEST(StyleError, UnsupportedPropertyMessageNamesTheProperty) {
 // `kPropertyHints`（src/style/value_parser.cpp）に載っている名前。
 // ここが実質的な表の写しなので、表を増やしたらこの配列も増やす。
 constexpr auto kHintedProperties = std::to_array<std::string_view>({
+    "align-self",
     "background-clip",
     "background-image",
     "flex-wrap",
@@ -194,6 +195,7 @@ constexpr auto kHintedProperties = std::to_array<std::string_view>({
     "min-width",
     "position",
     "text-combine-upright",
+    "transform",
     // 片側だけの border は接頭辞の一致で 1 つの規則になっている（A53 の hint (a)）
     "border-top",
     "border-right",
@@ -270,7 +272,8 @@ TEST(StyleError, VendorPrefixesHintToDropThePrefix) {
 
 // 外しても対応外なら「接頭辞を外せ」とは言わない（間違った助言をしない）。
 TEST(StyleError, VendorPrefixesOnUnsupportedNamesGetNoPrefixHint) {
-  for (const std::string_view css : {"-webkit-line-clamp: 2", "-o-transform: rotate(3deg)"}) {
+  // A55 の追記で `transform` が表に入ったので、例は「外しても表に無い名前」に替えた
+  for (const std::string_view css : {"-webkit-line-clamp: 2", "-o-appearance: none"}) {
     SCOPED_TRACE(css);
     const Outcome outcome = collect_inline(css);
     ASSERT_EQ(outcome.errors.size(), 1U);
@@ -329,8 +332,69 @@ TEST(StyleError, PerSideBorderPropertiesHintAtTheOnePixelDivider) {
     EXPECT_EQ(error.kind, ErrorKind::UnsupportedProperty);
     EXPECT_NE(error.hint.find("height: 1px"), std::string::npos) << error.hint;
     EXPECT_NE(error.hint.find("guide §4.3"), std::string::npos) << error.hint;
+    // 罫の div を足すと flex アイテムが 1 つ増えるので、`space-between` の親では
+    // 配置が変わる（A55 の追記。再測定の case06 で実際に崩れた）。その条件も書く
+    EXPECT_NE(error.hint.find("space-between"), std::string::npos) << error.hint;
     // 等価でない側は断定しない
     EXPECT_NE(error.hint.find("no equivalent"), std::string::npos) << error.hint;
+  }
+}
+
+// (A55 の追記) `align-self`。**交差軸の `auto` margin は親の指定に関係なく効く**が、
+// 入れ子の flex で揃える手は「親が既定の stretch」が条件なので、条件つきで書く（A53 の規則）。
+TEST(StyleError, AlignSelfHintNamesTheAutoMarginAndTheStretchCondition) {
+  for (const std::string_view css : {"align-self: center", "align-self: flex-end"}) {
+    SCOPED_TRACE(css);
+    const Outcome outcome = collect_inline(css);
+    ASSERT_EQ(outcome.errors.size(), 1U);
+    const RenderError& error = outcome.errors.front();
+    EXPECT_EQ(error.kind, ErrorKind::UnsupportedProperty);
+    EXPECT_NE(error.hint.find("margin-top: auto"), std::string::npos) << error.hint;
+    EXPECT_NE(error.hint.find("align-items: stretch"), std::string::npos) << error.hint;
+    EXPECT_NE(error.hint.find("guide §4.6"), std::string::npos) << error.hint;
+  }
+}
+
+// (A55 の追記) `transform`。回転そのものは無いので「回さずに描く」と言い、矢印・三角は
+// 既定フォントに入っている文字で描けることを示す（guide §2.4 で確かめた一覧）。
+TEST(StyleError, TransformHintOffersAnUnrotatedShape) {
+  for (const std::string_view css : {"transform: rotate(45deg)", "-webkit-transform: scale(2)"}) {
+    SCOPED_TRACE(css);
+    const Outcome outcome = collect_inline(css);
+    ASSERT_EQ(outcome.errors.size(), 1U);
+    const RenderError& error = outcome.errors.front();
+    EXPECT_EQ(error.kind, ErrorKind::UnsupportedProperty);
+    EXPECT_NE(error.hint.find("unrotated"), std::string::npos) << error.hint;
+    EXPECT_NE(error.hint.find("guide §2.4"), std::string::npos) << error.hint;
+  }
+}
+
+// (A55 の追記) 角ごとの `border-radius`（`12px 12px 0 0`）は値レベルの hint。
+// 先頭の値を残すと**残りの角も丸くなる**ので、見た目が変わることも書く（A48 の追記）。
+TEST(StyleError, PerCornerBorderRadiusCarriesAValueLevelHint) {
+  for (const std::string_view css :
+       {"border-radius: 12px 12px 0 0", "border-radius: 8px 4px", "border-radius: 1em 2em 3em"}) {
+    SCOPED_TRACE(css);
+    const Outcome outcome = collect_inline(css, kStyleAttribute);
+    ASSERT_EQ(outcome.errors.size(), 1U);
+    const RenderError& error = outcome.errors.front();
+    EXPECT_EQ(error.kind, ErrorKind::UnsupportedValue) << error.message;
+    EXPECT_EQ(error.location.value_or(SourceLocation{}), kStyleAttribute);
+    EXPECT_NE(error.hint.find("keep the first value"), std::string::npos) << error.hint;
+    // 見た目が変わることを書く（A53）
+    EXPECT_NE(error.hint.find("other corners"), std::string::npos) << error.hint;
+  }
+}
+
+// 角の列でない `border-radius` の誤りには付けない（「最初の値を残せ」では直らない）。
+TEST(StyleError, OtherBorderRadiusValuesGetNoHint) {
+  for (const std::string_view css :
+       {"border-radius: 50%", "border-radius: 8px / 4px", "border-radius: red"}) {
+    SCOPED_TRACE(css);
+    const Outcome outcome = collect_inline(css);
+    ASSERT_EQ(outcome.errors.size(), 1U);
+    EXPECT_EQ(outcome.errors.front().kind, ErrorKind::UnsupportedValue);
+    EXPECT_TRUE(outcome.errors.front().hint.empty()) << outcome.errors.front().hint;
   }
 }
 

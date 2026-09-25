@@ -126,6 +126,10 @@ TEST(LayoutLineBreak, ParentHeightFollowsTheLineCount) {
 }
 
 // ---- 行末の全角スペース（U+3000）のぶら下げ（A59） --------------------------------
+// 規則そのものは**行分割器の tailoring**（U+3000 の分割クラスを BA → SP。出典と表は
+// `tests/linebreak/break_class_test.cpp` と `break_lines_test.cpp`）。ここで見るのは
+// 「その判断がボックスツリーの座標に正しく載るか」= レイアウト越しの統合の検証:
+// 行の内容・グリフの位置・行数・両端揃えの配分・内容幅（max-content）。
 // 出典: CSS Text 3 §4.1.3 Phase II の 4「行末に残った空白・その他の space separator
 // （Unicode の Zs から U+0020 と U+00A0 を除いたもの。U+3000 はここに入る）は、
 // white-space が normal / nowrap ならぶら下がる（= 行の幅に数えない）」。
@@ -144,9 +148,9 @@ std::string with_space(std::string_view before, std::string_view after, int coun
   return out;
 }
 
-// 行末に来た全角スペースは幅に数えない。数えると「あいうえお」と全角スペースが
-// 離せない（LB21 × BA）ぶん、1 文字手前の「お」まで次の行へ送られてしまう
-// （再測定 2026-09-25 の case10「立ちつくし」の「し」が孤立した原因）。
+// 行末に来た全角スペースは幅に数えない。数えると、全角スペースは直前の文字から離せない
+// （tailoring 前は LB21 × BA、いまは LB7 × SP）ぶん、1 文字手前の「お」まで次の行へ
+// 送られてしまう（再測定 2026-09-25 の case10「立ちつくし」の「し」が孤立した原因）。
 TEST(LayoutLineBreak, IdeographicSpaceAtLineEndDoesNotCountTowardTheWidth) {
   FakeMeasurer measurer;
   // 幅 84px = 全角 5.25 文字。「あいうえお」（80px）＋ 行末の全角スペースで収まる
@@ -222,9 +226,9 @@ TEST(LayoutLineBreak, IdeographicSpaceHangsInVerticalWritingToo) {
   EXPECT_EQ(glyph_positions(*lines[0]), (std::vector<float>{0, 16, 32, 48, 64}));
 }
 
-// 副作用を仕様として固定する（A59）: 全角スペースを行分割器に SP として渡すので、
-// UAX #14 の空白越しの規則も効くようになる。LB14「OP SP* ×」で、始め括弧 + 全角スペースの
-// 後ろでは割らない = 始め括弧が行末に残らない（JLREQ の行末禁則に合う）。
+// tailoring のもう 1 つの効果をレイアウト越しにも見る（A59）: U+3000 が SP になったので
+// UAX #14 の空白越しの規則が効く。LB14「OP SP* ×」で、始め括弧 + 全角スペースの後ろでは
+// 割らない = 始め括弧が行末に残らない（JIS X 4051 の行末禁則）。
 // 以前は「あいうえ（」で行が終わっていた。
 TEST(LayoutLineBreak, OpeningBracketBeforeAnIdeographicSpaceDoesNotEndALine) {
   FakeMeasurer measurer;

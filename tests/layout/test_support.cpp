@@ -68,6 +68,7 @@ style::ComputedStyle inherit(const style::ComputedStyle& parent) {
   out.text_align = parent.text_align;
   out.line_break = parent.line_break;
   out.overflow_wrap = parent.overflow_wrap;
+  out.white_space = parent.white_space;
   out.writing_mode = parent.writing_mode;
   return out;
 }

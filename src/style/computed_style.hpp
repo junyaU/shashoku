@@ -63,6 +63,9 @@ enum class TextAlign : std::uint8_t { Start, End, Left, Right, Center, Justify }
 // Auto は「エンジンの既定に従う」（③ の layout::Options::line_break.strictness を使う）
 enum class LineBreak : std::uint8_t { Auto, Loose, Normal, Strict };
 enum class OverflowWrap : std::uint8_t { Normal, Anywhere, BreakWord };
+// CSS Text 3 §5.1（A58）。`pre` 系は未対応（② が UnsupportedValue にする）。
+// `Nowrap` は「空白は normal と同じに畳むが、ソフトな分割機会を作らない」。
+enum class WhiteSpace : std::uint8_t { Normal, Nowrap };
 enum class WritingMode : std::uint8_t { HorizontalTb, VerticalRl };
 
 struct LineHeight {
@@ -110,6 +113,7 @@ struct ComputedStyle {
   TextAlign text_align = TextAlign::Start;
   LineBreak line_break = LineBreak::Auto;
   OverflowWrap overflow_wrap = OverflowWrap::Normal;
+  WhiteSpace white_space = WhiteSpace::Normal;
   WritingMode writing_mode = WritingMode::HorizontalTb;
 
   bool operator==(const ComputedStyle&) const = default;

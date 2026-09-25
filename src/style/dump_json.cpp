@@ -105,6 +105,7 @@ void write_text_style(JsonWriter& writer, const ComputedStyle& style) {
   writer.key("text-align").value(to_css(style.text_align));
   writer.key("line-break").value(to_css(style.line_break));
   writer.key("overflow-wrap").value(to_css(style.overflow_wrap));
+  writer.key("white-space").value(to_css(style.white_space));
   writer.key("writing-mode").value(to_css(style.writing_mode));
 }
 

@@ -1,4 +1,5 @@
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -122,6 +123,147 @@ TEST(LayoutLineBreak, ParentHeightFollowsTheLineCount) {
   ASSERT_TRUE(pushed.has_value());
   EXPECT_FLOAT_EQ(hanging->root.rect.block_size, fake_line_height(16) + 8);
   EXPECT_FLOAT_EQ(pushed->root.rect.block_size, 2 * fake_line_height(16) + 8);
+}
+
+// ---- 行末の全角スペース（U+3000）のぶら下げ（A59） --------------------------------
+// 規則そのものは**行分割器の tailoring**（U+3000 の分割クラスを BA → SP。出典と表は
+// `tests/linebreak/break_class_test.cpp` と `break_lines_test.cpp`）。ここで見るのは
+// 「その判断がボックスツリーの座標に正しく載るか」= レイアウト越しの統合の検証:
+// 行の内容・グリフの位置・行数・両端揃えの配分・内容幅（max-content）。
+// 出典: CSS Text 3 §4.1.3 Phase II の 4「行末に残った空白・その他の space separator
+// （Unicode の Zs から U+0020 と U+00A0 を除いたもの。U+3000 はここに入る）は、
+// white-space が normal / nowrap ならぶら下がる（= 行の幅に数えない）」。
+// 行の途中では今までどおり全角 1 字分の送りとして効く。
+
+// 全角スペース U+3000（UTF-8）。ソースでは半角スペースと見分けが付かないので、
+// 文字を直接書かず、必ずこの定数から組み立てる。
+constexpr std::string_view kIdeographicSpace = "\xE3\x80\x80";
+
+std::string with_space(std::string_view before, std::string_view after, int count = 1) {
+  std::string out(before);
+  for (int i = 0; i < count; ++i) {
+    out += kIdeographicSpace;
+  }
+  out += after;
+  return out;
+}
+
+// 行末に来た全角スペースは幅に数えない。数えると、全角スペースは直前の文字から離せない
+// （tailoring 前は LB21 × BA、いまは LB7 × SP）ぶん、1 文字手前の「お」まで次の行へ
+// 送られてしまう（再測定 2026-09-25 の case10「立ちつくし」の「し」が孤立した原因）。
+TEST(LayoutLineBreak, IdeographicSpaceAtLineEndDoesNotCountTowardTheWidth) {
+  FakeMeasurer measurer;
+  // 幅 84px = 全角 5.25 文字。「あいうえお」（80px）＋ 行末の全角スペースで収まる
+  const Flowed flowed = flow(measurer, with_space("あいうえお", "かきくけこ"), 84,
+                             linebreak::OverflowPolicy::Oidashi);
+  EXPECT_EQ(flowed.lines, (std::vector<std::string>{"あいうえお", "かきくけこ"}));
+  // ぶら下げた全角スペースは描かない（行末の半角スペースと同じ扱い）
+  EXPECT_EQ(flowed.first_line_glyphs, (std::vector<float>{0, 16, 32, 48, 64}));
+  EXPECT_EQ(flowed.last_line_glyphs, (std::vector<float>{0, 16, 32, 48, 64}));
+  EXPECT_FLOAT_EQ(flowed.block_size, 2 * fake_line_height(16));
+}
+
+// 連続していても同じ（CSS Text 3 は「行末に残った並び」全体をぶら下げる）。
+TEST(LayoutLineBreak, ConsecutiveIdeographicSpacesAtLineEndAllHang) {
+  FakeMeasurer measurer;
+  const Flowed flowed = flow(measurer, with_space("あいうえお", "かきくけこ", 2), 84,
+                             linebreak::OverflowPolicy::Oidashi);
+  EXPECT_EQ(flowed.lines, (std::vector<std::string>{"あいうえお", "かきくけこ"}));
+  EXPECT_EQ(flowed.first_line_glyphs, (std::vector<float>{0, 16, 32, 48, 64}));
+}
+
+// 行の途中の全角スペースは今までどおり全角 1 字分を占める。
+TEST(LayoutLineBreak, IdeographicSpaceInsideALineKeepsItsAdvance) {
+  FakeMeasurer measurer;
+  // 幅 200px に 1 行で収まる: あ(0) 全角スペース(16) い(32)
+  const Flowed wide =
+      flow(measurer, with_space("あ", "い"), 200, linebreak::OverflowPolicy::Oidashi);
+  EXPECT_EQ(wide.lines, (std::vector<std::string>{with_space("あ", "い")}));
+  EXPECT_EQ(wide.first_line_glyphs, (std::vector<float>{0, 16, 32}));
+
+  // 幅 84px = 全角 5.25 文字。途中の全角スペースは 1 文字ぶんの席を取るので「お」が溢れる
+  const Flowed narrow =
+      flow(measurer, with_space("あ", "いうえお"), 84, linebreak::OverflowPolicy::Oidashi);
+  EXPECT_EQ(narrow.lines, (std::vector<std::string>{with_space("あ", "いうえ"), "お"}));
+}
+
+// 行頭に来た全角スペースは残る（CSS Text 3 §4.1.3 Phase II の 1 が消すのは
+// **畳み込みの対象になる**空白だけで、U+3000 はその対象ではない）。
+TEST(LayoutLineBreak, IdeographicSpaceAtLineStartKeepsItsAdvance) {
+  FakeMeasurer measurer;
+  const auto root = build({block({text("あ"), br(), text(with_space("", "いうえお"))})});
+  const auto tree = run_layout(root, 84, measurer);
+  ASSERT_TRUE(tree.has_value());
+  const std::vector<const LineBox*> lines = all_lines(*tree);
+  ASSERT_EQ(lines.size(), 2U);
+  // 行頭の全角スペースはグリフも送りもそのまま（い は 16px から）
+  EXPECT_EQ(glyph_positions(*lines[1]), (std::vector<float>{0, 16, 32, 48, 64}));
+}
+
+// 幅を内容から決める箱（flex アイテムの max-content）でも、末尾の全角スペースは数えない
+// （= 行末の半角スペースと同じ扱い。そこは行末なので必ずぶら下がる）。
+TEST(LayoutLineBreak, IdeographicSpaceAtTheEndDoesNotWidenAShrinkToFitBox) {
+  FakeMeasurer measurer;
+  const auto root = build({flex({block({text(with_space("あ", ""))}), block({text("お")})})});
+  const auto tree = run_layout(root, 400, measurer);
+  ASSERT_TRUE(tree.has_value());
+  // #root / flex コンテナ / アイテム 2 つ（前順）
+  const std::vector<BlockRect> rects = block_rects(*tree);
+  ASSERT_EQ(rects.size(), 4U);
+  EXPECT_FLOAT_EQ(rects[2].rect.inline_size, 16);  // 「あ」だけの幅
+  EXPECT_FLOAT_EQ(rects[3].rect.inline_start, 16);
+}
+
+// 縦書きでも同じ（行の長さは高さ 84px）。
+TEST(LayoutLineBreak, IdeographicSpaceHangsInVerticalWritingToo) {
+  FakeMeasurer measurer;
+  const auto root = build_vertical({block({text(with_space("あいうえお", "かきくけこ"))})});
+  const auto tree = run_layout(root, vertical_options(400, 84), measurer);
+  ASSERT_TRUE(tree.has_value());
+  EXPECT_EQ(line_texts(*tree), (std::vector<std::string>{"あいうえお", "かきくけこ"}));
+  const std::vector<const LineBox*> lines = all_lines(*tree);
+  ASSERT_EQ(lines.size(), 2U);
+  EXPECT_EQ(glyph_positions(*lines[0]), (std::vector<float>{0, 16, 32, 48, 64}));
+}
+
+// tailoring のもう 1 つの効果をレイアウト越しにも見る（A59）: U+3000 が SP になったので
+// UAX #14 の空白越しの規則が効く。LB14「OP SP* ×」で、始め括弧 + 全角スペースの後ろでは
+// 割らない = 始め括弧が行末に残らない（JIS X 4051 の行末禁則）。
+// 以前は「あいうえ（」で行が終わっていた。
+TEST(LayoutLineBreak, OpeningBracketBeforeAnIdeographicSpaceDoesNotEndALine) {
+  FakeMeasurer measurer;
+  const Flowed flowed =
+      flow(measurer, with_space("あいうえ（", "かきく"), 100, linebreak::OverflowPolicy::Oidashi);
+  EXPECT_EQ(flowed.lines, (std::vector<std::string>{"あいうえ", with_space("（", "かきく")}));
+}
+
+// 約物のぶら下げ（Burasage）と二重にならない: 行末の全角スペースは先に落ちるので、
+// ぶら下げの判定はその手前の句読点に対して行われる（line_breaker.cpp の try_hang() は
+// strip_trailing() を通してから最後の文字を見る）。
+TEST(LayoutLineBreak, HangingIdeographicSpaceDoesNotDisturbBurasage) {
+  FakeMeasurer measurer;
+  const Flowed flowed = flow(measurer, with_space("あいうえお。", "かきくけこ"), 84,
+                             linebreak::OverflowPolicy::Burasage);
+  EXPECT_EQ(flowed.lines, (std::vector<std::string>{"あいうえお。", "かきくけこ"}));
+  // 「。」は content の端（84px）の外にぶら下がる。全角スペースはそれより後ろで、描かれない
+  EXPECT_EQ(flowed.first_line_glyphs, (std::vector<float>{0, 16, 32, 48, 64, 80}));
+}
+
+// 両端揃え: ぶら下げた全角スペースは行の幅にも配分の箇所にも入らない
+// （既存のぶら下げ約物と同じ扱い）。
+TEST(LayoutLineBreak, JustifyIgnoresTheHangingIdeographicSpace) {
+  FakeMeasurer measurer;
+  const auto root =
+      build({block({text(with_space("あいうえお", "かきくけこさ"))},
+                   [](ComputedStyle& style) { style.text_align = style::TextAlign::Justify; })});
+  const auto tree = run_layout(root, 84, measurer);
+  ASSERT_TRUE(tree.has_value());
+  EXPECT_EQ(line_texts(*tree), (std::vector<std::string>{"あいうえお", "かきくけこ", "さ"}));
+  // 行の幅は 80px（ぶら下げた全角スペースを含まない）。余り 4px を 4 か所に 1px ずつ配る。
+  // 全角スペースの位置は content_end の外なので、配る箇所には数えない
+  const std::vector<const LineBox*> lines = all_lines(*tree);
+  ASSERT_EQ(lines.size(), 3U);
+  EXPECT_EQ(glyph_positions(*lines[0]), (std::vector<float>{0, 17, 34, 51, 68}));
 }
 
 }  // namespace

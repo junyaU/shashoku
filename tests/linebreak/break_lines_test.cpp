@@ -254,6 +254,84 @@ TEST(LineBreakLines, NoBreakBefore) {
   EXPECT_EQ(test::line_texts(items, breaks), (std::vector<std::string>{"あ", "いう", "え"}));
 }
 
+// -------------------------------------- 行末の全角スペース（U+3000 の tailoring。A59）
+//
+// U+3000 は LineBreak.txt では BA だが、shashoku は SP に tailoring している
+// （break_class.cpp の tailor()）。ここで固定するのはその結果の 2 つ:
+//   * 行末に来た並びは幅に数えず content_end から落ちる = ぶら下がる
+//     （CSS Text 3 §4.1.3「Phase II: Trimming and Positioning」の 4:
+//      行末に残った white space と other space separators（Zs から U+0020 と U+00A0 を
+//      除いたもの。U+3000 はここに入る）は white-space: normal / nowrap で無条件にぶら下げる）
+//   * LB14「OP SP* ×」に乗るので、始め括弧 + 全角スペースの後ろでは割らない
+//     （JIS X 4051 の行末禁則「始め括弧類は行末に置かない」。JLREQ の該当節番号は未確認）
+
+TEST(LineBreakLines, IdeographicSpaceAtLineEndHangs) {
+  const std::string sp = test::to_utf8(0x3000);
+  // 幅 84px = 全角 5.25 文字。全角スペースは直前の文字から離せない（tailoring 前は
+  // LB21 × BA、いまは LB7 × SP）ので、行末でも幅に数えると「お」まで道連れになって
+  // 次の行へ送られてしまう（再測定 2026-09-25 の case10 で「し」が孤立した原因）
+  const std::string one = "あいうえお" + sp + "かきくけこ";
+  const std::string two = "あいうえお" + sp + sp + "かきくけこ";
+  const std::string middle = "あ" + sp + "いうえお";
+  const std::string leading = sp + "いうえおか";
+  const std::string bracket = "あいうえ（" + sp + "かきく";
+  expect_lines({
+      {one.c_str(),
+       84.0F,
+       {"あいうえお", "かきくけこ"},
+       "CSS Text 3 §4.1.3 Phase II-4: 行末の U+3000 はぶら下がる"},
+      {two.c_str(), 84.0F, {"あいうえお", "かきくけこ"}, "連続していても並びごとぶら下がる"},
+      {middle.c_str(),
+       84.0F,
+       {"あ" + sp + "いうえ", "お"},
+       "行の途中の U+3000 は全角 1 字分を幅に数える"},
+      {leading.c_str(),
+       84.0F,
+       {sp + "いうえお", "か"},
+       "行頭の U+3000 は残して幅に数える（Phase II-1 が消すのは畳み込む空白だけ）"},
+      {bracket.c_str(),
+       100.0F,
+       {"あいうえ", "（" + sp + "かきく"},
+       "UAX #14 LB14 OP SP* × / JIS X 4051 行末禁則: 始め括弧は行末に残さない"},
+  });
+}
+
+TEST(LineBreakLines, TrailingIdeographicSpaceIsNotMeasured) {
+  // 行末の半角スペース（TrailingSpaces）と同じ扱い: 幅に数えず content_end から外すが、
+  // 行（[begin, end)）には残す。約物のぶら下げ（Line::hang）とは別の経路。
+  const LineBreaker breaker;
+  const std::string sp = test::to_utf8(0x3000);
+  const std::vector<Item> items = test::items_of("あいうえお" + sp + "かきくけこ");
+  const Breaks breaks = breaker.break_lines(items, 84.0F);
+  ASSERT_EQ(breaks.lines.size(), 2U);
+  EXPECT_EQ(breaks.lines[0].end, 6U);
+  EXPECT_EQ(breaks.lines[0].content_end, 5U);
+  EXPECT_FLOAT_EQ(breaks.lines[0].width, 80.0F);
+  EXPECT_FLOAT_EQ(breaks.lines[0].hang, 0.0F);
+  EXPECT_EQ(test::line_texts_full(items, breaks)[0], "あいうえお" + sp);
+}
+
+TEST(LineBreakLines, OtherSpaceSeparatorsAreNotTailored) {
+  // tailoring の対象は U+3000 だけ。U+2002 EN SPACE は BA のまま（行末で幅に数える）、
+  // U+202F NARROW NO-BREAK SPACE は GL のまま（前後で割らない）。
+  const LineBreaker breaker;
+  {
+    const std::vector<Item> items = test::items_of("あいうえお" + test::to_utf8(0x2002) + "かき");
+    const Breaks breaks = breaker.break_lines(items, 84.0F);
+    // BA は幅に数えるので、直前の「お」ごと次の行へ送られる（tailoring 前の U+3000 と同じ）
+    EXPECT_EQ(test::line_texts(items, breaks),
+              (std::vector<std::string>{"あいうえ", "お" + test::to_utf8(0x2002) + "かき"}));
+  }
+  {
+    const std::vector<Item> items = test::items_of("あいうえ" + test::to_utf8(0x202F) + "おかき");
+    const Breaks breaks = breaker.break_lines(items, 80.0F);
+    // GL は LB12a（× GL）で前でも LB12（GL ×）で後ろでも割れないので、直前の「え」ごと
+    // 次の行へ行く。SP に tailoring していたら「あいうえ」で切れて幅も数えなくなってしまう
+    EXPECT_EQ(test::line_texts(items, breaks),
+              (std::vector<std::string>{"あいう", "え" + test::to_utf8(0x202F) + "おかき"}));
+  }
+}
+
 // ------------------------------------------------------------ min_content_width
 
 TEST(LineBreakLines, MinContentWidth) {
@@ -267,6 +345,9 @@ TEST(LineBreakLines, MinContentWidth) {
   EXPECT_FLOAT_EQ(breaker.min_content_width(test::items_of("あ1,234あ")), 40.0F);
   // 行末の空白は数えない
   EXPECT_FLOAT_EQ(breaker.min_content_width(test::items_of("あ   い")), 16.0F);
+  // 全角スペースも同じ（A59 の tailoring。区間の末尾に来るので数えない）
+  EXPECT_FLOAT_EQ(breaker.min_content_width(test::items_of("あ" + test::to_utf8(0x3000) + "い")),
+                  16.0F);
   // ForcedBreak は幅 0
   EXPECT_FLOAT_EQ(breaker.min_content_width(test::items_of("あ\nいう")), 16.0F);
 }

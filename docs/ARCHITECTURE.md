@@ -2010,6 +2010,67 @@ A52 / A53 後の再測定（`docs/benchmark/results_a53_2026-09-24.md` §2 / §3
     **PNG がバイト単位で同一**。ゴールデン 16 枚は dev / asan の全テスト（各 1355 件）が通った
     = 1 ピクセルも変わっていない
 
+**A59. 全角スペース U+3000 の分割クラスを BA から SP に tailoring する（UAX #14 §6）。
+行末に来た U+3000 はぶら下がり（行の幅に数えない）、LB14〜LB18 の空白越しの規則にも乗る。**
+（2026-09-25。実装の置き場所はレビューでの指摘により layout から linebreak へ移した）
+
+- **経緯**: 再測定（`docs/benchmark/results_a57_2026-09-25.md` §3）の case10（縦書きの短歌
+  「ゆふぐれの　駅のホームに　立ちつくし　届かぬ返事を　もう一度読む」。句の間が U+3000）で、
+  Chrome は「立ちつくし」まで 1 列目に入るのに shashoku は 1 文字手前で折れ、**「し」が 2 列目の頭に
+  孤立**した。前々回から「1 文字早く折れる」として残っていたもので、原因は**行末に来た U+3000 を
+  行の幅に数えていた**こと。U+3000 は BA なので直前の文字から離せず（LB21 × BA）、
+  「し + 全角スペース」で溢れると**手前の「し」まで道連れにして**次の行へ行っていた
+- **出典**:
+  - CSS Text 3 §4.1.3「Phase II: Trimming and Positioning」の 4:「行末に残った white space・
+    **other space separators**・保存されたタブの並びは、`white-space` が normal / nowrap なら
+    **無条件でぶら下げる**（hang）」。other space separators は同§で「Unicode の general category
+    Zs のうち U+0020 と U+00A0 を除いたもの」と定義されていて、**U+3000 は Zs なのでここに入る**
+    （W3C の TR 版で本文を確認した。U+3000 を名指しした行は無く、Zs の定義から入るという読み方）
+  - UAX #14 LB14「OP SP* ×」: 始め括弧の後ろは空白を越えても割らない。
+    JIS X 4051 の行末禁則「始め括弧類は行末に置かない」と同じ内容（JLREQ の該当節番号は未確認）
+  - Chrome の参照画像（`docs/benchmark/2026-09-23/images/chrome_ref/case10.png`）は、1 列目の
+    末尾の全角アキを見せずに 2 列目を天付きで始めていて、この読みと一致する
+- **決めたこと（tailoring として）**: `break_class_of()` は U+3000 に **SP** を返す。
+  表（`break_class_table.inc` = LineBreak.txt 18.0.0）は編集せず、**引いた直後の上書き 1 か所**
+  （`break_class.cpp` の `tailor()`）にまとめる。UAX #14 の SP は U+0020 だけのクラスだが、
+  「行末で落ちる」「空白越しの規則の対象」という振る舞いは全角スペースにもそのまま当てはまる。
+  これで次の 2 つが**行分割器の規則として**効く:
+  1. **行末に来た U+3000 は幅に数えず `content_end` から落ちる**（§3.4 (3) の既存の規則）。
+     1 つでも連続していても同じ。行の途中と行頭では今までどおり全角 1 字分の送り
+     （Phase II の 1 が消すのは**畳み込みの対象になる**空白だけで、U+3000 は対象外）
+  2. **LB14〜LB18 の `SP*` 規則に乗る**。「あいうえ（　かきく」を幅 100px に流すと、
+     **前は 1 行目が「あいうえ（」で終わっていた**（始め括弧が行末に残る = 行末禁則に反する）
+     のが「あいうえ」/「（　かきく」になる
+- **範囲**: tailoring するのは U+3000 だけ。`&nbsp;`（U+00A0）と半角スペースの扱いは変えない。
+  **他の Zs も変えない**: U+2000〜U+200A（BA）はぶら下げの対象だが和文では使われず、
+  **U+202F NARROW NO-BREAK SPACE は分割禁止の空白（GL）なので、SP にすると後ろで割れてしまう**
+  （UAX #14 の規則を壊す方向の変更になる）。どちらもテストで固定した
+- **効き方**（呼ぶ側は何も変えていない）:
+  - `text-align` の寄せと justify の配分は、ぶら下げた U+3000 を含まない幅（`Line::width`）で行う。
+    配分の箇所（分割可能位置）も `content_end` までしか数えないので、ぶら下げたぶんは入らない
+  - 約物のぶら下げ（`OverflowPolicy::Burasage` / `Line::hang`）と二重にならない:
+    `try_hang()` は先に `strip_trailing()` を通すので、判定は**全角スペースを除いた**行末の文字
+    （= 句読点）に対して行われ、`Line::hang` は 0 のまま
+  - **固有寸法にも同じ規則が効く**: 区間の末尾に来た U+3000 は max-content / min-content に
+    入らない（`min_content_width()` も `strip_trailing()` を通る）。「あ + 全角スペース」の
+    flex アイテムは幅が 2 字分ではなく 1 字分になる。行末の半角スペースが前からそうだったのと
+    同じで、CSS でも hang するものは幅に数えない
+- **`Item::overhang_after` では表せなかった**（最初に検討した案）: 掛け（ルビ）は
+  「**行頭・行末で落とす**」= 行の**途中**でだけ幅が減る向きで、ぶら下げ（行末でだけ幅が消える）とは
+  逆になる（`line_breaker.cpp` の `lay_out()`: `if (i + 1 < content_end) after += overhang_after_[i]`）。
+  `advance` と `overhang_*` をどう組んでも「行末で 0、途中で 1em」は表せない。
+  layout 側で `Item::cp` を U+0020 に読み替える案も動いたが、**分割規則の決定は行分割器の領分で、
+  `tests/linebreak/` のテーブル駆動テストが仕様書**（DESIGN.md §10）なので、
+  規則を行分割器の外に隠さず tailoring として明示することにした（レビューでの判断）
+- **確かめたこと（2026-09-25）**: 修正前後の release の CLI で `examples/*.html` 5 本と
+  `docs/guide/examples/*.html` 14 本を描き、**19 枚すべて PNG がバイト単位で同一**
+  （U+3000 を含むのは `og_card.html` 1 個・`quote.html` 1 個・`vertical.html` 5 個で、
+  どれも行末に来ていない）。ゴールデン 16 枚は dev / asan の全テストが通った = 1 ピクセルも
+  変わっていない。**コーパスで絵が変わったものは 1 つも無く**、変わったのは受け入れの case10 と、
+  副作用の確認のために作った合成入力（上の「あいうえ（　かきく」）だけ。case10 は 1 列目が
+  「ゆふぐれの　駅のホームに　立ちつくし」になり、2 列目が「届かぬ返事を」から天付きで始まる =
+  Chrome の参照画像と同じ折れ方になった
+
 ---
 
 ## 2. モジュールと依存
@@ -2126,6 +2187,19 @@ BK CR LF NL SP ZW WJ GL CM ZWJ OP CL CP QU EX IS SY NS CJ IN B2 BA BB HY PR PO N
 かな・全角記号の範囲は ID。East Asian Width が必要な規則（LB30 の OP/CP）は全角括弧の表で代用する。
 `Strictness` による CJ の解決と Loose の追加規則は CSS Text 3 §5.3 に従う。
 
+**(1') tailoring**（UAX #14 §6 は実装がクラスを調整することを認めている）:
+**表（`break_class_table.inc` = LineBreak.txt から機械的に起こしたもの）は編集せず、
+上書きは `break_class.cpp` の `tailor()` 1 か所にまとめる**（引いた直後に適用する）。
+理由と出典はその関数のコメントに書き、`tests/linebreak/break_class_test.cpp` で固定する。
+いまある tailoring は 1 つ:
+- **全角スペース U+3000 は BA ではなく SP**（A59）。効くのは (3) の「行末の空白は幅に数えず
+  `content_end` から除く」（= 行末でぶら下がる。CSS Text 3 §4.1.3 Phase II の 4 が、行末に
+  残った white space と other space separators（Zs から U+0020 と U+00A0 を除いたもの）を
+  `white-space: normal / nowrap` で無条件にぶら下げると定めている）と、LB14〜LB18 の
+  空白越しの規則（「（　」の後ろで割らない = JIS X 4051 の行末禁則）。
+  **他の空白は tailoring しない**: U+00A0 / U+202F は分割禁止の空白（GL）なので SP にすると
+  後ろで割れてしまい、U+2000〜U+200A（BA）は和文では使わない
+
 **(2) 分割可能位置**: UAX #14 の規則 LB2〜LB31 のうち、上のクラスに関係するものをペア表 +
 文脈規則（LB8 の空白、LB9/10 の CM、LB14〜17 の空白越し、LB25 の数値、LB30a の RI）で実装する。
 日本語の禁則はこの上に自然に乗る: 行頭禁則 = CL / CP / NS / EX / IS / (strict の) CJ の前で割らない、
@@ -2133,8 +2207,10 @@ BK CR LF NL SP ZW WJ GL CM ZWJ OP CL CP QU EX IS SY NS CJ IN B2 BA BB HY PR PO N
 `Config::extra_*` は該当文字を NS / OP 相当に格上げする。`Item::no_break_before` と
 `ItemKind::Atomic`（ID 扱い）を尊重する。
 
-**(3) 行の決定**: 貪欲法。幅に収まる最後の分割可能位置で割る。行末の空白（SP）は幅に数えず
-`content_end` から除く。`ForcedBreak` の直後で必ず改行する。
+**(3) 行の決定**: 貪欲法。幅に収まる最後の分割可能位置で割る。行末の空白（SP。(1') の
+tailoring により**全角スペース U+3000 も含む**）は幅に数えず `content_end` から除く
+（1 つでも連続していても。= CSS Text 3 §4.1.3 Phase II の 4 のぶら下げ）。
+`ForcedBreak` の直後で必ず改行する。
 **仕事の量は N に線形**（A24）。行を 1 本組むのに段落の残り全体を舐めない: 前方に探すもの
 （次の強制改行・次の分割可能位置）は `break_lines()` が持ち回り、後方に遡るもの（LB30a の RI の並び）は
 1 回の走査で表にする。`Counters` で回数を数え、`complexity_test.cpp` が N = 20,000 で検査する。
@@ -2586,6 +2662,14 @@ std::string dump_json(const BoxTree&);
   ファイルは段の境界で分けてある（A27 の末尾）。(a)〜(c) の結果 `PreparedParagraph` は
   行の幅に依らないので、固有寸法の計測と実際の配置で同じものを使える
   （`inline_intrinsic()` の min-content / max-content にもアイテムごとのポリシーが効く）
+- **行末の全角スペース（U+3000）のぶら下げは行分割器が扱う**（A59。§3.4 (1') の tailoring:
+  U+3000 の分割クラスを BA から SP にしてあるので、(3) の「行末の空白は幅に数えず
+  `content_end` から除く」がそのまま効く）。layout は**何もしない**: (c) は実際のコードポイントを
+  `Item::cp` に入れるだけで、送りもグリフも変えない。結果として、行末のぶら下げた U+3000 は
+  `[begin, content_end)` の外なので (e) が置かず、`text-align` の寄せと justify の配分も
+  ぶら下げたぶんを含まない幅（`Line::width`）で行う。横書きも縦書きも同じ。
+  固有寸法（`inline_intrinsic()`）も同じ規則で、区間の末尾の U+3000 は max-content /
+  min-content に入らない
 - **flex**（Phase 6）: 単一行のみ（`flex-wrap` は対応外）。CSS Flexbox §9 のアルゴリズムのうち、
   flex base size の解決 → grow / shrink の配分 → 交差軸の整列 → justify-content → gap。
   **アイテムの 2 つの下限を取り違えない**（A52）:

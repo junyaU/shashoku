@@ -59,9 +59,33 @@ TEST(LineBreakClass, Japanese) {
       {U'…', BreakClass::In, "三点リーダ（分離禁則）"},
       {U'‥', BreakClass::In, "二点リーダ（分離禁則）"},
       {U'—', BreakClass::B2, "EM ダッシュ（分離禁則）"},
-      {U'　', BreakClass::Ba, "全角スペース"},
+      // 全角スペース U+3000 は LineBreak.txt では BA だが、shashoku は SP に tailoring
+      // している（A59。下の IdeographicSpaceIsTailoredToSpace に出典と理由）
+      {0x3000, BreakClass::Sp, "全角スペース（tailoring）"},
       {U'￥', BreakClass::Pr, "全角円記号（数値の接頭）"},
       {U'％', BreakClass::Po, "全角パーセント（数値の接尾）"},
+  });
+}
+
+// tailoring（ARCHITECTURE.md A59。break_class.cpp の tailor()）。表（LineBreak.txt）は
+// 編集せず、クラスを引いた直後に上書きしている。全角スペース U+3000 は UCD では BA だが、
+// shashoku は SP として扱う:
+//   * CSS Text 3 §4.1.3「Phase II: Trimming and Positioning」の 4 が、行末に残った
+//     white space と other space separators（Unicode の Zs から U+0020 と U+00A0 を除いたもの。
+//     U+3000 はここに入る）を white-space: normal / nowrap で**無条件にぶら下げる**と定めている。
+//     SP にすると、既存の「行末の空白は幅に数えず content_end から除く」（§3.4 (3)）がそのまま効く
+//   * UAX #14 LB14「OP SP* ×」に乗るので、「（　」の後ろで割れなくなる
+//     （JIS X 4051 の行末禁則「始め括弧類は行末に置かない」。JLREQ の該当節番号は未確認）
+// 他の Zs は tailoring しない（U+202F は分割禁止の空白なので SP にすると後ろで割れてしまう）。
+TEST(LineBreakClass, IdeographicSpaceIsTailoredToSpace) {
+  expect_classes({
+      {0x3000, BreakClass::Sp, "全角スペース（tailoring。LineBreak.txt は BA）"},
+      {0x0020, BreakClass::Sp, "半角スペース（表のまま）"},
+      {0x00A0, BreakClass::Gl, "NBSP は分割禁止の空白のまま"},
+      {0x2000, BreakClass::Ba, "EN QUAD は表のまま"},
+      {0x2002, BreakClass::Ba, "EN SPACE は表のまま"},
+      {0x200A, BreakClass::Ba, "HAIR SPACE は表のまま"},
+      {0x202F, BreakClass::Gl, "NARROW NO-BREAK SPACE は分割禁止のまま"},
   });
 }
 

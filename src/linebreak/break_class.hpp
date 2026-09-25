@@ -11,7 +11,7 @@ namespace shashoku::linebreak {
 // 残りは受け皿に寄せる（対応表は break_class.cpp の冒頭コメント）。
 enum class BreakClass : std::uint8_t {
   Al,  // Alphabetic: 通常の文字。未知のコードポイントもここ（UAX #14 LB1 の AI/SG/XX/SA）
-  Ba,  // Break After: 全角スペース U+3000、ハイフン類の一部
+  Ba,  // Break After: ハイフン類の一部、U+2000〜U+200A の空白（U+3000 は Sp に tailoring）
   Bb,  // Break Before: ° ± など前に付く記号
   B2,  // Break Opportunity Before and After: —（U+2014）。LB17 の分離禁則の対象
   Bk,  // Mandatory Break
@@ -37,7 +37,7 @@ enum class BreakClass : std::uint8_t {
   Pr,   // Prefix Numeric: $ ￥ ＄
   Qu,   // Quotation
   Ri,   // Regional Indicator（LB30a）
-  Sp,   // Space
+  Sp,   // Space: U+0020 と、tailoring で入れた全角スペース U+3000（A59）
   Sy,   // Symbols Allowing Break After: /
   Wj,   // Word Joiner
   Zw,   // Zero Width Space
@@ -45,6 +45,9 @@ enum class BreakClass : std::uint8_t {
 };
 
 // コードポイントの分割クラス。表にないものは Al（LB1: AI/SG/XX は AL に解決する）。
+// **tailoring が 1 つある**（UAX #14 §6。break_class.cpp の tailor() に理由と出典）:
+// 全角スペース U+3000 は LineBreak.txt では BA だが、shashoku は Sp として返す
+// （行末でぶら下げ、LB14〜LB18 の空白越しの規則に乗せるため。ARCHITECTURE.md A59）。
 [[nodiscard]] BreakClass break_class_of(char32_t cp);
 
 // LB30 の $EastAsian: Line_Break が OP / CP で East_Asian_Width が F / W / H のもの。

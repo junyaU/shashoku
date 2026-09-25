@@ -756,6 +756,11 @@ containers**. Each level only has two decisions: the **direction** (`flex-direct
   as §4.5
 - Nesting does not bring `flex-wrap` back. **If it does not fit, it overflows** (overflow out of a
   parent box is not detected). Raise `--width` when you add steps
+- **To line up the rows below headings of different line counts**, give the heading (`.name`) a
+  **fixed `height` worth two lines** (`line-height: 20px; height: 40px`). Beware: **a third line
+  silently overlaps the row below** (no warning; even `--strict` succeeds). Check with
+  `--dump-stage box` that the box's `lines` count is 2 or fewer. When a step name breaks mid-word,
+  put the break where you want it with `<br>` (§5)
 
 ### 4.14 Quote card (body centred, byline pinned to the bottom) — [quote.html](examples/quote.html)
 

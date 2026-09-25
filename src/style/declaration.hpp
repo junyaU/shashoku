@@ -124,6 +124,7 @@ enum class PropertyId : std::uint8_t {
   TextAlign,
   LineBreak,
   OverflowWrap,
+  WhiteSpace,
   WritingMode,
 };
 
@@ -134,7 +135,7 @@ using SpecifiedValue =
     std::variant<std::monostate,  // inherit / initial のときのプレースホルダ
                  SpecDimension, SpecLength, SpecNumber, SpecWeight, SpecColor, SpecLineHeight,
                  SpecFontFamily, Display, BoxSizing, FlexDirection, JustifyContent, AlignItems,
-                 TextAlign, LineBreak, OverflowWrap, WritingMode, BorderStyle>;
+                 TextAlign, LineBreak, OverflowWrap, WhiteSpace, WritingMode, BorderStyle>;
 
 struct Declaration {
   PropertyId property = PropertyId::Display;

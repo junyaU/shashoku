@@ -19,6 +19,7 @@ shashoku_add_test(integration_test
     ruby_distribution_test.cpp
     ruby_overhang_test.cpp
     overflow_wrap_test.cpp
+    nowrap_test.cpp
     box_sizing_test.cpp
     scale_property_test.cpp
     determinism_test.cpp

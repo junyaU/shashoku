@@ -30,6 +30,8 @@ class ParagraphBuilder {
   void build_atomic_item(std::size_t at);
   // (c'') ルビの掛け（JLREQ 3.3.8）。隣のアイテムを見るので、アイテムを全部作ってから決める。
   void resolve_ruby_overhang();
+  // (c''') white-space: nowrap（CSS Text 3 §5.1。A58）。隣のアイテムを見るので同じく後で。
+  void resolve_nowrap();
   // (c') 空のインラインボックスを行に割り当てる（#23 / #30）。行の幅に依らないのでここで決める。
   void resolve_empty_boxes();
   [[nodiscard]] Result<std::size_t> build_text_items(std::size_t begin);
@@ -314,6 +316,35 @@ void ParagraphBuilder::resolve_ruby_overhang() {
   }
 }
 
+// (c''') `white-space: nowrap`（CSS Text 3 §5.1。A58）。隣り合う 2 つのアイテムが**同じ
+// nowrap の並び**に属していれば、その間のソフトな分割機会を消す（`no_break_before`）。
+// 並びの識別子は (a) が「最も外側の nowrap 祖先」ごとに振っている（inline_collect.cpp）。
+//
+// 消すのはソフトな分割機会だけで、`<br>`（強制改行）は nowrap の中でも効く
+// （LB4 は非適合化できないので、行分割器が `no_break_before` より優先する）。
+// min-content は分割機会から作るので、nowrap の並びは丸ごと 1 区間になる
+// （= `flex: 1 1 0` の項目はその幅より縮まない。A52）。
+//
+// **緊急分割（overflow-wrap）も一緒に止める**: 行分割器は `no_break_before` を分離禁則と
+// **同じ強さ**で扱う（`splits_inseparable()`）ので、それだけでは「どうしても収まらない行」で
+// 破られ、`overflow-wrap: anywhere` を継いだ nowrap の並びが割れてしまう（ブラウザは
+// nowrap を優先する）。緊急分割の可否は**アイテム**ごとの `wrap` の両側の弱い方で決まる
+// （A23）ので、並びの中のアイテムを `Normal` にして内部の位置をすべて塞ぐ。
+// 副作用として**並びの両端の位置**（外の文との境目）でも緊急分割ができなくなる:
+// `wrap` は位置ごとではなくアイテムごとの値なので、位置だけを選んで塞げない（A58）。
+void ParagraphBuilder::resolve_nowrap() {
+  for (std::size_t i = 1; i < out_->items.size(); ++i) {
+    const std::size_t before = out_->styles.breaking(out_->sources[i - 1].style).nowrap_scope;
+    const std::size_t after = out_->styles.breaking(out_->sources[i].style).nowrap_scope;
+    if (before == 0 || before != after) {
+      continue;
+    }
+    out_->items[i].no_break_before = true;
+    out_->items[i - 1].wrap = linebreak::Wrap::Normal;
+    out_->items[i].wrap = linebreak::Wrap::Normal;
+  }
+}
+
 // (c') 空のインラインボックス（文字を 1 つも持たない <span> など）が参加する行を決める。
 // 規則（issue #23 / #30。CSS 2.1 §10.8 / §10.8.1 と Chrome の実測に一致する）:
 //   * `char_pos` を**範囲に含む**アイテムがあれば、そのアイテムの行（#30）。
@@ -388,6 +419,7 @@ Result<void> ParagraphBuilder::build() {
     i = *end;
   }
   resolve_ruby_overhang();
+  resolve_nowrap();
   resolve_empty_boxes();
   return {};
 }

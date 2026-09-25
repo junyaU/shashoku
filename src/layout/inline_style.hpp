@@ -24,8 +24,9 @@
 //     その位置のカーニング・合字が消える（issue #8）
 //   * **装飾・行高属性**（DecorationStyle）… color / letter-spacing / line-height。
 //     シェーピングの結果を変えない。フラグメントを作るときにクラスタ境界で対応付ける
-//   * **行分割ポリシー**（BreakingStyle）… line-break / overflow-wrap。`linebreak::Item` の
-//     `strictness` / `wrap`（A23）に写す。見た目には一切効かない
+//   * **行分割ポリシー**（BreakingStyle）… line-break / overflow-wrap と、`white-space: nowrap`
+//     の並びの識別子（A58）。`linebreak::Item` の `strictness` / `wrap`（A23）と
+//     `no_break_before` に写す。見た目には一切効かない
 //   * **元ノードの位置**（SourceLocation）… その文字を含むテキストノードの先頭（A31 / issue #9）。
 //     豆腐の警告と `--dump-stage box` に出すためだけの層。**見た目にもシェーピングにも効かない**
 //
@@ -67,6 +68,12 @@ struct DecorationStyle {
 struct BreakingStyle {
   style::LineBreak line_break = style::LineBreak::Auto;
   style::OverflowWrap overflow_wrap = style::OverflowWrap::Normal;
+  // `white-space: nowrap` の並びの識別子（A58）。0 = nowrap の外。
+  // **この文字を含む「最も外側の nowrap 祖先」**を表し、同じ IFC の中で 1 から順に振る。
+  // 隣り合うクラスタがともに同じ非 0 の識別子を持つとき、その間の分割機会を消す
+  // （CSS Text 3 §5.1 の「2 つのクラスタの最も近い共通の祖先が nowrap なら」の簡略化）。
+  // 計算値ではなく木の構造から決まるので、style::ComputedStyle には無い（intern() の引数）
+  std::size_t nowrap_scope = 0;
 
   bool operator==(const BreakingStyle&) const = default;
 };
@@ -124,7 +131,8 @@ struct BreakingLess {
 
   bool operator()(const BreakingStyle& a, const BreakingStyle& b) const {
     ++*probes;
-    return std::tie(a.line_break, a.overflow_wrap) < std::tie(b.line_break, b.overflow_wrap);
+    return std::tie(a.line_break, a.overflow_wrap, a.nowrap_scope) <
+           std::tie(b.line_break, b.overflow_wrap, b.nowrap_scope);
   }
 };
 
@@ -143,10 +151,12 @@ class CharStyleTable {
  public:
   // ComputedStyle を層に分けて登録し、文字が指す添字を返す。内容が同じなら同じ添字。
   // location はその文字を含むノードの先頭（StyledNode::location）。
+  // nowrap_scope は「最も外側の nowrap 祖先」の識別子（A58。0 = nowrap の外）で、
+  // 計算値ではなく木の構造から決まるので別の引数で受ける。
   // 1 ノードにつき 1 回呼ぶ想定で、1 回のスタイルの比較は O(log(表の大きさ))
   // （線形探索だと色違いの span が S 個ある段落で O(S²) になる。issue #10）。
   std::size_t intern(const style::ComputedStyle& style, text::Direction direction,
-                     const SourceLocation& location);
+                     const SourceLocation& location, std::size_t nowrap_scope = 0);
 
   // 索引を引くのに行ったスタイルの比較の回数（計測カウンタ用。A21）。
   [[nodiscard]] std::uint64_t probes() const { return *probes_; }

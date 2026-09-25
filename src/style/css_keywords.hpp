@@ -108,6 +108,10 @@ inline std::string_view to_css(OverflowWrap value) {
   return "normal";
 }
 
+inline std::string_view to_css(WhiteSpace value) {
+  return value == WhiteSpace::Normal ? "normal" : "nowrap";
+}
+
 inline std::string_view to_css(WritingMode value) {
   return value == WritingMode::HorizontalTb ? "horizontal-tb" : "vertical-rl";
 }
@@ -182,6 +186,8 @@ inline std::string_view to_css(PropertyId value) {
       return "line-break";
     case PropertyId::OverflowWrap:
       return "overflow-wrap";
+    case PropertyId::WhiteSpace:
+      return "white-space";
     case PropertyId::WritingMode:
       return "writing-mode";
   }

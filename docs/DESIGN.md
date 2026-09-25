@@ -111,6 +111,7 @@ background-color, border, border-radius
 text-align, letter-spacing
 flex-direction, justify-content, align-items, gap, flex-grow/shrink/basis
 line-break (auto | strict | loose), overflow-wrap (word-wrap は legacy name alias)
+white-space (normal | nowrap)  ← A58
 writing-mode (horizontal-tb | vertical-rl)  ← Phase 8
 ```
 

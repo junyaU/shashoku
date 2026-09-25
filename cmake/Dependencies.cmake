@@ -43,8 +43,12 @@ foreach(_dep ZLIB BZIP2 PNG HARFBUZZ BROTLI)
 endforeach()
 set(FT_ENABLE_ERROR_STRINGS ON CACHE BOOL "" FORCE)  # FontLoad エラーの message に使う
 set(SKIP_INSTALL_ALL ON CACHE BOOL "" FORCE)
+# 取得元は 3 つを順に試す（主鏡の savannah が 504 / 到達不能で CI が全ジョブ落ちたことがある。
+# 2026-09-25）。SHA256 を固定しているので、どこから取っても中身は同じ。
 FetchContent_Declare(freetype
   URL "https://download.savannah.gnu.org/releases/freetype/freetype-${SHASHOKU_FREETYPE_VERSION}.tar.xz"
+      "https://download-mirror.savannah.gnu.org/releases/freetype/freetype-${SHASHOKU_FREETYPE_VERSION}.tar.xz"
+      "https://sourceforge.net/projects/freetype/files/freetype2/${SHASHOKU_FREETYPE_VERSION}/freetype-${SHASHOKU_FREETYPE_VERSION}.tar.xz/download"
   URL_HASH SHA256=36bc4f1cc413335368ee656c42afca65c5a3987e8768cc28cf11ba775e785a5f)
 FetchContent_MakeAvailable(freetype)
 # FreeType のビルドツリーには CMake の FindFreetype 互換の名前が無い（インストール時の

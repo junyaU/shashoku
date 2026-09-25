@@ -67,6 +67,7 @@ enum class PropertyName : std::uint8_t {
   TextAlign,
   LineBreak,
   OverflowWrap,
+  WhiteSpace,
   WritingMode,
 };
 
@@ -115,6 +116,7 @@ constexpr auto kPropertyNames = std::to_array<NameEntry>({
     {"padding-top", PropertyName::PaddingTop},
     {"row-gap", PropertyName::RowGap},
     {"text-align", PropertyName::TextAlign},
+    {"white-space", PropertyName::WhiteSpace},
     {"width", PropertyName::Width},
     // CSS Text 3 §5.4 の legacy name alias。別名は**同じ PropertyName に写す**だけにして、
     // カスケード・継承・計算値・ダンプの名前を `overflow-wrap` と同じ経路に通す（A35）。
@@ -611,6 +613,38 @@ Result<void> parse_overflow_wrap(const Ctx& ctx, std::span<const ValueToken> tok
     return std::unexpected(value.error());
   }
   emit(out, ctx, PropertyId::OverflowWrap, *value);
+  return {};
+}
+
+// 対応外だと**分かっている** white-space の値に添える代替（A53 の値レベルの hint / A58）。
+// `pre` 系は「ソース中の改行と空白をそのまま残す」ので、畳み込みを変えずに真似られない。
+// `<br>` で改行位置を書くのが shashoku で同じ結果を出せる唯一の手段（ガイド §4.13）。
+constexpr std::string_view kWhiteSpaceHint =
+    "only `normal` and `nowrap` are supported; use `<br>` for explicit line breaks";
+
+bool is_preserving_white_space(std::span<const ValueToken> tokens) {
+  if (tokens.size() != 1 || tokens[0].kind != ValueToken::Kind::Ident) {
+    return false;
+  }
+  const std::string lower = ascii_lower(tokens[0].text);
+  return lower == "pre" || lower == "pre-wrap" || lower == "pre-line" || lower == "break-spaces";
+}
+
+Result<void> parse_white_space(const Ctx& ctx, std::span<const ValueToken> tokens,
+                               std::vector<Declaration>& out) {
+  constexpr std::string_view kHelp = "supported: normal, nowrap";
+  constexpr std::array<KeywordEntry<WhiteSpace>, 2> kTable = {{
+      {"normal", WhiteSpace::Normal},
+      {"nowrap", WhiteSpace::Nowrap},
+  }};
+  Result<WhiteSpace> value = single_keyword(ctx, tokens, kTable, kHelp);
+  if (!value) {
+    if (is_preserving_white_space(tokens)) {
+      return bad_value_with_hint(ctx, kHelp, kWhiteSpaceHint);
+    }
+    return std::unexpected(value.error());
+  }
+  emit(out, ctx, PropertyId::WhiteSpace, *value);
   return {};
 }
 
@@ -1130,6 +1164,8 @@ Result<void> parse_by_name(PropertyName property, const Ctx& ctx,
       return parse_line_break(ctx, tokens, out);
     case PropertyName::OverflowWrap:
       return parse_overflow_wrap(ctx, tokens, out);
+    case PropertyName::WhiteSpace:
+      return parse_white_space(ctx, tokens, out);
     case PropertyName::WritingMode:
       return parse_writing_mode(ctx, tokens, out);
   }
@@ -1225,6 +1261,8 @@ PropertyId single_longhand(PropertyName property) {
       return PropertyId::LineBreak;
     case PropertyName::OverflowWrap:
       return PropertyId::OverflowWrap;
+    case PropertyName::WhiteSpace:
+      return PropertyId::WhiteSpace;
     case PropertyName::WritingMode:
       return PropertyId::WritingMode;
     case PropertyName::Margin:

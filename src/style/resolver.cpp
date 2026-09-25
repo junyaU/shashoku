@@ -104,6 +104,7 @@ void inherit_text(ComputedStyle& child, const ComputedStyle& parent) {
   child.text_align = parent.text_align;
   child.line_break = parent.line_break;
   child.overflow_wrap = parent.overflow_wrap;
+  child.white_space = parent.white_space;
   child.writing_mode = parent.writing_mode;
 }
 
@@ -314,6 +315,9 @@ void apply_inherit(PropertyId property, const StyleState& parent, StyleState& st
     case PropertyId::OverflowWrap:
       s.overflow_wrap = p.overflow_wrap;
       return;
+    case PropertyId::WhiteSpace:
+      s.white_space = p.white_space;
+      return;
     case PropertyId::WritingMode:
       s.writing_mode = p.writing_mode;
       return;
@@ -425,6 +429,9 @@ void apply_initial(PropertyId property, StyleState& state) {
       return;
     case PropertyId::OverflowWrap:
       s.overflow_wrap = i.overflow_wrap;
+      return;
+    case PropertyId::WhiteSpace:
+      s.white_space = i.white_space;
       return;
     case PropertyId::WritingMode:
       s.writing_mode = i.writing_mode;
@@ -560,6 +567,9 @@ Result<void> apply_value(PropertyId property, const SpecifiedValue& value, Style
       return {};
     case PropertyId::OverflowWrap:
       s.overflow_wrap = take<OverflowWrap>(value);
+      return {};
+    case PropertyId::WhiteSpace:
+      s.white_space = take<WhiteSpace>(value);
       return {};
     case PropertyId::WritingMode:
       s.writing_mode = take<WritingMode>(value);

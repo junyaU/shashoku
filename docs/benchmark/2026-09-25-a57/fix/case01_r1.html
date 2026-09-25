@@ -1,0 +1,160 @@
+<style>
+  * { box-sizing: border-box; }
+  .page {
+    margin: 0;
+    padding: 40px 20px;
+    background: #f4f6f8;
+    font-family: "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, sans-serif;
+    color: #1f2933;
+  }
+  .wrap {
+    width: 900px;
+    margin: 0 auto;
+    background: #ffffff;
+    border-radius: 12px;
+  }
+  .head {
+    padding: 28px 32px 20px;
+  }
+  .rule-head { height: 1px; background: #e4e7eb; }
+  .head-title {
+    margin: 0 0 6px;
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+  }
+  .head-sub {
+    margin: 0;
+    font-size: 13px;
+    color: #7b8794;
+  }
+  .table {
+    width: 100%;
+    font-size: 13.5px;
+    line-height: 1.75;
+  }
+  .row { display: flex; }
+  .th {
+    background: #2f5d8f;
+    color: #ffffff;
+    font-weight: 500;
+    text-align: left;
+    padding: 14px 16px;
+    font-size: 14px;
+    letter-spacing: 0.04em;
+    flex: 1;
+  }
+  .vsep-head { width: 1px; background: rgba(255, 255, 255, 0.18); }
+  .corner {
+    background: #24496e;
+    width: 150px;
+    flex: none;
+  }
+  .rowhead {
+    text-align: left;
+    font-weight: 500;
+    padding: 16px;
+    background: #eef2f6;
+    color: #334e68;
+    width: 150px;
+    flex: none;
+  }
+  .cell {
+    padding: 16px;
+    color: #3e4c59;
+    flex: 1;
+  }
+  .rowhead.even { background: #e7edf3; }
+  .cell.even { background: #f7f9fb; }
+  .vsep-rowhead { width: 1px; background: #dfe6ed; }
+  .vsep-cell { width: 1px; background: #edf0f3; }
+  .hsep-row { height: 1px; background: #edf0f3; }
+  .engine {
+    display: block;
+    font-size: 11px;
+    font-weight: 400;
+    letter-spacing: 0.06em;
+    margin-top: 2px;
+  }
+  .rule-foot { height: 1px; background: #e4e7eb; }
+  .foot {
+    padding: 16px 32px 24px;
+    font-size: 12px;
+    color: #9aa5b1;
+  }
+</style>
+<div class="page">
+  <div class="wrap">
+    <div class="head">
+      <h1 class="head-title">データストア比較：RDB / KVS / ドキュメント DB</h1>
+      <p class="head-sub">技術選定資料 2026-09 版 ／ 対象: PostgreSQL・Redis・MongoDB</p>
+    </div>
+    <div class="rule-head"></div>
+    <div class="table">
+      <div class="thead">
+        <div class="row">
+          <div class="th corner">比較項目</div>
+          <div class="vsep-head"></div>
+          <div class="th">RDB<span class="engine">PostgreSQL</span></div>
+          <div class="vsep-head"></div>
+          <div class="th">KVS<span class="engine">Redis</span></div>
+          <div class="vsep-head"></div>
+          <div class="th">ドキュメント DB<span class="engine">MongoDB</span></div>
+        </div>
+      </div>
+      <div class="tbody">
+        <div class="row">
+          <div class="rowhead">得意なデータ</div>
+          <div class="vsep-rowhead"></div>
+          <div class="cell">関係が固定的で、結合して集計したい正規化済みの業務データ。</div>
+          <div class="vsep-cell"></div>
+          <div class="cell">寿命が短く単純な値。セッションやカウンタ、一時的なキャッシュ。</div>
+          <div class="vsep-cell"></div>
+          <div class="cell">項目が案件ごとに揺れる半構造データ。入れ子の JSON をそのまま持てる。</div>
+        </div>
+        <div class="hsep-row"></div>
+        <div class="row">
+          <div class="rowhead even">トランザクション</div>
+          <div class="vsep-rowhead"></div>
+          <div class="cell even">複数テーブルにまたがる ACID を標準で持つ。会計処理でも安心して使える。</div>
+          <div class="vsep-cell"></div>
+          <div class="cell even">MULTI で原子実行はできるが、ロールバックのない単純な一括実行に近い。</div>
+          <div class="vsep-cell"></div>
+          <div class="cell even">単一文書は原子的。複数文書のトランザクションは使えるが代償が大きい。</div>
+        </div>
+        <div class="hsep-row"></div>
+        <div class="row">
+          <div class="rowhead">スケール</div>
+          <div class="vsep-rowhead"></div>
+          <div class="cell">まず垂直に伸ばす。読み取りはレプリカ、書き込みは分割の設計が必要。</div>
+          <div class="vsep-cell"></div>
+          <div class="cell">Cluster で水平に伸びる。メモリ量が上限なので容量設計が効いてくる。</div>
+          <div class="vsep-cell"></div>
+          <div class="cell">シャーディング前提の設計。キー選びを誤ると偏って効果が出ない。</div>
+        </div>
+        <div class="hsep-row"></div>
+        <div class="row">
+          <div class="rowhead even">運用の手間</div>
+          <div class="vsep-rowhead"></div>
+          <div class="cell even">知見も道具も揃っている。VACUUM と長時間トランザクションだけ要注意。</div>
+          <div class="vsep-cell"></div>
+          <div class="cell even">運用は軽いが、永続化とフェイルオーバーの設定は事前に詰めておきたい。</div>
+          <div class="vsep-cell"></div>
+          <div class="cell even">スキーマ変更は楽な反面、実質の形はアプリ側の規律に依存してしまう。</div>
+        </div>
+        <div class="hsep-row"></div>
+        <div class="row">
+          <div class="rowhead">うちでの用途</div>
+          <div class="vsep-rowhead"></div>
+          <div class="cell">注文・請求・ユーザーなど、整合性が売上に直結する中核データを置く。</div>
+          <div class="vsep-cell"></div>
+          <div class="cell">ログイン情報と API のレート制限、重い集計結果の一時保存に使う。</div>
+          <div class="vsep-cell"></div>
+          <div class="cell">審査ログや外部 API の生レスポンスなど、形の定まらない記録の置き場。</div>
+        </div>
+      </div>
+    </div>
+    <div class="rule-foot"></div>
+    <div class="foot">※ 評価は当チームの現行ワークロード（1 日あたり書き込み 300 万件規模）を前提とした相対比較です。</div>
+  </div>
+</div>

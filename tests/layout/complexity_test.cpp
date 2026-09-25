@@ -388,7 +388,7 @@ TEST(LayoutComplexity, StretchRelayoutStaysLinearInTheNestingDepth) {
 
 // 表を出す口（ARCHITECTURE.md A54 の追記の数字はこれで採った）。回数は環境に依らないが
 // 時間は依るので、ふつうのテスト実行からは外してある。出し方:
-//   build/dev/tests/layout/layout_test --gtest_also_run_disabled_tests \
+//   build/dev/tests/layout/layout_test --gtest_also_run_disabled_tests
 //     --gtest_filter='*StretchRelayoutCostTable*'
 TEST(LayoutComplexity, DISABLED_StretchRelayoutCostTable) {
   constexpr int kRepeats = 3;

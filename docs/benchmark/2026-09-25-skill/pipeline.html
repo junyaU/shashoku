@@ -1,0 +1,45 @@
+<!-- 6 段パイプラインの図（等分の flex + 矢印。ガイド §4.2 / §4.13）。
+     2026-09-25 にローカルの skill で試作したもの。
+     `white-space: nowrap` の受け入れケース（requests.md 第 2 節 real01）:
+     --width 1100 で描くと段の名前「スタイル付きツリー」が `スタイル付きツ` / `リー` と折れる。
+     --width 1200 では折れない。nowrap があれば 1100 でも折れずに描け、
+     入りきらなければ warning[content-overflow] で知らせる、が期待する挙動。
+     shashoku docs/benchmark/2026-09-25-skill/pipeline.html -o pipeline.png --width 1200 --font NotoSansJP-Regular.otf --font NotoSansJP-Bold.otf -->
+<style>
+  * { box-sizing: border-box; }
+  .wrap  { padding: 24px 28px; background: #ffffff; color: #1b2733; }
+  .cap   { font-size: 20px; font-weight: bold; margin: 0 0 14px 0; }
+  .flow  { display: flex; align-items: center; gap: 8px; }
+  .step  { flex: 1 1 0; display: flex; flex-direction: column; gap: 6px; padding: 12px 12px; border-radius: 10px; background: #f1f4f9; border: 1px solid #dfe5ee; }
+  .in    { background: #fff7e6; border: 1px solid #f0d9a8; }
+  .out   { background: #e6f2ea; border: 1px solid #b9dcc6; }
+  .no    { font-size: 11px; color: #6b7a90; letter-spacing: 1px; }
+  .name  { font-size: 14px; font-weight: bold; line-height: 1.4; }
+  .desc  { font-size: 12px; color: #4f5d63; line-height: 1.5; }
+  .arrow { flex: none; font-size: 20px; color: #9aa7b8; }
+  .diag  { display: flex; gap: 8px; margin: 14px 0 0 0; }
+  .tag   { flex: none; padding: 4px 10px; border-radius: 12px; font-size: 12px; background: #e7f0ff; color: #14509b; }
+  .tagw  { background: #fff1e0; color: #8a4b08; }
+  .legend { font-size: 12px; color: #6b7a90; margin: 10px 0 0 0; line-height: 1.6; }
+</style>
+<div class="wrap">
+  <p class="cap">shashoku の 6 段パイプライン（一方向。後段は前段を書き換えない）</p>
+  <div class="flow">
+    <div class="step in"><div class="no">入力</div><div class="name">HTML 断片</div><div class="desc">タグとスタイルの部分集合</div></div>
+    <div class="arrow">→</div>
+    <div class="step"><div class="no">① html</div><div class="name">DOM</div><div class="desc">対応外のタグは集めて透過</div></div>
+    <div class="arrow">→</div>
+    <div class="step"><div class="no">② style</div><div class="name">スタイル付きツリー</div><div class="desc">カスケード。対応外の宣言は集めて続行</div></div>
+    <div class="arrow">→</div>
+    <div class="step"><div class="no">③ layout</div><div class="name">ボックスツリー</div><div class="desc">行分割・flex・ルビ・縦書き</div></div>
+    <div class="arrow">→</div>
+    <div class="step"><div class="no">④⑤ text · paint · raster</div><div class="name">描画リストと Bitmap</div><div class="desc">シェーピングと塗り</div></div>
+    <div class="arrow">→</div>
+    <div class="step out"><div class="no">⑥ png</div><div class="name">PNG</div><div class="desc">同じ入力から同じバイト列</div></div>
+  </div>
+  <div class="diag">
+    <div class="tag">エラー: ①② で一度に全部、位置と直し方つき</div>
+    <div class="tag tagw">警告: 豆腐 · 紙面のはみ出し · フォント不一致（--strict で失敗に）</div>
+  </div>
+  <p class="legend">各段は --dump-stage で JSON に出せる（dom · style · box · display-list）。行分割器は独立モジュールで、レイアウトにもフォントにも依存しない。</p>
+</div>

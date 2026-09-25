@@ -34,7 +34,9 @@ When in doubt, look it up in the substitution table in §5.
 - Styles go in `<style>` elements and/or `style` attributes
   (cascade: UA defaults < `<style>` < `style` attribute). Any number of `<style>` elements is fine
 - HTML comments `<!-- … -->` are allowed
-- Character references (`&amp;` `&lt;` `&gt;` `&nbsp;` `&#12354;`) are allowed
+- Character references (`&amp;` `&lt;` `&gt;` `&nbsp;` `&#12354;`) are allowed.
+  `&nbsp;` (U+00A0) is a space the line breaker will **not** break at — use it to tie a number to
+  its unit (§5)
 - **Anything you do not paint is transparent** (RGBA 0,0,0,0). If you want white paper,
   put a `background` on the outermost element
 
@@ -364,6 +366,11 @@ does not count towards the shrinkable width; CSS Text 3 §5.4). Worked example i
 of height, put a `&nbsp;` in it — it is accepted as a character reference and carries a height of
 `font-size × line-height` (25.5px here, for a 45.5px row). If any cell in the row has content, the
 empty ones are stretched by `stretch` anyway and need no `&nbsp;`.
+
+**Use `&nbsp;` when a narrow column splits a number from its unit.** In a 70px box at
+`font-size: 15px`, `Idle 17 ms (steady)` breaks as `Idle 17` / `ms` / `(steady)`; written
+`17&nbsp;ms` it becomes `Idle` / `17 ms` / `(steady)`, keeping the number and the unit on one
+line (§5).
 
 **Add `overflow-wrap: anywhere` to any column that may hold a long word.** Cells are `flex: 1 1 0`,
 so an unbreakable token (a URL, a hash, a run of alphanumerics) widens that one column and **the
@@ -857,8 +864,15 @@ Removing only one half produces no error and a broken picture.
   so do not use it on headings that contain numbers
 - Line-breaking rules (no leading punctuation or closing bracket, no trailing opening bracket)
   are applied automatically. You do not have to do anything
-- **There is no way to keep a number and its counter (`2027 年度`) on the same line.**
-  Adjust the width or the `font-size` if the break is unacceptable
+- **Tie a number to its counter or unit with `&nbsp;` (U+00A0).** Written `2027&nbsp;年` or
+  `17&nbsp;ms`, the line breaker treats that gap as unbreakable, so the number and the counter are
+  never separated at a line end (it has the same width and look as an ordinary space, and produces
+  neither tofu nor a warning). In a 110px box, `法改正は 2027 年度を視野に入れる。` breaks as
+  `法改正は 2027` / `年度を…`; written `2027&nbsp;年度` it becomes `法改正は` / `2027 年度を…`
+- **`&nbsp;` protects only that one gap.** Japanese breaks even inside a word, so the same sentence
+  in a 130px box breaks as `法改正は 2027 年` / `度を…` — **inside the counter**.
+  **There is no way to keep a whole word together** (`white-space: nowrap` is not supported; it is
+  an `unsupported-property` error). Widen the box or shorten the word
 - Justified text works via `text-align: justify`
 
 ---

@@ -596,6 +596,10 @@ The rules:
 - **Characters that fit on one line** ≈ `(height − vertical padding) ÷ font-size`.
   Above: `(900 − 40×2) ÷ 25 = 32.8`, and the poem is 32 characters, so it fits on one line.
   If the character count is fixed, solve for `font-size`
+- **An ideographic space (U+3000) that lands at the end of a line is not counted in the line's
+  width** — it hangs outside. When you separate phrases with ideographic spaces, as in the poem
+  above, you do not have to count the one that falls at the end of a line (you get the same wrap
+  as a browser). Inside a line it advances by one full-width character
 - **Line thickness** = `font-size × line-height`; lines × that must fit inside `width`
 - There is no tate-chu-yoko (`text-combine-upright`)
 
@@ -857,6 +861,9 @@ Removing only one half produces no error and a broken picture.
   so do not use it on headings that contain numbers
 - Line-breaking rules (no leading punctuation or closing bracket, no trailing opening bracket)
   are applied automatically. You do not have to do anything
+- **You may separate phrases with ideographic spaces (U+3000).** One that lands at the end of a
+  line is not counted in the line's width (it hangs outside), so a tanka or haiku written with
+  such spaces wraps where a browser wraps it
 - **There is no way to keep a number and its counter (`2027 年度`) on the same line.**
   Adjust the width or the `font-size` if the break is unacceptable
 - Justified text works via `text-align: justify`

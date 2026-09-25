@@ -230,6 +230,31 @@ void ParagraphBuilder::build_atomic_item(std::size_t at) {
                                      .ruby = kNone});
 }
 
+// (c) 行分割器から見た文字（A59）。**行末に来た全角スペース（U+3000）を行の幅に数えない**
+// ための読み替えで、これだけが実際のコードポイントと違う。
+//
+// 出典: CSS Text 3 §4.1.3 Phase II の 4。行末に残った「空白・その他の space separator
+// （Unicode の Zs から U+0020 と U+00A0 を除いたもの）・保存されたタブ」の並びは、
+// `white-space` が normal / nowrap なら**必ずぶら下がる**（= 行の幅に数えない）。
+// U+3000 は Zs なのでここに入る（Chrome の実測とも一致する。A59）。
+//
+// 行分割器の「行末の空白（SP）は幅に数えず content_end から除く」（§3.4 (3)）が、その
+// ぶら下げの口そのものなので、**この 1 クラスタを SP（U+0020）として渡す**。渡すのは
+// `Item::cp` だけで、送り・グリフ・文字の対応はそのままなので、行の途中では今までどおり
+// 全角 1 字分の送りとして効く。
+//
+// `Item::overhang_after`（ルビの掛け）は使えない: 掛けは「**行頭・行末で落とす**」=
+// 行の途中でだけ幅が減る向きで、ぶら下げ（行末でだけ幅が消える）と逆になる
+// （line_breaker.cpp の lay_out(): `if (i + 1 < content_end) after += overhang_after_[i]`）。
+//
+// U+00A0（`&nbsp;`）・半角スペース・U+202F などの他の Zs は読み替えない: 前者 2 つは
+// CSS の規定どおり今までの扱いのままで、U+202F は分割禁止の空白（UAX #14 の GL）なので
+// SP にすると後ろで割れてしまう。
+// 文字で書くと半角スペースと見分けが付かないので、コードポイントで書く。
+constexpr char32_t kIdeographicSpace = 0x3000;  // U+3000 IDEOGRAPHIC SPACE
+
+char32_t break_cp(char32_t cp) { return cp == kIdeographicSpace ? U' ' : cp; }
+
 // (b) **シェーピング属性**が同じ連続区間を 1 回でシェーピングし、(c) クラスタごとに
 // Item を作る（A6: 行ごとに測り直さない / A27: 色・letter-spacing・line-height の境界では
 // 切らない。切るとその位置のカーニングと合字が消える。issue #8）。返すのは区間の終わり。
@@ -252,7 +277,7 @@ Result<std::size_t> ParagraphBuilder::build_text_items(std::size_t begin) {
     const std::size_t style_id = at < end ? out_->chars[at].style : out_->chars[begin].style;
     out_->items.push_back(
         policy_of(linebreak::Item{.kind = linebreak::ItemKind::Text,
-                                  .cp = at < end ? out_->chars[at].cp : 0,
+                                  .cp = at < end ? break_cp(out_->chars[at].cp) : 0,
                                   .advance = cluster.advance + out_->letter_spacing(style_id),
                                   .em = out_->font_size(style_id),
                                   .no_break_before = false},

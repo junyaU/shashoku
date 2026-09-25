@@ -1,0 +1,41 @@
+<!-- サーバー内 HTML→PNG の比較表（flex の行 + 高さ 1px の罫。ガイド §4.3）。
+     2026-09-25 にローカルの skill で試作したもの。数値は docs/benchmark/results_2026-09-23.md の計測値。
+     「常駐 17 ms」のような数字 + 単位は `&nbsp;` で結んでいる（ガイド §5）。
+     shashoku docs/benchmark/2026-09-25-skill/compare.html -o compare.png --width 960 --font NotoSansJP-Regular.otf --font NotoSansJP-Bold.otf -->
+<style>
+  * { box-sizing: border-box; }
+  .wrap { padding: 28px; background: #ffffff; color: #1b2733; font-size: 15px; line-height: 1.7; }
+  .cap  { font-size: 22px; font-weight: bold; margin: 0 0 4px 0; }
+  .sub  { font-size: 13px; color: #6b7a90; margin: 0 0 16px 0; }
+  .tbl  { border: 1px solid #ccd3dd; }
+  .tr   { display: flex; }
+  .th   { background: #2f3b52; color: #ffffff; font-weight: bold; }
+  .odd  { background: #f5f7fb; }
+  .td   { flex: 1 1 0; padding: 10px 14px; overflow-wrap: anywhere; }
+  .key  { flex: none; width: 150px; font-weight: bold; color: #2f3b52; }
+  .hkey { color: #ffffff; }
+  .rule { height: 1px; background: #e3e8ef; }
+  .ok   { color: #2f7a5c; font-weight: bold; }
+  .ng   { color: #a8453a; }
+  .note { font-size: 12px; color: #6b7a90; margin: 12px 0 0 0; }
+</style>
+<div class="wrap">
+  <p class="cap">サーバーで HTML を画像にする 3 つの選択肢</p>
+  <p class="sub">OG 画像・通知カード・資料の図解を自動生成する用途で比べたもの</p>
+  <div class="tbl">
+    <div class="tr th"><div class="td key hkey">項目</div><div class="td">shashoku</div><div class="td">Satori + resvg</div><div class="td">headless Chrome</div></div>
+    <div class="rule"></div>
+    <div class="tr"><div class="td key">入力</div><div class="td">HTML 断片と CSS の部分集合（block と flex、ルビ、縦書き）</div><div class="td">JSX か HTML の部分集合（flexbox 中心）</div><div class="td">任意の HTML / CSS / JavaScript</div></div>
+    <div class="rule"></div>
+    <div class="tr odd"><div class="td key">対応外の扱い</div><div class="td"><span class="ok">エラーと警告</span>。位置と直し方つきで一度に全部。<span class="ok">--strict</span> で警告も失敗に</div><div class="td"><span class="ng">黙って捨てる</span>。exit 0 のまま絵が崩れる（ルビの連結、縦書きの消失）</div><div class="td">描ける。崩れても<span class="ng">気づけない</span></div></div>
+    <div class="rule"></div>
+    <div class="tr"><div class="td key">高さ</div><div class="td">内容に追従、または固定 + はみ出しの警告</div><div class="td">固定が必須。切れるか余る</div><div class="td">追従できる（撮り方次第）</div></div>
+    <div class="rule"></div>
+    <div class="tr odd"><div class="td key">日本語組版</div><div class="td">禁則、両端揃え、約物の詰め、和欧文アキ、ルビ、縦書き</div><div class="td">禁則の基本（UAX #14）のみ。ルビ・縦書きなし</div><div class="td">ブラウザの組版そのまま</div></div>
+    <div class="rule"></div>
+    <div class="tr"><div class="td key">起動と常駐</div><div class="td">cold 20&nbsp;ms / 45&nbsp;MB。常駐 17&nbsp;ms。16 並列で 558&nbsp;枚/秒</div><div class="td">cold 240&nbsp;ms / 194&nbsp;MB。常駐 15&nbsp;ms。1 プロセス 59&nbsp;枚/秒</div><div class="td">数百 MB のバイナリと依存（未計測）</div></div>
+    <div class="rule"></div>
+    <div class="tr odd"><div class="td key">配布</div><div class="td">実行ファイル 1 つ（フォント同梱）。同じ入力から同じ PNG</div><div class="td">npm パッケージ 3 つ + Node + フォントの配管</div><div class="td">ブラウザ本体の導入と更新</div></div>
+  </div>
+  <p class="note">※ 数値は 2026-09-23 の計測（docs/benchmark/results_2026-09-23.md、Satori 0.33.5 / resvg-js 2.6.2、i9-14900KF）。</p>
+</div>

@@ -1,5 +1,6 @@
 #include "style/value_parser.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
@@ -159,6 +160,8 @@ struct HintEntry {
 constexpr std::string_view kPerSideBorderHint =
     "no per-side borders. For a divider between boxes, insert a `div` with `height: 1px` (or "
     "`width: 1px` in a row) and a background color; it takes 1px of layout space (guide §4.3). "
+    "If the parent is a flex container with `justify-content: space-between`, wrap the divider "
+    "with its neighbour so the item count does not change. "
     "For one edge of a box frame there is no equivalent: use a full `border` or drop it";
 constexpr std::string_view kGridHint =
     "no grid. For equal-width columns in one row, use `display: flex` on the parent and "
@@ -168,6 +171,15 @@ constexpr std::string_view kMinMaxSizeHint =
     "no min/max sizes: use a fixed `width` / `height`, or drop it";
 
 constexpr auto kPropertyHints = std::to_array<HintEntry>({
+    // (3) 条件つきの代替（A55 の追記）。`align-self` を削ると、その項目だけ親の `align-items` に
+    // 従ってしまう（再測定の case02 では矢印が上端に寄った）。**交差軸の `auto` margin は
+    // 親の指定に関係なく効く**のに対し、入れ子の flex で揃える手は「親が既定の stretch の
+    // ままで、包む div が交差サイズいっぱいに伸びること」が条件なので、条件を書く
+    {"align-self",
+     "no `align-self`: an `auto` margin on the cross axis moves one item whatever the parent "
+     "says (in a row, `margin-top: auto` pushes it to the end, `margin-bottom: auto` to the "
+     "start, both to the center). Wrapping the item in its own `display: flex` + `align-items` "
+     "box works only while the parent keeps the default `align-items: stretch` (guide §4.6)"},
     // (2) 削ると危険な組（docs/guide/writing-html-for-shashoku.md §5）。
     // `-webkit-background-clip` も接頭辞を外してこの行に当たる
     {"background-clip",
@@ -197,6 +209,11 @@ constexpr auto kPropertyHints = std::to_array<HintEntry>({
     {"min-width", kMinMaxSizeHint},
     {"position", "no positioning: use `display: flex` with `justify-content` / `align-items`"},
     {"text-combine-upright", "tate-chu-yoko is not implemented"},
+    // (1) 確かめた代替（A55 の追記）。矢印・三角は既定フォントに入っている文字で描ける
+    // （guide §2.4）。回転そのものは無いので、そこは「回さずに描く」と言い切る
+    {"transform",
+     "no transforms: draw the shape unrotated (an arrow or triangle can be a character such as "
+     "`→` / `▶`, guide §2.4) or drop it"},
 });
 
 std::string_view exact_hint_for(std::string_view name) {
@@ -688,6 +705,24 @@ Result<void> parse_single_length(const Ctx& ctx, std::span<const ValueToken> tok
   return {};
 }
 
+// 角ごとの `border-radius`（`12px 12px 0 0`）には**値を見てから** hint を足す（A53 の
+// `bad_value_with_hint()`）。プロパティ名までは対応しているので、名前の表では言えない。
+// 先頭の値を残すと**残りの角も丸くなる**ので、見た目が変わることも書く（A48 の追記）。
+Result<void> parse_border_radius(const Ctx& ctx, std::span<const ValueToken> tokens,
+                                 std::vector<Declaration>& out) {
+  const bool corner_list =
+      tokens.size() >= 2 && tokens.size() <= 4 &&
+      std::ranges::all_of(tokens, [](const ValueToken& token) {
+        return token.kind == ValueToken::Kind::Dimension || token.kind == ValueToken::Kind::Number;
+      });
+  if (corner_list) {
+    return bad_value_with_hint(ctx, std::format("expected a single length ({})", kLengthHelp),
+                               "one radius for all four corners only; keep the first value (the "
+                               "other corners round as well)");
+  }
+  return parse_single_length(ctx, tokens, PropertyId::BorderRadius, false, out);
+}
+
 Result<void> parse_margin(const Ctx& ctx, std::span<const ValueToken> tokens,
                           std::vector<Declaration>& out) {
   if (tokens.empty() || tokens.size() > 4) {
@@ -1076,7 +1111,7 @@ Result<void> parse_by_name(PropertyName property, const Ctx& ctx,
     case PropertyName::BorderColor:
       return parse_color_property(ctx, tokens, PropertyId::BorderColor, true, out);
     case PropertyName::BorderRadius:
-      return parse_single_length(ctx, tokens, PropertyId::BorderRadius, false, out);
+      return parse_border_radius(ctx, tokens, out);
     case PropertyName::Background:
     case PropertyName::BackgroundColor:
       // 値レベルの hint（A53 の (c)）。linear / radial / conic と `repeating-` 版を

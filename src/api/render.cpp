@@ -351,6 +351,32 @@ class ResourceSource {
     return loaded_images_ != nullptr ? loaded_images_->size() : 0;
   }
 
+  // 渡された画像の名前（デコードしない。順序は渡された順で決定的）。
+  // `<img src>` の事前検査（A55 の追記）に使う。ムーブ済みの `LoadedImages` では nullopt を返して
+  // 検査を飛ばす（`acquire()` が `InvalidOption` を返すので、そちらに任せる）。
+  [[nodiscard]] std::optional<std::vector<std::string_view>> image_names() const {
+    std::vector<std::string_view> names;
+    if (image_set_ != nullptr) {
+      names.reserve(image_set_->size());
+      for (std::size_t i = 0; i < image_set_->size(); ++i) {
+        names.emplace_back(image_set_->name(i));
+      }
+      return names;
+    }
+    if (loaded_images_ == nullptr) {
+      return names;  // 画像を渡されていない経路
+    }
+    const detail::ImageTable table = detail::LoadedImagesAccess::table(*loaded_images_);
+    if (table.names == nullptr) {
+      return std::nullopt;  // ムーブ済み
+    }
+    names.reserve(table.names->size());
+    for (const std::string& name : *table.names) {
+      names.emplace_back(name);
+    }
+    return names;
+  }
+
   [[nodiscard]] Result<ResourceRefs> acquire(OwnedResources& owned,
                                              const RenderLimits& limits) const {
     const Result<const text::FontStore*> fonts = acquire_fonts(owned);
@@ -410,6 +436,58 @@ class ResourceSource {
   const LoadedFonts* loaded_fonts_ = nullptr;
   const LoadedImages* loaded_images_ = nullptr;
 };
+
+// ---------------------------------------------------------------------------
+// `<img src>` の事前検査（ARCHITECTURE.md A55 の追記。A46 の「結果にも」の取りこぼし）
+// ---------------------------------------------------------------------------
+
+// 名前の引けない `<img>` を **①② と同じ 1 回の診断に集める**。
+//
+// ③ layout の `resolve_image()` も同じ検査を持っているが、③ は最初の 1 件で止まるうえ
+// ①② にエラーがあれば動かないので、対応外の CSS が 1 つでもある入力では画像の不在が
+// **次の往復まで隠れていた**（再測定の case06 は CSS を全部直した次の回で初めて出た）。
+// ここは api なので DOM だけを見る: 名前の照合に計算値は要らない。
+// 致命にはせず `diagnostics.add_error()` に足す（③ の検査は安全網として残す）。
+void check_image_names(const html::Node& root, const std::vector<std::string_view>& given,
+                       Diagnostics& diagnostics) {
+  // hint は「渡された画像の名前」を並べる。1 つも無ければ渡し方そのものを言う
+  // （名前が間違っているのか、`--image` を忘れたのかで直し方が違う）。
+  const std::string hint = [&given] {
+    if (given.empty()) {
+      return std::string{
+          "no images were given; pass `--image name=file.png` and write `src=\"name\"`"};
+    }
+    std::string out = "images given: ";
+    for (std::size_t i = 0; i < given.size(); ++i) {
+      if (i > 0) {
+        out += ", ";
+      }
+      out += std::format("`{}`", given[i]);
+    }
+    return out;
+  }();
+
+  // 文書順（前順）に辿る。同じ名前が複数の `<img>` にあれば要素ごとに 1 件
+  // （位置が違うので、AI はどの `<img>` かを位置で特定できる）。
+  std::vector<const html::Node*> stack{&root};
+  while (!stack.empty()) {
+    const html::Node& node = *stack.back();
+    stack.pop_back();
+    if (node.type == html::Node::Type::Element && node.tag == "img") {
+      // `src` の欠落は ② style が報告する（ここでは引く名前が無いので黙る）。
+      if (const html::Attribute* src = node.find_attr("src"); src != nullptr) {
+        if (std::ranges::find(given, src->value) == given.end()) {
+          diagnostics.add_error(error_with_hint(
+              ErrorKind::ImageNotFound, std::format("no image named `{}` was given", src->value),
+              node.location, hint));
+        }
+      }
+    }
+    for (std::size_t i = node.children.size(); i > 0; --i) {
+      stack.push_back(&node.children[i - 1]);
+    }
+  }
+}
 
 // ---------------------------------------------------------------------------
 // 失敗の組み立て（ARCHITECTURE.md A46）
@@ -642,6 +720,11 @@ std::expected<RenderResult, RenderFailure> render_impl(std::string_view html,
   if (const Result<void> ok = check_dom_limits(*dom, options.limits); !ok) {
     return to_failure(diagnostics, ok.error());
   }
+  // `<img src>` の名前は ①② と同じ往復で報告する（A55 の追記）。位置順に整列されるので、
+  // ② より前に足しても並びは入力どおりになる。
+  if (const std::optional<std::vector<std::string_view>> given = source.image_names(); given) {
+    check_image_names(*dom, *given, diagnostics);
+  }
   const Result<style::StyledNode> styled =
       style::resolve(*dom, diagnostics, options.limits.style_rules, options.limits.length_px);
   if (!styled) {
@@ -753,6 +836,11 @@ std::expected<std::string, RenderFailure> dump_impl(std::string_view html,
   }
   if (const Result<void> ok = check_dom_limits(*dom, options.limits); !ok) {
     return to_failure(diagnostics, ok.error());
+  }
+  // `<img src>` の名前は ①② と同じ往復で報告する（A55 の追記）。位置順に整列されるので、
+  // ② より前に足しても並びは入力どおりになる。
+  if (const std::optional<std::vector<std::string_view>> given = source.image_names(); given) {
+    check_image_names(*dom, *given, diagnostics);
   }
   if (stage == DumpStage::Dom) {
     return html::dump_json(*dom);

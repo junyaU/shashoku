@@ -188,6 +188,116 @@ Error make_error(ErrorKind kind, std::string message, const SourceLocation& loca
                .warning = std::nullopt};
 }
 
+// 対応外のタグに添える「代わりにどう書くか」（A55 の追記）。`UnsupportedTag` だけでは
+// 「div に置き換えたら表の列が縦に潰れた」（再測定の case01）のように、置き換え方が分からない。
+//
+// A46 / A48 の規則はそのまま: 載せてよいのは **shashoku で同じ結果が出せると確かめた代替**だけで、
+// **表に無いタグには何も足さない**（知らないタグに助言を捏造しない）。置き換えが 1 行では
+// 書けないもの（表・箇条書き）は、確かめた書き方が載っているガイドの節番号を指す
+// （`docs/guide/writing-html-for-shashoku.md`。英語版も同じ番号）。
+constexpr std::string_view kTableTagHint =
+    "no tables: build each row as `display: flex` with `flex: 1 1 0` cells and 1px rule divs "
+    "(guide §4.3)";
+constexpr std::string_view kListTagHint =
+    "no lists: one flex row per item with a dot or number badge (guide §4.4)";
+constexpr std::string_view kBlockTagHint = "use `div`";
+constexpr std::string_view kInlineTagHint =
+    "use `span` with `font-weight` / `color` / `background-color`";
+constexpr std::string_view kFragmentHint = "write a fragment: drop the document wrapper (guide §1)";
+constexpr std::string_view kWidgetTagHint =
+    "not supported; draw it with divs or pass a PNG with `--image`";
+
+struct TagHint {
+  std::string_view tag;
+  std::string_view hint;
+};
+
+// 同じ hint を共有するタグをまとめて並べる（家族ごとに 1 行の文面）。
+constexpr auto kTagHints = std::to_array<TagHint>({
+    // 表: 行 = flex、セル = `flex: 1 1 0`、横罫 = 高さ 1px の div（guide §4.3）
+    {"caption", kTableTagHint},
+    {"table", kTableTagHint},
+    {"tbody", kTableTagHint},
+    {"td", kTableTagHint},
+    {"tfoot", kTableTagHint},
+    {"th", kTableTagHint},
+    {"thead", kTableTagHint},
+    {"tr", kTableTagHint},
+    // 箇条書き・定義リスト: 1 項目 = flex の行 + 丸か番号のバッジ（guide §4.4）
+    {"dd", kListTagHint},
+    {"dl", kListTagHint},
+    {"dt", kListTagHint},
+    {"li", kListTagHint},
+    {"ol", kListTagHint},
+    {"ul", kListTagHint},
+    // ただの塊（意味は絵に出ない）。`div` に置き換えれば同じ絵になる
+    {"article", kBlockTagHint},
+    {"aside", kBlockTagHint},
+    {"blockquote", kBlockTagHint},
+    {"figcaption", kBlockTagHint},
+    {"figure", kBlockTagHint},
+    {"footer", kBlockTagHint},
+    {"header", kBlockTagHint},
+    {"main", kBlockTagHint},
+    {"nav", kBlockTagHint},
+    {"pre", kBlockTagHint},
+    {"section", kBlockTagHint},
+    // 文中の装飾。太字・色・下線の代わりは自分で書く（UA の既定スタイルは付かない）
+    {"a", kInlineTagHint},
+    {"abbr", kInlineTagHint},
+    {"b", kInlineTagHint},
+    {"code", kInlineTagHint},
+    {"em", kInlineTagHint},
+    {"i", kInlineTagHint},
+    {"label", kInlineTagHint},
+    {"mark", kInlineTagHint},
+    {"s", kInlineTagHint},
+    {"small", kInlineTagHint},
+    {"strong", kInlineTagHint},
+    {"sub", kInlineTagHint},
+    {"sup", kInlineTagHint},
+    {"time", kInlineTagHint},
+    {"u", kInlineTagHint},
+    // 文書の外枠。入力は断片なので、まるごと外す（guide §1）
+    {"body", kFragmentHint},
+    {"head", kFragmentHint},
+    {"html", kFragmentHint},
+    {"link", kFragmentHint},
+    {"meta", kFragmentHint},
+    {"noscript", kFragmentHint},
+    {"script", kFragmentHint},
+    {"title", kFragmentHint},
+    // 対話・描画の要素。同じ絵を HTML で作る道は無いので、div で描くか画像で渡す
+    {"button", kWidgetTagHint},
+    {"canvas", kWidgetTagHint},
+    {"form", kWidgetTagHint},
+    {"iframe", kWidgetTagHint},
+    {"input", kWidgetTagHint},
+    {"select", kWidgetTagHint},
+    {"svg", kWidgetTagHint},
+    {"textarea", kWidgetTagHint},
+    {"video", kWidgetTagHint},
+});
+
+// 表に無ければ空（hint なし）。
+std::string_view hint_for_tag(std::string_view tag) {
+  for (const TagHint& entry : kTagHints) {
+    if (entry.tag == tag) {
+      return entry.hint;
+    }
+  }
+  return {};
+}
+
+// 対応外のタグの診断（開始タグと、対応する開始タグの無い終了タグで共有する）。
+Error unsupported_tag_error(std::string_view tag, bool end_tag, const SourceLocation& location) {
+  const std::string form = end_tag ? std::format("</{}>", tag) : std::format("<{}>", tag);
+  return error_with_hint(
+      ErrorKind::UnsupportedTag,
+      std::format("`{}` is not supported (supported tags: {})", form, join(kSupportedTags)),
+      location, std::string{hint_for_tag(tag)});
+}
+
 // 開いている要素 1 つ。対応外のタグは**透過**（transparent）として積む: 終了タグの対応は
 // 取るが、木には残さず、子は親の子になる（A46 / A49）。
 struct OpenElement {
@@ -554,10 +664,7 @@ Result<void> Parser::parse_start_tag() {
   const bool supported = is_supported_tag(tag);
   if (!supported) {
     // A46: 集めて続行する。要素は透過にして、中身の問題も同じ 1 回で報告する
-    diagnostics_->add_error(make_error(
-        ErrorKind::UnsupportedTag,
-        std::format("`<{}>` is not supported (supported tags: {})", tag, join(kSupportedTags)),
-        start));
+    diagnostics_->add_error(unsupported_tag_error(tag, /*end_tag=*/false, start));
   }
 
   // 透過する要素の属性は報告しない（A49）: 「`<tag>` が対応外」の 1 件で足りるので、
@@ -872,10 +979,7 @@ Result<void> Parser::parse_end_tag() {
       return mismatch();
     }
     // 対応する開始タグの無い終了タグ（`</table>` 単独）。対応外なので集めて読み飛ばす
-    diagnostics_->add_error(make_error(
-        ErrorKind::UnsupportedTag,
-        std::format("`</{}>` is not supported (supported tags: {})", tag, join(kSupportedTags)),
-        start));
+    diagnostics_->add_error(unsupported_tag_error(tag, /*end_tag=*/true, start));
     return {};
   }
 

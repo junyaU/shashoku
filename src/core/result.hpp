@@ -28,4 +28,22 @@ inline std::unexpected<Error> fail(ErrorKind kind, std::string message,
                                .warning = std::nullopt});
 }
 
+// 「代わりにどう書くか」を `RenderError::hint` に入れて作る（A46。message には混ぜない）。
+// A48 では ② style だけが使うので `style/style_error.hpp` に置いたが、A55 の追記で ① html も
+// 対応外タグの hint に使うようになったので core に移した（1 モジュールのためではなくなった）。
+inline Error error_with_hint(ErrorKind kind, std::string message,
+                             std::optional<SourceLocation> location, std::string hint) {
+  return Error{.kind = kind,
+               .message = std::move(message),
+               .location = location,
+               .hint = std::move(hint),
+               .warning = std::nullopt};
+}
+
+inline std::unexpected<Error> fail_with_hint(ErrorKind kind, std::string message,
+                                             std::optional<SourceLocation> location,
+                                             std::string hint) {
+  return std::unexpected(error_with_hint(kind, std::move(message), location, std::move(hint)));
+}
+
 }  // namespace shashoku

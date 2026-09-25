@@ -1369,7 +1369,11 @@ A46 の「① html と ② style は見つけた問題を集めてから失敗�
   **文字が消える**（検証 C で実際に起きた）。表のコメントに 2 種類あることを明記した
 - **hint 付きのエラーは `style/style_error.hpp` の `error_with_hint()` で作る。** `core/result.hpp` の
   `fail()` に hint 引数を足すと全モジュールの共有物が A46 のために太るので、style の中に置いた
-  （`is_recoverable(kind)` も同じ理由でここ）
+  （`is_recoverable(kind)` も同じ理由でここ）。
+  **2026-09-25 に撤回**: ① html も対応外タグの hint を出すようになった（A55 の追記）ので、
+  `error_with_hint()` / `fail_with_hint()` は `core/result.hpp` に移した。「1 モジュールのために
+  core を太らせない」という理由が消えたからで、`fail()` と `Error` は今までどおり触っていない。
+  `style_error.hpp` に残るのは `is_recoverable(kind)` だけ（こちらは style の判断のまま）
 
 **追記（2026-09-24、A53 と同じ回）**: hint の書き方と、計算値の診断の重複について決めた。
 
@@ -1808,6 +1812,51 @@ A52 / A53 後の再測定（`docs/benchmark/results_a53_2026-09-24.md` §2 / §3
   前は 3 往復かかった border-width → border-radius → padding-top が 1 回で出る。
   `examples/*.html` 5 本の PNG は main（2c7066c）の release バイナリの出力と**バイト一致**（絵は変えていない）
 
+**追記（2026-09-25、A57 の次の回）**: 残っていた取りこぼしを 1 つ塞ぎ、hint を足した。
+再測定（`docs/benchmark/results_a57_2026-09-25.md`）で分かったのは
+「**診断は出ているのに直し方が分からない**」型の往復で、実装で解くもの（`white-space: nowrap`、
+辺ごとの border）と切り分けて、**診断で簡単に直せるものだけ**をここに入れた。
+
+- **(d) `<img src>` の名前は api が事前に検査する。** ③ layout の `resolve_image()` は
+  最初の 1 件で止めるうえ、①② にエラーがあれば ③ に進まないので、**対応外の CSS が 1 つでもある
+  入力では画像の不在が次の往復まで隠れていた**（case06 は CSS を全部直した次の回で初めて出た）。
+  `src/api/render.cpp` が ① のあとに DOM を歩き、`<img src>` の名前が渡された画像に無ければ
+  `ImageNotFound` を `diagnostics.add_error()` に足す（致命にしない）。位置は `<img>` 要素、
+  `<img>` ごとに 1 件。**③ の検査は安全網として残す**（api で拾うので普通は届かない。
+  layout を単体で使う経路のために消さない）。
+  - **api が DOM だけを見る**のは、名前の照合に計算値が要らないから。`display: none` の枝の
+    `<img>` も報告する（② が `display: none` の中の宣言を検査し続けるのと同じ線引き。
+    「書いてあるのに引けない」ことは絵に出るかどうかと関係ない）
+  - **hint は渡された画像の名前を並べる**（``images given: `avatar`, `icon` ``）。1 枚も渡していなければ
+    渡し方そのものを言う（``no images were given; pass `--image name=file.png` …``）。綴り違いと
+    「`--image` を忘れた」は直し方が違うので、hint で分ける
+  - ムーブ済みの `LoadedImages` では事前検査を**飛ばす**（名前が引けないので誤報になる。
+    `acquire()` の `InvalidOption` に任せる）
+- **(e) 対応外のタグに hint を付ける。** `unsupported-tag` は「対応タグの一覧」しか言わないので、
+  `<table>` を `div` に置き換えて**列が縦に潰れる**（case01）。`src/html/parser.cpp` に
+  **家族ごとの小さな表**（`kTagHints`）を持ち、表・箇条書き・ただの塊・文中の装飾・文書の外枠・
+  対話や描画の要素の 6 通りだけを言う。**表に無いタグには何も足さない**（A46 / A48 の
+  「確かめた代替だけ」「捏造しない」をそのまま適用）。置き換えが 1 行で書けないもの（表・箇条書き）は
+  ガイドの節番号（§4.3 / §4.4）を指す。開始タグと、対応する開始タグの無い終了タグで同じ hint
+- **(f) hint を 3 つ足した**（`src/style/value_parser.cpp`。どれも CLI で描いて確かめた）:
+  `align-self`（**交差軸の `auto` margin は親の指定に関係なく効く**。入れ子の flex で揃える手は
+  「親が既定の `align-items: stretch`」が条件なので条件を書く）、`transform`（回転は無い。
+  矢印・三角は `→` / `▶` の文字で描ける。guide §2.4）、辺ごとの `border` の hint に 1 文
+  （**罫の div を足すと flex アイテムが 1 つ増える**ので、`justify-content: space-between` の親では
+  隣の項目と一緒に包む。case06 で実際に崩れた）。加えて `border-radius` に値が 2〜4 個なら
+  **値レベルの hint**（A53 の `bad_value_with_hint()`）で「最初の値だけ残す。**残りの角も丸くなる**」。
+  `50%` や `8px / 4px` には付けない（「最初の値を残せ」では直らない）
+- **`fail_with_hint()` / `error_with_hint()` は `core/result.hpp` に移した。** A48 が style に置いたのは
+  「1 モジュールのために core を太らせない」ためで、① html も使うようになって理由が消えた。
+  `style/style_error.hpp` には `is_recoverable()` だけが残る（挙動は不変。style 側は名前解決で
+  そのまま core の関数を引く）。`core/fail()` と `Error` は触っていない
+- **確かめたこと（2026-09-25、release の CLI で実測）**: `case01.html` は診断 70 件のまま
+  **hint の無い `unsupported-tag` が 42 → 0 件**（`table` / `tr` / `td` / `th` / `html` / `head` /
+  `body` / `meta` / `title` / `link`）。`case06.html` は **41 → 42 件**（増えたのは
+  `image-not-found` の 1 件 = `avatar.png`。1 回目の診断に出る）で、hint の無い `unsupported-tag` は
+  8 → 0 件。`examples/*.html` 5 本の PNG は feature/a55b（11719e7）の release バイナリの出力と
+  **バイト一致**（絵は 1 ピクセルも変えていない）
+
 **A56. `box-sizing: border-box` に対応する。A11 の「content-box のみ」を上書きする。**（2026-09-24）
 
 `width` / `height` / `flex-basis` が **border box の寸法**になる書き方に対応する。初期値は `content-box`
@@ -2181,6 +2230,16 @@ std::string dump_json(const Node& root);
   （`html head body script …` も含めてエラー。集めて続行し、要素は透過にする。下記）。
   コメントと `<!DOCTYPE>` は読み飛ばす。表は `src/html/tags.hpp`（ヘッダのみ）に置き、
   ② style も引く（対応外のタグを名指しするセレクタの検査。A55）
+- **`UnsupportedTag` の hint**（A55 の追記）: `parser.cpp` の `kTagHints` に**家族ごとの表**を持ち、
+  「どう書き直すか」を `RenderError::hint` に入れる（message には混ぜない。A46）。家族は 6 つ:
+  `table thead tbody tfoot tr th td caption` → flex の行 + `flex: 1 1 0` のセル + 1px の罫（guide §4.3）、
+  `ul ol li dl dt dd` → 1 項目 = flex の行 + 丸か番号のバッジ（guide §4.4）、
+  `section article header footer nav main aside figure figcaption blockquote pre` → `div`、
+  `strong b em i code a small mark u s sub sup abbr time label` → `span` + `font-weight` / `color` /
+  `background-color`、`html head body meta title link script noscript` → 断片で書く（guide §1）、
+  `svg canvas video iframe input button select textarea form` → div で描くか `--image` で PNG を渡す。
+  **表に無いタグには hint を付けない**（A46 / A48 の「確かめた代替だけ」「捏造しない」）。
+  開始タグと、対応する開始タグの無い終了タグで同じ hint（`unsupported_tag_error()` が両方を作る）
 - 対応属性: 共通 `style class id`、`img` は加えて `src width height alt`。それ以外は
   `UnsupportedAttribute`。属性の重複は `HtmlParse`（**残す属性だけ**。A49）。引用符は `"` `'` なし の 3 形式
 - 空要素 `br img` は閉じタグなし（`<br/>` も可）。それ以外の要素の閉じ忘れ・対応しない終了タグ・
@@ -2291,6 +2350,10 @@ std::string dump_json(const StyledNode& root);
   (b) **削ると危険な組**: `background-clip` / `-webkit-background-clip` は「`color: transparent` も外さないと
   文字が消える」(c) inline への箱プロパティの `UnsupportedLayout` は「宣言を削る（`display: block` にすると
   文の流れが切れる）」。hint の無いものは空のまま。
+  (d) **条件つきの代替**（A55 の追記）: `align-self` は「交差軸の `auto` margin なら親の指定に
+  関係なく効く / 入れ子の flex で揃える手は親が既定の `stretch` のときだけ」、`transform` は
+  「回さずに描く。矢印・三角は `→` / `▶` の文字（guide §2.4）」、辺ごとの `border` は
+  「`justify-content: space-between` の親では罫の div を隣と一緒に包む（アイテム数を変えない）」。
   `value_parser.cpp` の `kPropertyHints` に **未対応だと分かっているものだけ**を載せる。
   表に無い名前（綴り間違いなど）には何も足さない。**載せてよいのは shashoku で実際に
   同じ結果が出せると確かめた代替**と、**削ると危険な組の警告**だけで、代替が無いもの（縦中横）は
@@ -2305,7 +2368,10 @@ std::string dump_json(const StyledNode& root);
 - **値レベルの hint**（A53）。プロパティ名では対応外だと分からないもの
   （`display: grid` / `display: inline-block` / `background` と `background-color` の `gradient(`）には、
   **値を見てから** hint を付ける。`value_parser.cpp` の `bad_value_with_hint()` が
-  `bad_value()` と同じ message に hint だけを足す（core の `fail()` / `Error` は変えない）
+  `bad_value()` と同じ message に hint だけを足す（core の `fail()` / `Error` は変えない）。
+  **`border-radius` に長さが 2〜4 個**（`12px 12px 0 0`。角ごとの指定）も同じ経路で
+  「4 隅共通だけ。最初の値を残す（**残りの角も丸くなる**）」と言う（A55 の追記）。
+  `50%` や `8px / 4px` のように**最初の値を残しても通らない**書き方には付けない
 - 名前の引き方は 3 段（`direct_hint_for()`）: (1) `kPropertyHints` の**完全一致**
   (2) 片側だけの `border-*` の接頭辞一致（`border-top` `-right` `-bottom` `-left` と、その
   `-width` / `-style` / `-color` の 16 通り。`border-top-left-radius` のような**角**には当てない）
@@ -2576,6 +2642,14 @@ stderr に出す。
 `no requested font family is loaded (\`Hiragino Mincho ProN\`, \`serif\`); text uses \`Noto Sans JP\` instead`
 （実際に描いたフォールバック列の先頭の family 名）+ ` at L:C`。`codepoint` は 0、`overflow_px` は 0、`edge` は null。
 警告なので描画は続き、`warnings_as_errors` で失敗にできる（豆腐と同じ）。CLI は `warning[font-not-found]: <detail>`。
+
+**`<img src>` の事前検査（A55 の追記）**: `html::parse` のあと（`check_dom_limits` の直後）に DOM を
+前順に 1 回辿り、`<img>` の `src` の値が渡された画像（`ImageSet` / `LoadedImages` の名前。デコードはしない）に
+無ければ `ImageNotFound` を `diag.add_error()` に足す（**致命にしない**。位置は `<img>` 要素、`<img>` ごとに 1 件）。
+hint は渡された画像の名前の列挙で、1 枚も渡されていなければ `--image` の書き方。`src` が無い `<img>` は
+② が報告するのでここでは黙る。`display: none` の枝も検査する（照合に計算値は要らない）。
+③ layout の同じ検査（`resolve_image()`）は安全網として残す。ムーブ済みの `LoadedImages` では検査を飛ばす
+（`acquire()` が `InvalidOption` を返す）。`render()` と `dump()` の両方、どの資源の経路でも同じ位置で行う。
 
 **診断の組み立て（A46）**: api は `Diagnostics diag{opts.limits.max_diagnostics}` を作り、`html::parse` と
 `style::resolve` に渡す。**②の出口のゲートは 1 か所**（`check_computed_limits` のあと）で、`diag.has_errors()` なら

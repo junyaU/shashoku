@@ -116,12 +116,110 @@ TEST(Diagnostics, HintIsSeparateFromTheMessage) {
 }
 
 // hint の無い対応外（対応表に確かめた代替が無いもの）は空のまま。
+// `<table>` は A55 の追記で hint が付いたので、表に無いタグで見る。
 TEST(Diagnostics, HintIsEmptyWhenThereIsNoVerifiedAlternative) {
-  const auto result = render("<table>あ</table>", japanese_fonts(), options_for(320));
+  const auto result = render("<details>あ</details>", japanese_fonts(), options_for(320));
   ASSERT_FALSE(result.has_value());
   const RenderError error = first_error(result.error());
   EXPECT_EQ(error.kind, ErrorKind::UnsupportedTag);
   EXPECT_TRUE(error.hint.empty()) << error.hint;
+}
+
+// 対応外のタグには「どう書き直すか」が付く（A55 の追記）。`<table>` を黙って `div` にすると
+// 列が縦に潰れるので、確かめた書き方（guide §4.3）を指す。
+TEST(Diagnostics, UnsupportedTagCarriesAHintForTheVerifiedReplacement) {
+  const auto result = render("<table>あ</table>", japanese_fonts(), options_for(320));
+  ASSERT_FALSE(result.has_value());
+  const RenderError error = first_error(result.error());
+  EXPECT_EQ(error.kind, ErrorKind::UnsupportedTag);
+  EXPECT_NE(error.hint.find("guide §4.3"), std::string::npos) << error.hint;
+  EXPECT_EQ(error.message.find("guide §4.3"), std::string::npos) << error.message;
+}
+
+// ---------------------------------------------------------------------------
+// 一度に全部（A46 の 1）: 画像の不在（A55 の追記）
+// ---------------------------------------------------------------------------
+
+// `<img src>` の名前が引けないことを **①② と同じ 1 回**で報告する（A55 の追記）。
+// 直す前は ③ layout が最初の 1 件で止める検査しか無く、①② にエラーがあると
+// ③ に進まないので、CSS を全部直した**次の往復**まで画像の不在が隠れていた。
+TEST(Diagnostics, ImageNotFoundComesInTheSameRoundAsHtmlAndStyleErrors) {
+  constexpr std::string_view kHtml =
+      "<section>\n"
+      "<div style=\"float: left\">あ</div>\n"
+      "<img src=\"avatar.png\">\n"
+      "</section>\n";
+  const auto result = render(kHtml, japanese_fonts(), ImageSet{}, options_for(320));
+  ASSERT_FALSE(result.has_value());
+  const RenderFailure& failure = result.error();
+  EXPECT_EQ(kinds_of(failure),
+            (std::vector<ErrorKind>{ErrorKind::UnsupportedTag, ErrorKind::UnsupportedProperty,
+                                    ErrorKind::ImageNotFound}))
+      << to_string(failure);
+  // 並びは入力位置の昇順（api が整列する。段の順ではない）
+  for (std::size_t i = 1; i < failure.errors.size(); ++i) {
+    EXPECT_LT(location_of(failure.errors[i - 1]).offset, location_of(failure.errors[i]).offset)
+        << to_string(failure);
+  }
+  // 位置は `<img>` 要素の先頭
+  const RenderError& image = failure.errors.back();
+  EXPECT_EQ(location_of(image).line, 3U);
+  EXPECT_EQ(location_of(image).column, 1U);
+  EXPECT_NE(image.message.find("avatar.png"), std::string::npos) << image.message;
+}
+
+// 画像を 1 枚も渡していないなら、渡し方そのものを言う（名前の間違いと区別できない）。
+TEST(Diagnostics, ImageNotFoundHintTellsHowToPassImagesWhenNoneWereGiven) {
+  const auto result =
+      render(R"(<img src="avatar">)", japanese_fonts(), ImageSet{}, options_for(320));
+  ASSERT_FALSE(result.has_value());
+  const RenderError error = first_error(result.error());
+  EXPECT_EQ(error.kind, ErrorKind::ImageNotFound);
+  EXPECT_NE(error.hint.find("--image"), std::string::npos) << error.hint;
+}
+
+// 渡してあるなら、引ける名前を並べる（綴り違いはこれで直せる）。
+TEST(Diagnostics, ImageNotFoundHintListsTheNamesThatWereGiven) {
+  ImageSet images;
+  images.add("avatar", test_icon_bytes());
+  images.add("icon", test_icon_bytes());
+  const auto result =
+      render(R"(<img src="avatar.png">)", japanese_fonts(), images, options_for(320));
+  ASSERT_FALSE(result.has_value());
+  const RenderError error = first_error(result.error());
+  EXPECT_EQ(error.kind, ErrorKind::ImageNotFound);
+  EXPECT_NE(error.hint.find("`avatar`"), std::string::npos) << error.hint;
+  EXPECT_NE(error.hint.find("`icon`"), std::string::npos) << error.hint;
+  // 並びは渡された順（同じ入力からは同じ hint。DESIGN.md §3-5）
+  EXPECT_LT(error.hint.find("`avatar`"), error.hint.find("`icon`")) << error.hint;
+}
+
+// `<img>` ごとに 1 件（位置が違えば直す箇所も違う）。
+TEST(Diagnostics, EveryImgWithAnUnknownNameIsReported) {
+  const auto result =
+      render("<img src=\"a\">\n<img src=\"a\">\n", japanese_fonts(), ImageSet{}, options_for(320));
+  ASSERT_FALSE(result.has_value());
+  ASSERT_EQ(result.error().errors.size(), 2U) << to_string(result.error());
+  EXPECT_EQ(location_of(result.error().errors[0]).line, 1U);
+  EXPECT_EQ(location_of(result.error().errors[1]).line, 2U);
+}
+
+// 描かれない枝（`display: none`）の `<img>` も報告する。名前の照合に計算値は要らないので
+// api は DOM だけを見る（② が `display: none` の中の宣言を検査し続けるのと同じ線引き。
+// 「書いてあるのに引けない」ことに変わりはない）。
+TEST(Diagnostics, ImagesInsideDisplayNoneSubtreesAreStillReported) {
+  const auto result = render(R"(<div style="display: none"><img src="ghost"></div>)",
+                             japanese_fonts(), ImageSet{}, options_for(320));
+  ASSERT_FALSE(result.has_value());
+  EXPECT_EQ(first_error(result.error()).kind, ErrorKind::ImageNotFound)
+      << to_string(result.error());
+}
+
+// 名前が引ければ出ない（正しい入力を止めない）。
+TEST(Diagnostics, NoImageErrorWhenTheNameMatches) {
+  const auto result = render(R"(<img src="icon" style="display: block">)", japanese_fonts(),
+                             icon_images(), options_for(320));
+  ASSERT_TRUE(result.has_value()) << to_string(result.error());
 }
 
 // ---------------------------------------------------------------------------

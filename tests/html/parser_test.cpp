@@ -690,6 +690,83 @@ TEST(HtmlDiagnostics, SupportedElementStillReportsItsUnsupportedAttributes) {
   EXPECT_EQ(errors[1].location.value_or(SourceLocation{}).column, 28U);
 }
 
+// 対応外のタグの hint（A55 の追記）。`UnsupportedTag` だけでは置き換え方が分からず、
+// `<table>` を `div` に替えて列が縦に潰れる（再測定の case01）ような往復が生まれる。
+// 見るのは「どのタグにどの家族の助言が付くか」で、文面そのものは契約ではない。
+TEST(HtmlDiagnostics, UnsupportedTagsCarryTheVerifiedReplacementHint) {
+  struct HintCase {
+    std::string_view source;
+    std::string_view needle;
+  };
+  const std::vector<HintCase> cases = {
+      // 表: 行 = flex、セル = `flex: 1 1 0`、横罫 = 1px の div（guide §4.3）
+      {"<table></table>", "guide §4.3"},
+      {"<tr></tr>", "flex: 1 1 0"},
+      {"<td></td>", "flex: 1 1 0"},
+      {"<caption></caption>", "guide §4.3"},
+      // 箇条書き（guide §4.4）
+      {"<ul></ul>", "guide §4.4"},
+      {"<li></li>", "guide §4.4"},
+      {"<dt></dt>", "guide §4.4"},
+      // ただの塊
+      {"<section></section>", "use `div`"},
+      {"<header></header>", "use `div`"},
+      {"<blockquote></blockquote>", "use `div`"},
+      // 文中の装飾
+      {"<strong></strong>", "use `span`"},
+      {"<code></code>", "font-weight"},
+      {"<a></a>", "use `span`"},
+      // 文書の外枠（入力は断片。guide §1）
+      {"<html></html>", "guide §1"},
+      {"<body></body>", "drop the document wrapper"},
+      {"<meta>", "drop the document wrapper"},
+      {"<script></script>", "drop the document wrapper"},
+      // 対話・描画の要素
+      {"<svg></svg>", "--image"},
+      {"<input>", "--image"},
+      {"<button></button>", "draw it with divs"},
+  };
+  for (const HintCase& test_case : cases) {
+    SCOPED_TRACE(test_case.source);
+    const std::vector<Error> errors = collected(test_case.source);
+    ASSERT_EQ(errors.size(), 1U);
+    EXPECT_EQ(errors.front().kind, ErrorKind::UnsupportedTag);
+    EXPECT_THAT(errors.front().hint, HasSubstr(test_case.needle));
+    // 直し方は hint に分けて入れる。message は「何が対応外か」だけ（A46）
+    EXPECT_THAT(errors.front().message, ::testing::Not(HasSubstr(test_case.needle)));
+  }
+}
+
+// 対応する開始タグの無い終了タグにも同じ hint を付ける（直し方は同じ）。
+TEST(HtmlDiagnostics, StrayEndTagsCarryTheSameHint) {
+  const std::vector<Error> errors = collected("</table>");
+  ASSERT_EQ(errors.size(), 1U);
+  EXPECT_EQ(errors.front().kind, ErrorKind::UnsupportedTag);
+  EXPECT_THAT(errors.front().hint, HasSubstr("guide §4.3"));
+}
+
+// 表に無いタグには何も足さない（知らないタグの直し方を捏造しない。A46 / A48 の規則）。
+TEST(HtmlDiagnostics, TagsOutsideTheHintTableGetNoHint) {
+  for (const std::string_view source :
+       {"<my-widget></my-widget>", "<details></details>", "<marquee></marquee>", "<hr>"}) {
+    SCOPED_TRACE(source);
+    const std::vector<Error> errors = collected(source);
+    ASSERT_EQ(errors.size(), 1U);
+    EXPECT_EQ(errors.front().kind, ErrorKind::UnsupportedTag);
+    EXPECT_TRUE(errors.front().hint.empty()) << errors.front().hint;
+  }
+}
+
+// 同じ家族のタグは同じ文面（表の中で hint を共有している）。
+TEST(HtmlDiagnostics, TagsOfTheSameFamilyShareOneHint) {
+  const std::vector<Error> table = collected("<table></table>");
+  const std::vector<Error> cell = collected("<td></td>");
+  ASSERT_EQ(table.size(), 1U);
+  ASSERT_EQ(cell.size(), 1U);
+  EXPECT_EQ(table.front().hint, cell.front().hint);
+  EXPECT_FALSE(table.front().hint.empty());
+}
+
 // 上限に達したら記録をやめ、解析は続ける（truncated を立てる）
 TEST(HtmlDiagnostics, StopsRecordingAtTheLimit) {
   Diagnostics diagnostics{2};

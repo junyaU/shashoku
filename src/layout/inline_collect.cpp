@@ -32,6 +32,28 @@ char32_t effective_cp(const FlatChar& flat) {
   return flat.kind == FlatChar::Kind::Image ? U'￼' : flat.cp;
 }
 
+// 「最も外側の `white-space: nowrap` 祖先」の識別子（A58。0 = nowrap の外）。
+// CSS Text 3 §5.1 は「2 つのクラスタの最も近い共通の祖先が nowrap なら、その間に
+// ソフトな分割機会は無い」と定める。ここでは**最も外側の nowrap 祖先**を識別子で持ち、
+// 隣り合うクラスタの識別子が同じ非 0 なら分割機会を消す（= 共通の祖先も nowrap）。
+// この簡略化では nowrap の中の `white-space: normal` が分割を再開しない（A58 に明記）。
+//
+// 識別子は木を前順に辿った順に 1 から振るので決定的。IFC ごとに振り直してよい
+// （比べるのは同じ段落の中のクラスタだけ）。
+struct NowrapScope {
+  std::size_t id = 0;  // この要素の中の文字が属する並び（0 = nowrap の外）
+  std::size_t* next = nullptr;  // 次に振る識別子
+
+  // 子孫に渡す識別子。すでに nowrap の中なら外側のものを保つ（**最も外側**を採る）。
+  [[nodiscard]] NowrapScope enter(const style::ComputedStyle& style) const {
+    if (id != 0 || style.white_space != style::WhiteSpace::Nowrap) {
+      return *this;
+    }
+    const std::size_t assigned = (*next)++;
+    return NowrapScope{.id = assigned, .next = next};
+  }
+};
+
 void push_text(Collected& out, std::u32string_view text, std::size_t style_id) {
   for (const char32_t cp : text) {
     out.chars.push_back(
@@ -58,27 +80,28 @@ std::u32string collapse_ruby_text(std::u32string_view text) {
 }
 
 Result<void> collect(std::span<const StyledNode> nodes, LayoutEngine& engine, float percent_basis,
-                     Collected& out);
+                     NowrapScope nowrap, Collected& out);
 Result<void> collect_element(const StyledNode& node, LayoutEngine& engine, float percent_basis,
-                             Collected& out);
+                             NowrapScope nowrap, Collected& out);
 
 // 文字の属性を登録する。位置の層（A31）には「その文字を含むノードの先頭」を入れる:
 // 豆腐の警告と --dump-stage box に出すためだけの層で、見た目にもシェーピングにも効かない。
-std::size_t style_index(Collected& out, const StyledNode& node, const LayoutEngine& engine) {
-  return out.styles.intern(node.style, engine.map().direction(), node.location);
+std::size_t style_index(Collected& out, const StyledNode& node, const LayoutEngine& engine,
+                        NowrapScope nowrap) {
+  return out.styles.intern(node.style, engine.map().direction(), node.location, nowrap.id);
 }
 
 // 文字を 1 つも持たなかったインラインボックスを覚えておく（CSS 2.1 §10.8。issue #23）。
 // 子を集める前後で chars.size() が変わらなかったときだけ呼ぶ。char_pos はそのときの
 // chars.size() なので、この列は自然に昇順になる（入れ子は内側が先に積まれる）。
 void push_empty_box(Collected& out, const StyledNode& node, const LayoutEngine& engine,
-                    std::size_t char_pos) {
-  out.empty_boxes.push_back(
-      EmptyInlineBox{.style = style_index(out, node, engine), .char_pos = char_pos, .item = kNone});
+                    NowrapScope nowrap, std::size_t char_pos) {
+  out.empty_boxes.push_back(EmptyInlineBox{
+      .style = style_index(out, node, engine, nowrap), .char_pos = char_pos, .item = kNone});
 }
 
 Result<void> collect_image(const StyledNode& node, LayoutEngine& engine, float percent_basis,
-                           Collected& out) {
+                           NowrapScope nowrap, Collected& out) {
   const Result<ResolvedImage> image = engine.resolve_image(node, percent_basis);
   if (!image) {
     return std::unexpected(image.error());
@@ -96,7 +119,7 @@ Result<void> collect_image(const StyledNode& node, LayoutEngine& engine, float p
                                   .border_radius = std::max(node.style.border_radius, 0.0F)}});
   out.chars.push_back(FlatChar{.cp = U'￼',
                                .kind = FlatChar::Kind::Image,
-                               .style = style_index(out, node, engine),
+                               .style = style_index(out, node, engine, nowrap),
                                .image = out.images.size() - 1});
   return {};
 }
@@ -121,7 +144,7 @@ Result<std::u32string> read_ruby_text(const StyledNode& node) {
 // <ruby>: 「<rt> 以外の連続（親文字）」+「直後の <rt>」を 1 組にする。
 // <rt> が続かない親文字はルビなしの普通のテキストとしてそのまま残る。
 Result<void> collect_ruby(const StyledNode& node, LayoutEngine& engine, float percent_basis,
-                          Collected& out) {
+                          NowrapScope nowrap, Collected& out) {
   std::size_t base_begin = out.chars.size();
   for (const StyledNode& child : node.children) {
     if (child.type == StyledNode::Type::Text) {
@@ -129,7 +152,7 @@ Result<void> collect_ruby(const StyledNode& node, LayoutEngine& engine, float pe
       if (!text) {
         return std::unexpected(text.error());
       }
-      push_text(out, *text, style_index(out, child, engine));
+      push_text(out, *text, style_index(out, child, engine, nowrap.enter(child.style)));
       continue;
     }
     if (child.style.display == style::Display::None) {
@@ -144,10 +167,11 @@ Result<void> collect_ruby(const StyledNode& node, LayoutEngine& engine, float pe
       if (!ruby) {
         return std::unexpected(ruby.error());
       }
-      out.rubies.push_back(RubyGroup{.base_begin = base_begin,
-                                     .base_end = out.chars.size(),
-                                     .rt_style = style_index(out, child, engine),
-                                     .rt_text = std::move(*ruby)});
+      out.rubies.push_back(
+          RubyGroup{.base_begin = base_begin,
+                    .base_end = out.chars.size(),
+                    .rt_style = style_index(out, child, engine, nowrap.enter(child.style)),
+                    .rt_text = std::move(*ruby)});
       base_begin = out.chars.size();
       continue;
     }
@@ -155,7 +179,8 @@ Result<void> collect_ruby(const StyledNode& node, LayoutEngine& engine, float pe
       return fail(ErrorKind::UnsupportedLayout,
                   "<" + child.tag + "> is not supported inside <ruby>", child.location);
     }
-    if (const Result<void> result = collect_element(child, engine, percent_basis, out); !result) {
+    if (const Result<void> result = collect_element(child, engine, percent_basis, nowrap, out);
+        !result) {
       return result;
     }
   }
@@ -164,7 +189,9 @@ Result<void> collect_ruby(const StyledNode& node, LayoutEngine& engine, float pe
 
 // インライン box（span など）1 つ。
 Result<void> collect_element(const StyledNode& node, LayoutEngine& engine, float percent_basis,
-                             Collected& out) {
+                             NowrapScope parent_nowrap, Collected& out) {
+  // この要素と子孫が属する nowrap の並び（A58）。要素の計算値を見るのはここだけにする
+  const NowrapScope nowrap = parent_nowrap.enter(node.style);
   if (node.style.display != style::Display::Inline) {
     return fail(ErrorKind::UnsupportedLayout,
                 "block-level box inside an inline box is not supported (<" + node.tag + ">)",
@@ -173,20 +200,22 @@ Result<void> collect_element(const StyledNode& node, LayoutEngine& engine, float
   if (node.tag == "br") {
     out.chars.push_back(FlatChar{.cp = U'\n',
                                  .kind = FlatChar::Kind::ForcedBreak,
-                                 .style = style_index(out, node, engine),
+                                 .style = style_index(out, node, engine, nowrap),
                                  .image = kNone});
     return {};
   }
   if (node.tag == "img") {
-    return collect_image(node, engine, percent_basis, out);
+    return collect_image(node, engine, percent_basis, nowrap, out);
   }
   if (node.tag == "ruby") {
     const std::size_t begin = out.chars.size();
-    if (const Result<void> result = collect_ruby(node, engine, percent_basis, out); !result) {
+    if (const Result<void> result = collect_ruby(node, engine, percent_basis, nowrap, out);
+        !result) {
       return result;
     }
     if (out.chars.size() == begin) {
-      push_empty_box(out, node, engine, begin);  // 中身が空の <ruby> は空の span と同じ
+      // 中身が空の <ruby> は空の span と同じ
+      push_empty_box(out, node, engine, nowrap, begin);
     }
     return {};
   }
@@ -212,14 +241,15 @@ Result<void> collect_element(const StyledNode& node, LayoutEngine& engine, float
                         .size = vertical ? font_size : metrics->ascent + metrics->descent});
     scope = out.scopes.size() - 1;
   }
-  if (const Result<void> result = collect(node.children, engine, percent_basis, out); !result) {
+  if (const Result<void> result = collect(node.children, engine, percent_basis, nowrap, out);
+      !result) {
     return result;
   }
   if (scope != kNone) {
     out.scopes[scope].end = out.chars.size();
   }
   if (out.chars.size() == begin) {
-    push_empty_box(out, node, engine, begin);
+    push_empty_box(out, node, engine, nowrap, begin);
   }
   return {};
 }
@@ -227,20 +257,22 @@ Result<void> collect_element(const StyledNode& node, LayoutEngine& engine, float
 // 木を辿って 1 本にほどく。空白の畳み込みはまだしない（ノード境界をまたいで
 // 判断する必要があるので、平らにしてから 1 回で処理する）。
 Result<void> collect(std::span<const StyledNode> nodes, LayoutEngine& engine, float percent_basis,
-                     Collected& out) {
+                     NowrapScope nowrap, Collected& out) {
   for (const StyledNode& node : nodes) {
     if (node.type == StyledNode::Type::Text) {
       const Result<std::u32string> text = decode_utf8(node.text);
       if (!text) {
         return std::unexpected(text.error());
       }
-      push_text(out, *text, style_index(out, node, engine));
+      // テキストノードは親の計算値を持つ（nowrap も継承済み）ので、並びは親のものそのまま
+      push_text(out, *text, style_index(out, node, engine, nowrap));
       continue;
     }
     if (node.style.display == style::Display::None) {
       continue;  // ② が落としているはずだが、来たら無視する
     }
-    if (const Result<void> result = collect_element(node, engine, percent_basis, out); !result) {
+    if (const Result<void> result = collect_element(node, engine, percent_basis, nowrap, out);
+        !result) {
       return result;
     }
   }
@@ -303,7 +335,12 @@ Collapsed collapse_whitespace(const std::vector<FlatChar>& input) {
 
 Result<Collected> collect_inline(const InlineInput& input, LayoutEngine& engine) {
   Collected out;
-  if (const Result<void> result = collect(input.children, engine, input.content_inline_size, out);
+  // IFC を持つブロック自身に nowrap が書かれていれば、段落全体が 1 つの並びになる（A58）。
+  // 無名ブロックのときは親ブロックのスタイルなので、継承した nowrap もここで拾える
+  std::size_t next_nowrap = 1;
+  const NowrapScope root = NowrapScope{.id = 0, .next = &next_nowrap}.enter(*input.block_style);
+  if (const Result<void> result =
+          collect(input.children, engine, input.content_inline_size, root, out);
       !result) {
     return std::unexpected(result.error());
   }

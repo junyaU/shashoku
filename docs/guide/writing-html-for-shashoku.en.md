@@ -92,7 +92,7 @@ pseudo-classes and pseudo-elements (`:hover` `::before`), at-rules (`@media`, `@
 | Box | `display` `box-sizing` `width` `height` `margin` `padding` `border` `border-width` `border-style` `border-color` `border-radius` `background` `background-color` |
 | Per-side margin / padding | `margin-top` `margin-right` `margin-bottom` `margin-left`, `padding-top` `padding-right` `padding-bottom` `padding-left` |
 | Flexbox | `flex-direction` `justify-content` `align-items` `gap` `row-gap` `column-gap` `flex` `flex-grow` `flex-shrink` `flex-basis` |
-| Text | `color` `font-size` `font-family` `font-weight` `line-height` `letter-spacing` `text-align` `line-break` `overflow-wrap` (`word-wrap` is an alias) |
+| Text | `color` `font-size` `font-family` `font-weight` `line-height` `letter-spacing` `text-align` `line-break` `overflow-wrap` (`word-wrap` is an alias) `white-space` |
 | Vertical writing | `writing-mode` |
 
 - **Shorthands work**: `margin: 10px`, `margin: 10px 20px`, `margin: 10px 20px 30px 40px`
@@ -122,6 +122,7 @@ pseudo-classes and pseudo-elements (`:hover` `::before`), at-rules (`@media`, `@
 | `writing-mode` | `horizontal-tb` `vertical-rl` |
 | `line-break` | `auto` `strict` `normal` `loose` |
 | `overflow-wrap` | `normal` `anywhere` `break-word` |
+| `white-space` | `normal` `nowrap` (**no `pre` family** — write explicit breaks with `<br>`) |
 | Colours | `#rgb` `#rgba` `#rrggbb` `#rrggbbaa`, `rgb()` `rgba()`, CSS colour names, `transparent`, `currentColor` (on `border-color` only) |
 
 > `line-height` **accepts unitless numbers**. A unitless number inherits as a ratio and each child
@@ -747,8 +748,13 @@ containers**. Each level only has two decisions: the **direction** (`flex-direct
   `gap` becomes the spacing between them
 - **The tag row is yet another flex** (`display: flex` with `flex: none` children) — the same shape
   as §4.5
-- Nesting does not bring `flex-wrap` back. **If it does not fit, it overflows** (overflow out of a
-  parent box is not detected). Raise `--width` when you add steps
+- **To stop a step name from wrapping**, put **`white-space: nowrap`** on `.name` (§5). A step then
+  never shrinks below "one line of its name", so
+  **steps x name width + arrows + `gap` + `padding`** is roughly the smallest usable `--width`.
+  You can still place the breaks yourself with `<br>`
+- Nesting does not bring `flex-wrap` back. **If it does not fit, it overflows**
+  (`warning[content-overflow]` once it leaves the canvas; overflow out of a parent box that stays
+  inside the canvas is not detected). Raise `--width` when you add steps
 
 ### 4.14 Quote card (body centred, byline pinned to the bottom) — [quote.html](examples/quote.html)
 
@@ -857,8 +863,14 @@ Removing only one half produces no error and a broken picture.
   so do not use it on headings that contain numbers
 - Line-breaking rules (no leading punctuation or closing bracket, no trailing opening bracket)
   are applied automatically. You do not have to do anything
-- **There is no way to keep a number and its counter (`2027 年度`) on the same line.**
-  Adjust the width or the `font-size` if the break is unacceptable
+- To keep a number and its counter (`2027 年度`), a diagram label or a tag **on one line**, put
+  **`white-space: nowrap`** on that element (it inherits, so putting it on the parent covers
+  everything inside). You can still place breaks yourself with `<br>`.
+  Beware: **a `nowrap` run that does not fit overflows its parent box.** If the overflow reaches
+  outside the canvas (the `--width` / `--height` rectangle) you get `warning[content-overflow]`
+  (and `--strict` turns it into a failure), but **there is no warning while it only sticks out of
+  the parent box and stays inside the canvas** (box overflow is not diagnosed yet).
+  When there is no room, lower the `font-size` or split the word with `<br>`
 - Justified text works via `text-align: justify`
 
 ---

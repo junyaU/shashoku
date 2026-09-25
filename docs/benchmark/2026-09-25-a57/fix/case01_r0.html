@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>データストア比較表 - 技術選定資料</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 40px 20px;
+    background: #f4f6f8;
+    font-family: "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, sans-serif;
+    color: #1f2933;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap {
+    width: 900px;
+    margin: 0 auto;
+    background: #ffffff;
+    border-radius: 12px;
+    box-shadow: 0 4px 20px rgba(31, 41, 51, 0.08);
+    overflow: hidden;
+  }
+  .head {
+    padding: 28px 32px 20px;
+    border-bottom: 1px solid #e4e7eb;
+  }
+  .head h1 {
+    margin: 0 0 6px;
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+  }
+  .head p {
+    margin: 0;
+    font-size: 13px;
+    color: #7b8794;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13.5px;
+    line-height: 1.75;
+  }
+  thead th {
+    background: #2f5d8f;
+    color: #ffffff;
+    font-weight: 500;
+    text-align: left;
+    padding: 14px 16px;
+    font-size: 14px;
+    letter-spacing: 0.04em;
+    border-right: 1px solid rgba(255, 255, 255, 0.18);
+  }
+  thead th:last-child { border-right: none; }
+  thead th.corner {
+    background: #24496e;
+    width: 150px;
+  }
+  tbody th {
+    text-align: left;
+    font-weight: 500;
+    padding: 16px;
+    background: #eef2f6;
+    color: #334e68;
+    width: 150px;
+    vertical-align: top;
+    border-right: 1px solid #dfe6ed;
+  }
+  tbody td {
+    padding: 16px;
+    vertical-align: top;
+    border-right: 1px solid #edf0f3;
+    color: #3e4c59;
+  }
+  tbody td:last-child { border-right: none; }
+  tbody tr:nth-child(even) th { background: #e7edf3; }
+  tbody tr:nth-child(even) td { background: #f7f9fb; }
+  tbody tr + tr th,
+  tbody tr + tr td { border-top: 1px solid #edf0f3; }
+  .engine {
+    display: block;
+    font-size: 11px;
+    opacity: 0.75;
+    font-weight: 400;
+    letter-spacing: 0.06em;
+    margin-top: 2px;
+  }
+  .foot {
+    padding: 16px 32px 24px;
+    font-size: 12px;
+    color: #9aa5b1;
+    border-top: 1px solid #e4e7eb;
+  }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="head">
+      <h1>データストア比較：RDB / KVS / ドキュメント DB</h1>
+      <p>技術選定資料 2026-09 版 ／ 対象: PostgreSQL・Redis・MongoDB</p>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th class="corner">比較項目</th>
+          <th>RDB<span class="engine">PostgreSQL</span></th>
+          <th>KVS<span class="engine">Redis</span></th>
+          <th>ドキュメント DB<span class="engine">MongoDB</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <th>得意なデータ</th>
+          <td>関係が固定的で、結合して集計したい正規化済みの業務データ。</td>
+          <td>寿命が短く単純な値。セッションやカウンタ、一時的なキャッシュ。</td>
+          <td>項目が案件ごとに揺れる半構造データ。入れ子の JSON をそのまま持てる。</td>
+        </tr>
+        <tr>
+          <th>トランザクション</th>
+          <td>複数テーブルにまたがる ACID を標準で持つ。会計処理でも安心して使える。</td>
+          <td>MULTI で原子実行はできるが、ロールバックのない単純な一括実行に近い。</td>
+          <td>単一文書は原子的。複数文書のトランザクションは使えるが代償が大きい。</td>
+        </tr>
+        <tr>
+          <th>スケール</th>
+          <td>まず垂直に伸ばす。読み取りはレプリカ、書き込みは分割の設計が必要。</td>
+          <td>Cluster で水平に伸びる。メモリ量が上限なので容量設計が効いてくる。</td>
+          <td>シャーディング前提の設計。キー選びを誤ると偏って効果が出ない。</td>
+        </tr>
+        <tr>
+          <th>運用の手間</th>
+          <td>知見も道具も揃っている。VACUUM と長時間トランザクションだけ要注意。</td>
+          <td>運用は軽いが、永続化とフェイルオーバーの設定は事前に詰めておきたい。</td>
+          <td>スキーマ変更は楽な反面、実質の形はアプリ側の規律に依存してしまう。</td>
+        </tr>
+        <tr>
+          <th>うちでの用途</th>
+          <td>注文・請求・ユーザーなど、整合性が売上に直結する中核データを置く。</td>
+          <td>ログイン情報と API のレート制限、重い集計結果の一時保存に使う。</td>
+          <td>審査ログや外部 API の生レスポンスなど、形の定まらない記録の置き場。</td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="foot">※ 評価は当チームの現行ワークロード（1 日あたり書き込み 300 万件規模）を前提とした相対比較です。</div>
+  </div>
+</body>
+</html>

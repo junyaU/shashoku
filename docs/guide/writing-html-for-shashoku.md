@@ -89,7 +89,7 @@ CSS 変数（`--x`）、`calc()`。
 | ボックス | `display` `box-sizing` `width` `height` `margin` `padding` `border` `border-width` `border-style` `border-color` `border-radius` `background` `background-color` |
 | margin / padding の個別辺 | `margin-top` `margin-right` `margin-bottom` `margin-left`、`padding-top` `padding-right` `padding-bottom` `padding-left` |
 | flexbox | `flex-direction` `justify-content` `align-items` `gap` `row-gap` `column-gap` `flex` `flex-grow` `flex-shrink` `flex-basis` |
-| テキスト | `color` `font-size` `font-family` `font-weight` `line-height` `letter-spacing` `text-align` `line-break` `overflow-wrap`（`word-wrap` は別名） |
+| テキスト | `color` `font-size` `font-family` `font-weight` `line-height` `letter-spacing` `text-align` `line-break` `overflow-wrap`（`word-wrap` は別名）`white-space` |
 | 縦書き | `writing-mode` |
 
 - **ショートハンドは使えます**: `margin: 10px` `margin: 10px 20px` `margin: 10px 20px 30px 40px`、
@@ -118,6 +118,7 @@ CSS 変数（`--x`）、`calc()`。
 | `writing-mode` | `horizontal-tb` `vertical-rl` |
 | `line-break` | `auto` `strict` `normal` `loose` |
 | `overflow-wrap` | `normal` `anywhere` `break-word` |
+| `white-space` | `normal` `nowrap`（**`pre` 系は無い**。改行位置は `<br>` で書く） |
 | 色 | `#rgb` `#rgba` `#rrggbb` `#rrggbbaa`、`rgb()` `rgba()`、CSS の色名、`transparent`、`currentColor`（`border-color` のみ） |
 
 > `line-height` は**単位なしの数値が使えます**。単位なしは「倍率が継承され、子はその
@@ -727,13 +728,18 @@ spacer の幅の出し方:
 - **段の中は `flex-direction: column`** にして、番号・見出し・タグ列を縦に積みます。
   `gap` が段の中の行間になります
 - **タグ列はさらに内側の flex**（`display: flex` + 子に `flex: none`）。§4.5 と同じ形です
-- 入れ子にしても `flex-wrap` はありません。**入りきらなければはみ出します**（親の箱からの
-  はみ出しは検出されません）。段の数を増やすときは `--width` も増やしてください
+- **段の名前を折りたくないとき**は `.name` に **`white-space: nowrap`** を付けます（§5）。
+  折らないぶん段は「名前 1 行ぶん」より縮まなくなるので、
+  **段の数 x 名前の幅 + 矢印 + `gap` + `padding`** がだいたいの最小の `--width` になります。
+  `<br>` で改行位置を自分で決めてもかまいません
+- 入れ子にしても `flex-wrap` はありません。**入りきらなければはみ出します**（紙面から出れば
+  `warning[content-overflow]`。親の箱から出ているだけなら検出されません）。
+  段の数を増やすときは `--width` も増やしてください
 - **行数の違う段で、下に続く行の開始位置をそろえたい**ときは、見出し（`.name`）に
   **2 行ぶんの `height` を固定**します（`line-height: 20px; height: 40px`）。ただし
   **3 行に溢れると黙って下の行に重なります**（警告は出ず、`--strict` でも成功します）。
   `--dump-stage box` でその箱の `lines` が 2 以下かを確かめてください。
-  段の名前が語の途中で折れるときは、`<br>` で改行位置を指定できます（§5）
+  段の名前が語の途中で折れるときは、上の `white-space: nowrap` か、`<br>` で改行位置を指定してください（§5）
 
 ### 4.14 引用カード（本文を縦中央、署名を下端）— [quote.html](examples/quote.html)
 
@@ -842,8 +848,15 @@ spacer の幅の出し方:
   `2027&nbsp;年度` と書くと `法改正は` / `2027 年度を…` になります
 - ただし **`&nbsp;` が守るのはその空白 1 か所だけ**です。和文は語の途中でも折れるので、
   同じ文を幅 130px で描くと `法改正は 2027 年` / `度を…` と**助数詞の中**で折れます。
-  **語全体を 1 かたまりにする手段（`white-space: nowrap`）は今はありません**
-  （`white-space` は `unsupported-property` のエラーになります）。幅を増やすか、語を短くしてください
+  語全体を 1 かたまりにするには、次の `white-space: nowrap` を使ってください
+- 「2027 年度」のような**数字 + 助数詞**や、図のラベル・タグのように**語全体を 1 かたまり**に
+  したいときは、その要素に **`white-space: nowrap`** を付けてください（継承するので、
+  親に付ければ中身すべてに効きます）。`<br>` で改行位置を自分で決めてもかまいません。
+  ただし **`nowrap` にした語が入りきらなければ親の箱からはみ出します**。
+  はみ出しが**紙面（`--width` / `--height` の矩形）の外**まで届けば
+  `warning[content-overflow]` が出ます（`--strict` で失敗にできます）が、
+  **親の箱から出ているだけで紙面の中なら警告は出ません**（箱からのはみ出しの診断は未実装）。
+  幅の余裕が無いときは `font-size` を下げるか、`<br>` で語を分けてください
 - 両端揃えは `text-align: justify` で効きます
 
 ---

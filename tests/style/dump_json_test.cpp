@@ -70,6 +70,7 @@ TEST(StyleDump, GoldenOutput) {
     "text-align": "start",
     "line-break": "auto",
     "overflow-wrap": "normal",
+    "white-space": "normal",
     "writing-mode": "horizontal-tb"
   },
   "children": [
@@ -122,6 +123,7 @@ TEST(StyleDump, GoldenOutput) {
         "text-align": "start",
         "line-break": "auto",
         "overflow-wrap": "normal",
+        "white-space": "normal",
         "writing-mode": "horizontal-tb"
       },
       "children": [
@@ -176,6 +178,7 @@ TEST(StyleDump, GoldenOutput) {
             "text-align": "start",
             "line-break": "auto",
             "overflow-wrap": "normal",
+            "white-space": "normal",
             "writing-mode": "horizontal-tb"
           }
         }
@@ -233,6 +236,7 @@ TEST(StyleDump, GoldenOutput) {
         "text-align": "start",
         "line-break": "auto",
         "overflow-wrap": "normal",
+        "white-space": "normal",
         "writing-mode": "horizontal-tb"
       },
       "children": []
@@ -263,6 +267,32 @@ TEST(StyleDump, WordWrapDumpsAsOverflowWrap) {
     EXPECT_NE(alias.find(R"("overflow-wrap": ")" + std::string{value} + '"'), std::string::npos)
         << alias;
   }
+}
+
+// `white-space` はダンプに出る（A58）。ダンプできない中間表現を作らない（DESIGN.md §3-3）。
+TEST(StyleDump, WhiteSpaceIsDumped) {
+  const auto dump_of = [](const std::string& declarations) {
+    const html::Node tree = test_root(test_element("div", {test_attr("style", declarations)}));
+    const Result<StyledNode> styled = resolve_for_test(tree);
+    EXPECT_TRUE(styled.has_value())
+        << declarations << ": " << (styled ? "" : styled.error().message);
+    return styled ? dump_json(*styled) : std::string{};
+  };
+
+  for (const std::string_view value : {"normal", "nowrap"}) {
+    SCOPED_TRACE(value);
+    const std::string json = dump_of("white-space: " + std::string{value});
+    ASSERT_FALSE(json.empty());
+    EXPECT_NE(json.find(R"("white-space": ")" + std::string{value} + '"'), std::string::npos)
+        << json;
+  }
+  // 継承するので、子の <span> のダンプにも出る
+  const html::Node tree = test_root(
+      test_parent("div", {test_attr("style", "white-space: nowrap")}, test_element("span", {})));
+  const Result<StyledNode> styled = resolve_for_test(tree);
+  ASSERT_TRUE(styled.has_value()) << (styled ? "" : styled.error().message);
+  const std::string json = dump_json(styled->children.front().children.front());
+  EXPECT_NE(json.find(R"("white-space": "nowrap")"), std::string::npos) << json;
 }
 
 }  // namespace

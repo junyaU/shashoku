@@ -40,7 +40,7 @@ linebreak::Wrap resolve_wrap(style::OverflowWrap value) {
 }
 
 std::size_t CharStyleTable::intern(const style::ComputedStyle& style, text::Direction direction,
-                                   const SourceLocation& location) {
+                                   const SourceLocation& location, std::size_t nowrap_scope) {
   text::TextStyle shaping = shaping_style_of(style, direction);
   const auto [shaping_slot, shaping_added] = shaping_index_.try_emplace(shaping, shaping_.size());
   if (shaping_added) {
@@ -57,7 +57,8 @@ std::size_t CharStyleTable::intern(const style::ComputedStyle& style, text::Dire
   }
 
   const BreakingStyle breaking{.line_break = style.line_break,
-                               .overflow_wrap = style.overflow_wrap};
+                               .overflow_wrap = style.overflow_wrap,
+                               .nowrap_scope = nowrap_scope};
   const auto [breaking_slot, breaking_added] =
       breaking_index_.try_emplace(breaking, breaking_.size());
   if (breaking_added) {

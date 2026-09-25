@@ -42,7 +42,8 @@ ComputedStyle child_of(std::string_view outer, std::string_view inner = "",
 TEST(StyleInherit, TextPropertiesAreInherited) {
   const ComputedStyle style = child_of(
       "color: red; font-size: 20px; font-family: serif; font-weight: bold; line-height: 1.5; "
-      "letter-spacing: 2px; text-align: center; line-break: strict; overflow-wrap: anywhere");
+      "letter-spacing: 2px; text-align: center; line-break: strict; overflow-wrap: anywhere; "
+      "white-space: nowrap");
   EXPECT_EQ(style.color, (Color{255, 0, 0, 255}));
   EXPECT_FLOAT_EQ(style.font_size, 20.0F);
   EXPECT_EQ(style.font_family, (std::vector<std::string>{"serif"}));
@@ -52,6 +53,7 @@ TEST(StyleInherit, TextPropertiesAreInherited) {
   EXPECT_EQ(style.text_align, TextAlign::Center);
   EXPECT_EQ(style.line_break, LineBreak::Strict);
   EXPECT_EQ(style.overflow_wrap, OverflowWrap::Anywhere);
+  EXPECT_EQ(style.white_space, WhiteSpace::Nowrap);  // CSS Text 3 §5.1（A58）
 }
 
 TEST(StyleInherit, BoxPropertiesAreNotInherited) {

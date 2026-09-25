@@ -76,6 +76,8 @@ Slack に自動投稿する週次レポートのカード画像を HTML で作�
   超えうる**ので、採るなら既存のはみ出し診断（`content-overflow`）との組で検証する
 - 記録: 同じ試作の経緯と困りごと 3 つは [2026-09-25-skill/README.md](2026-09-25-skill/README.md)
 
+**2026-09-25 A58 で対応（`white-space: nowrap`）。** 受け入れケースの結果: `pipeline.html` の `.name` に `white-space: nowrap` を足すと `--width 1100` で 6 段の名前がすべて 1 行になり（修正前は 2 つが折れていた）、警告 0 件。`--width 900` でもまだ収まり、`--width 800` で `warning[content-overflow]`（58.3px, right, 31:5）が出て `--strict` は exit 1（紙面の外に出た分は診断され、親の箱の中のはみ出しは診断されない）。
+
 ---
 
 # 第 3 節: 英語の自然な依頼 5 件（言語非依存の確認。2026-09-23 追加、固定）

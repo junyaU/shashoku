@@ -292,7 +292,7 @@ OOM killer にプロセスごと殺されることがあります。**メモリ�
 |---|---|
 | ボックス | `display`（`block` \| `flex` \| `inline` \| `none`）、`box-sizing`（`content-box` \| `border-box`）、`width` `height`、`margin`（`auto` 可）、`padding`、`border`（`<幅> solid <色>` \| `none`）、`border-width` `border-style` `border-color` `border-radius`、`background` / `background-color` |
 | flexbox | `flex-direction` `justify-content` `align-items` `gap` `row-gap` `column-gap` `flex` `flex-grow` `flex-shrink` `flex-basis` |
-| テキスト | `color` `font-size` `font-family` `font-weight` `line-height` `letter-spacing` `text-align`（`justify` 含む）、`line-break`（`auto` \| `strict` \| `normal` \| `loose`）、`overflow-wrap`（`word-wrap` は別名） |
+| テキスト | `color` `font-size` `font-family` `font-weight` `line-height` `letter-spacing` `text-align`（`justify` 含む）、`line-break`（`auto` \| `strict` \| `normal` \| `loose`）、`overflow-wrap`（`word-wrap` は別名）、`white-space`（`normal` \| `nowrap`） |
 | 縦書き | `writing-mode`（`horizontal-tb` \| `vertical-rl`） |
 
 単位は `px` `em` と単位なしの `0`。`%` は `width` と `flex-basis` のみ。

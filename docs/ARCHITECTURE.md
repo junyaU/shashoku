@@ -1895,6 +1895,72 @@ A52 / A53 後の再測定（`docs/benchmark/results_a53_2026-09-24.md` §2 / §3
   `examples/*.html` 5 本は修正前後の CLI で **PNG がバイト単位で同一**、ゴールデン 16 枚は
   dev / asan の全テスト（各 1294 件）が通った = 1 ピクセルも変わっていない
 
+**A58. `white-space: nowrap` に対応する。分割の禁止は「最も外側の nowrap 祖先」の識別子で近似し、
+行分割器は変えない。**（2026-09-25）
+
+図のラベル・数字と単位・タグに「ここは分割しない」を指定できるようにする。`normal` と `nowrap` の
+2 値だけで、**継承する**（CSS Text 3 §5.1）。初期値は `normal` なので、`white-space` を書かない入力の
+絵は 1 ピクセルも変わらない。
+
+- **経緯**: ガイドの回避策（「名前を短くする」「画像を広げる」「`<br>` で改行位置を決める」
+  「見出しの高さを固定する」）を実装で不要にする、というユーザーの判断。根拠は 2 つ:
+  (1) 2026-09-25 のローカルの skill での試作（`docs/benchmark/2026-09-25-skill/pipeline.html` を
+  `--width 1100` で描くと、段の名前「スタイル付きツリー」が「スタイル付きツ / リー」で折れた。
+  「描画リストと Bitmap」も折れた）。(2) 初見の AI に skill を渡した試験で、6 段の図を書く**前に**
+  `<br>` と固定 `height` で回避していた。依頼集は `docs/benchmark/requests.md` の real01。
+  A47 の関門「対象用途で成功率・修正の手間を改善するか」に Yes（回避策が消え、`<br>` の位置を
+  幅ごとに手で決め直す作業が要らなくなる）
+- **決めたこと**:
+  - 値は `normal | nowrap` の 2 つだけ。**継承する**テキストのプロパティ（②の
+    `inherit_text()` の群）。`inherit` / `initial` は既存の global keyword の経路をそのまま通る
+  - `pre` / `pre-wrap` / `pre-line` / `break-spaces` は `UnsupportedValue`。**値レベルの hint**（A53 の
+    `bad_value_with_hint()`）で ``only `normal` and `nowrap` are supported; use `<br>` for explicit
+    line breaks`` を添える。「ソース中の改行と空白をそのまま残す」は畳み込みを変えずに真似られず、
+    `<br>` が shashoku で同じ結果を出せる唯一の手段だから（hint の規則どおり、確かめた代替だけ書く）。
+    知らない値（`white-space: foo`）には hint を付けない
+  - **空白の畳み込みは `normal` と同じ**（`nowrap` は「畳む + 折らない」）。①〜③ のどこも変えない
+  - **分割の禁止**（CSS Text 3 §5.1）: 2 つのクラスタの間のソフトな分割機会は、その 2 つの
+    **最も近い共通の祖先**の `white-space` が `nowrap` なら無い。実装は簡略化して、各クラスタに
+    **「最も外側の nowrap 祖先」の識別子**（③ の `BreakingStyle::nowrap_scope`。0 = nowrap の外、
+    IFC ごとに前順で 1 から採番）を持たせ、隣り合うアイテムが同じ非 0 の識別子なら
+    `linebreak::Item::no_break_before` を立てる。**行分割器（`linebreak`）は 1 行も変えない**
+  - **簡略化の代償**: nowrap の中で `white-space: normal` に戻しても分割は再開しない
+    （`<span style="white-space:nowrap">A<span style="white-space:normal">B C</span></span>` の
+    「B C」は折れない）。まれな書き方なので許容する。テストで固定してある
+    （`tests/layout/nowrap_test.cpp` の `InnerNormalDoesNotResumeBreakingBySimplification`）
+  - **`<br>`（強制改行）は nowrap の中でも効く**。行分割器は LB4 を非適合化できないので、
+    `no_break_before` より強制改行が優先する（`tests/linebreak/opportunity_test.cpp` の契約）。
+    ブロック要素（div / p）に nowrap を書けば段落全体が 1 行
+  - **緊急分割（`overflow-wrap`）も nowrap の中では起こさない**。行分割器は `no_break_before` を
+    **分離禁則と同じ強さ**で扱う（`splits_inseparable()`。どうしても収まらない行では破る）ので、
+    それだけでは `overflow-wrap: anywhere` を継いだ nowrap の並びが割れてしまう（ブラウザは
+    nowrap を優先する）。緊急分割と min-content の区間切りの可否は**アイテムごとの `wrap` の
+    両側の弱い方**で決まる（A23）ので、③ が同じ並びのアイテムの `wrap` を `Normal` に落として
+    並びの内部の位置を塞ぐ。**副作用**: 並びの両端（外の文との境目）でも緊急分割ができなくなる。
+    `wrap` は位置ごとではなくアイテムごとの値なので、位置だけを選んで塞げない。
+    位置ごとに塞ぐには行分割器に手を入れる必要があり、A58 の範囲外にした
+  - **結果**: nowrap の並びの min-content は並び全体の幅になるので、`flex: 1 1 0` の項目は
+    それより縮まない（A52 の自動最小サイズ）。合計が親を超えれば親からはみ出し、**紙面から出れば
+    `content-overflow` の警告**（A46 / A50）。**箱の中のはみ出し**（親の箱の外に描かれるが紙面の中）は
+    **今は診断しない**（`BoxOverflow` は未実装。A46）。ガイドにもそう書いた
+  - 縦書きでも同じ（論理軸で動くので、読み替えは要らない）
+  - **ダンプ**（`--dump-stage style`）に `white-space` を出す。キーは `overflow-wrap` と
+    `writing-mode` の間
+- **置き場所**: 「最も外側の nowrap 祖先」は計算値ではなく**木の構造**から決まるので
+  `style::ComputedStyle` には持たせず、③ の文字ごとの属性の表（A27）の**行分割ポリシーの層**
+  （`BreakingStyle`）に識別子として足した。この層は見た目にもシェーピングにも効かないので、
+  `shape()` の区間も `TextFragment` の区間も細切れにならない。採番は木を前順に辿った順なので決定的
+- **確かめたこと（2026-09-25）**:
+  - 受け入れケース: `pipeline.html` の `.name` に `white-space: nowrap` を足して `--width 1100` で
+    描くと、6 段の名前（「HTML 断片」「DOM」「スタイル付きツリー」「ボックスツリー」
+    「描画リストと Bitmap」「PNG」）が**すべて 1 行**になった（修正前は 2 つが折れていた）。
+    警告は 0 件。`--width 900` でもまだ収まる（項目が min-content まで縮む）。`--width 800` で
+    `warning[content-overflow]`「content overflows the canvas by 58.3px (right) at 31:5」が 1 件出て、
+    `--strict` は exit 1 で PNG を書かない
+  - `examples/*.html` 5 本と `docs/guide/examples/*.html` 14 本は、修正前後の release の CLI で
+    **PNG がバイト単位で同一**。ゴールデン 16 枚は dev / asan の全テスト（各 1355 件）が通った
+    = 1 ピクセルも変わっていない
+
 ---
 
 ## 2. モジュールと依存
@@ -2241,6 +2307,10 @@ std::string dump_json(const StyledNode& root);
   計算値は値をそのまま持ち、**引き算は ③ layout が行う**（`%` の解決に包含ブロックが要るため）。
   `box-sizing` は `display: inline` への検査でいう「箱のプロパティ」には**数えない**:
   数えると `* { box-sizing: border-box }` が文中の `span` に当たって `unsupported-layout` になる
+- **`white-space`**（`normal | nowrap`。初期値 `normal`、**継承する**。CSS Text 3 §5.1。A58）。
+  `pre` / `pre-wrap` / `pre-line` / `break-spaces` は `UnsupportedValue` + **値レベルの hint**
+  （``only `normal` and `nowrap` are supported; use `<br>` for explicit line breaks``）。
+  空白の畳み込みは `nowrap` でも `normal` と同じ（②は値を運ぶだけで、折らないのは ③ の仕事）
 - 対応プロパティは DESIGN.md §4 の一覧 + 次のショートハンド / 別名:
   `margin` `padding`（1〜4 値）、`border`（`<幅> solid <色>` / `none`）、`border-width`
   `border-style`（solid / none）`border-color`、`flex`（`none` / `auto` / 1〜3 値）、
@@ -2430,6 +2500,14 @@ std::string dump_json(const BoxTree&);
   → (c) クラスタを `linebreak::Item` に変換（装飾・行高と**行分割ポリシー**はクラスタ先頭の
   文字のものを対応付け（A27 / A28）、letter-spacing を advance に加算、`<br>` は ForcedBreak、
   `<img>` とルビのまとまりは Atomic）
+  → (c''') **`white-space: nowrap` の分割の禁止**（CSS Text 3 §5.1。**A58**）。(a) が文字ごとに
+  「最も外側の nowrap 祖先」の識別子（`BreakingStyle::nowrap_scope`。0 = nowrap の外、IFC ごとに
+  前順で 1 から採番）を持たせてあるので、**隣り合うアイテムが同じ非 0 の識別子**なら
+  `linebreak::Item::no_break_before` を立てる。**行分割器は変えない**。
+  `<br>` は LB4 が優先するので nowrap の中でも効く。緊急分割（`overflow-wrap`）は
+  `no_break_before` が分離禁則と同じ強さ（= 収まらない行では破る）なので、同じ並びのアイテムの
+  `wrap` も `Normal` に落として塞ぐ（副作用として並びの両端でも緊急分割ができない。A58）。
+  この禁止は min-content にもそのまま効く（区間は分割機会から作るので、並びが丸ごと 1 区間になる）
   → (d) `LineBreaker::break_lines()`（`Config` は段落の既定値。`line-break` / `overflow-wrap` は
   アイテムごとの値が勝つ。A23 / A28）→
   (e) 行ボックスを積み、`Spacing` と `text-align`（justify を含む。A13）を反映してグリフを配置。

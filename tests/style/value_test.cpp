@@ -89,6 +89,19 @@ TEST(StyleValue, LineBreakAndOverflowWrap) {
   EXPECT_EQ(computed("overflow-wrap: break-word").overflow_wrap, OverflowWrap::BreakWord);
 }
 
+// `white-space`（CSS Text 3 §5.1。A58）。対応するのは 2 値だけで、初期値は normal。
+TEST(StyleValue, WhiteSpace) {
+  EXPECT_EQ(computed("").white_space, WhiteSpace::Normal);  // 初期値
+  EXPECT_EQ(computed("white-space: normal").white_space, WhiteSpace::Normal);
+  EXPECT_EQ(computed("white-space: nowrap").white_space, WhiteSpace::Nowrap);
+  // 値は大小無関係（キーワードは小文字化されてから引かれる）
+  EXPECT_EQ(computed("white-space: NoWrap").white_space, WhiteSpace::Nowrap);
+  // <style> でも効く
+  const Result<ComputedStyle> sheet = sheet_style("div { white-space: nowrap }");
+  ASSERT_TRUE(sheet.has_value()) << (sheet ? "" : sheet.error().message);
+  EXPECT_EQ(sheet->white_space, WhiteSpace::Nowrap);
+}
+
 // CSS Text 3 §5.4: "For legacy reasons, UAs must treat `word-wrap` as a legacy name alias of
 // the `overflow-wrap` property."（issue #25 / A35）。名前の表に 1 行足しただけなので、
 // カスケード・継承・計算値は `overflow-wrap` と**同じ経路**を通る。

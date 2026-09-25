@@ -106,7 +106,6 @@ TEST(StyleError, UnsupportedProperties) {
       {"transform: rotate(3deg)", ErrorKind::UnsupportedProperty},
       {"opacity: 0.5", ErrorKind::UnsupportedProperty},
       {"flex-wrap: wrap", ErrorKind::UnsupportedProperty},
-      {"white-space: nowrap", ErrorKind::UnsupportedProperty},
       {"text-orientation: upright", ErrorKind::UnsupportedProperty},
       {"font: 16px serif", ErrorKind::UnsupportedProperty},
       {"-webkit-line-clamp: 2", ErrorKind::UnsupportedProperty},
@@ -393,6 +392,32 @@ TEST(StyleError, GradientValuesCarryAValueLevelHint) {
   EXPECT_TRUE(plain.errors.front().hint.empty()) << plain.errors.front().hint;
 }
 
+// `white-space` の `pre` 系は「ソース中の改行と空白をそのまま残す」ので、畳み込みを変えない
+// shashoku では真似られない。プロパティ名では分からないので**値レベルの hint**（A53 / A58）。
+TEST(StyleError, PreservingWhiteSpaceValuesCarryAValueLevelHint) {
+  for (const std::string_view value : {"pre", "pre-wrap", "pre-line", "break-spaces"}) {
+    SCOPED_TRACE(value);
+    const Outcome outcome = collect_inline("white-space: " + std::string{value}, kStyleAttribute);
+    ASSERT_EQ(outcome.errors.size(), 1U);
+    const RenderError& error = outcome.errors.front();
+    EXPECT_EQ(error.kind, ErrorKind::UnsupportedValue) << error.message;
+    EXPECT_EQ(error.location.value_or(SourceLocation{}), kStyleAttribute);
+    // 使える値と、shashoku で改行位置を決める唯一の手段（`<br>`）を示す
+    EXPECT_NE(error.hint.find("nowrap"), std::string::npos) << error.hint;
+    EXPECT_NE(error.hint.find("<br>"), std::string::npos) << error.hint;
+  }
+  // 知らない値には何も足さない（間違った助言をしない。A46 / A48 と同じ規則）
+  const Outcome unknown = collect_inline("white-space: foo");
+  ASSERT_EQ(unknown.errors.size(), 1U);
+  EXPECT_EQ(unknown.errors.front().kind, ErrorKind::UnsupportedValue);
+  EXPECT_TRUE(unknown.errors.front().hint.empty()) << unknown.errors.front().hint;
+  // 値のエラーは「何が使えるか」を数え上げる
+  for (const std::string_view supported : {"normal", "nowrap"}) {
+    EXPECT_NE(unknown.errors.front().message.find(supported), std::string::npos)
+        << unknown.errors.front().message;
+  }
+}
+
 TEST(StyleError, BackgroundImageHintsAtASolidColorOrAnImgTag) {
   const Outcome outcome = collect_inline("background-image: url(x.png)");
   ASSERT_EQ(outcome.errors.size(), 1U);
@@ -527,6 +552,10 @@ TEST(StyleError, UnsupportedKeywords) {
       {"font-weight: 450", ErrorKind::UnsupportedValue},
       {"writing-mode: vertical-lr", ErrorKind::UnsupportedValue},
       {"line-break: anywhere", ErrorKind::UnsupportedValue},
+      {"white-space: pre", ErrorKind::UnsupportedValue},
+      {"white-space: pre-wrap", ErrorKind::UnsupportedValue},
+      {"white-space: pre-line", ErrorKind::UnsupportedValue},
+      {"white-space: break-spaces", ErrorKind::UnsupportedValue},
       {"text-align: justify-all", ErrorKind::UnsupportedValue},
       {"border-style: dashed", ErrorKind::UnsupportedValue},
       {"width: min-content", ErrorKind::UnsupportedValue},

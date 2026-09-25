@@ -1,0 +1,82 @@
+<style>
+  * { box-sizing: border-box; }
+  .page {
+    margin: 0;
+    padding: 0;
+    background: #cfc9ba;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    writing-mode: vertical-rl;
+  }
+
+  .sheet {
+    width: 800px;
+    height: 1200px;
+    background-color: #f2ece0;
+    font-family: "Noto Serif JP", "Hiragino Mincho ProN", "Yu Mincho", "MS Mincho", serif;
+    color: #2b2723;
+    display: flex;
+    padding: 46px;
+  }
+  /* 内側の淡い枠 */
+  .frame {
+    flex: 1;
+    border: 1px solid rgba(90, 80, 66, 0.16);
+    display: flex;
+    flex-direction: column;
+  }
+  .poem-area {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+  }
+
+  .poem {
+    height: 900px;
+    margin: 0;
+    font-size: 42px;
+    font-weight: 400;
+    line-height: 2.6;
+    letter-spacing: 0.12em;
+    color: #241f1b;
+  }
+
+  .side {
+    flex: none;
+    display: flex;
+    justify-content: flex-end;
+    gap: 26px;
+  }
+  .author {
+    font-size: 19px;
+    letter-spacing: 0.34em;
+    color: #6b6155;
+  }
+  /* 落款のかわりの小さな朱印 */
+  .seal {
+    width: 28px;
+    height: 28px;
+    border: 2px solid #b4462f;
+    border-radius: 3px;
+    text-align: center;
+    line-height: 24px;
+    font-size: 15px;
+    color: #b4462f;
+  }
+</style>
+<div class="page">
+  <div class="sheet">
+    <div class="frame">
+      <div class="poem-area">
+        <p class="poem">ゆふぐれの　駅のホームに　立ちつくし　届かぬ返事を　もう一度読む</p>
+      </div>
+      <div class="side">
+        <div class="author">架空 花</div>
+        <div class="seal">歌</div>
+      </div>
+    </div>
+  </div>
+</div>

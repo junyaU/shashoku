@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>OG 画像 - junya.dev</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700;900&family=Inter:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #0b1020; }
+  body {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+  }
+  .og {
+    width: 1200px;
+    height: 630px;
+    position: relative;
+    overflow: hidden;
+    background:
+      radial-gradient(900px 500px at 88% -10%, rgba(255, 106, 61, 0.30) 0%, rgba(255, 106, 61, 0) 60%),
+      radial-gradient(700px 500px at 5% 105%, rgba(70, 120, 255, 0.28) 0%, rgba(70, 120, 255, 0) 62%),
+      linear-gradient(145deg, #131a30 0%, #0a0e1c 100%);
+    color: #ffffff;
+    font-family: "Noto Sans JP", "Inter", "Hiragino Kaku Gothic ProN", sans-serif;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 64px 72px;
+  }
+  /* うっすらグリッド */
+  .og::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.035) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.035) 1px, transparent 1px);
+    background-size: 60px 60px;
+    pointer-events: none;
+  }
+  .og > * { position: relative; z-index: 1; }
+
+  .top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .site {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: #e7ecf7;
+  }
+  .site .dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #ff8a5c, #ff5f3d);
+    box-shadow: 0 0 18px rgba(255, 106, 61, 0.7);
+  }
+  .tags { display: flex; gap: 10px; }
+  .tag {
+    font-size: 17px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    color: #cfe0ff;
+    background: rgba(120, 160, 255, 0.12);
+    border: 1px solid rgba(150, 180, 255, 0.32);
+    border-radius: 999px;
+    padding: 7px 20px;
+  }
+
+  h1 {
+    margin: 0;
+    font-size: 62px;
+    font-weight: 900;
+    line-height: 1.42;
+    letter-spacing: 0.005em;
+    max-width: 1010px;
+    text-shadow: 0 2px 24px rgba(0, 0, 0, 0.35);
+  }
+  h1 .accent {
+    background: linear-gradient(90deg, #ffb27a 0%, #ff6a3d 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .bottom {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-top: 26px;
+    border-top: 1px solid rgba(255, 255, 255, 0.13);
+  }
+  .author {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  .author img {
+    width: 62px;
+    height: 62px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 2px solid rgba(255, 255, 255, 0.55);
+    background: #2a3350;
+  }
+  .author .name {
+    font-size: 21px;
+    font-weight: 600;
+    line-height: 1.4;
+    color: #f2f5fb;
+  }
+  .author .handle {
+    font-size: 16px;
+    color: #96a3c0;
+    letter-spacing: 0.03em;
+  }
+  .date {
+    font-size: 18px;
+    color: #9aa7c4;
+    letter-spacing: 0.06em;
+  }
+</style>
+</head>
+<body>
+  <div class="og">
+    <div class="top">
+      <div class="site"><span class="dot"></span>junya.dev</div>
+      <div class="tags">
+        <span class="tag">Rust</span>
+        <span class="tag">計測</span>
+      </div>
+    </div>
+
+    <h1>Rust で書き直したら速くなった、と言うために<span class="accent">測ったこと、測らなかったこと</span></h1>
+
+    <div class="bottom">
+      <div class="author">
+        <img src="avatar.png" alt="著者アイコン">
+        <div>
+          <div class="name">junya</div>
+          <div class="handle">junya.dev</div>
+        </div>
+      </div>
+      <div class="date">2026年9月23日</div>
+    </div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,178 @@
+<style>
+  * { box-sizing: border-box; }
+  .page {
+    margin: 0;
+    padding: 44px 20px;
+    background: #f5f7fa;
+    font-family: "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, sans-serif;
+    color: #1f2933;
+  }
+  .card {
+    width: 800px;
+    margin: 0 auto;
+    background: #fff;
+    border-radius: 16px;
+    padding: 36px 40px 40px;
+  }
+  .header {
+    padding-bottom: 22px;
+  }
+  .header-rule { height: 2px; background: #f0f3f7; margin-bottom: 8px; }
+  .eyebrow {
+    font-size: 11px;
+    letter-spacing: 0.2em;
+    color: #4c9aff;
+    font-weight: 500;
+    margin-bottom: 8px;
+  }
+  .header-title {
+    margin: 0 0 6px;
+    font-size: 26px;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+  }
+  .header-sub {
+    margin: 0;
+    font-size: 13px;
+    color: #7b8794;
+  }
+  .steps {
+    margin: 0;
+    padding: 0;
+  }
+  .step {
+    display: flex;
+    gap: 20px;
+    padding: 22px 0 22px 0;
+  }
+  .step-rule { height: 1px; background: #f0f3f7; }
+  /* バッジ同士をつなぐ縦のガイド線 */
+  .badge-col {
+    flex: 0 0 44px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .guide {
+    flex: 1;
+    width: 2px;
+    background: #e8edf3;
+  }
+  .badge {
+    flex: 0 0 44px;
+    width: 44px;
+    height: 44px;
+    border-radius: 22px;
+    background: #4c9aff;
+    color: #fff;
+    font-size: 19px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .body { padding-top: 2px; }
+  .step-title {
+    margin: 0 0 6px;
+    font-size: 17px;
+    font-weight: 700;
+    color: #243b53;
+  }
+  .step-text {
+    margin: 0 0 8px;
+    font-size: 13.5px;
+    line-height: 1.85;
+    color: #52606d;
+  }
+  .step-text.last { margin-bottom: 0; }
+  .code {
+    font-family: "JetBrains Mono", Consolas, monospace;
+    font-size: 12.5px;
+    background: #f2f5f8;
+    color: #334e68;
+  }
+  .footer {
+    margin-top: 26px;
+    padding: 14px 18px;
+    background: #f7f9fc;
+    border-radius: 8px;
+    font-size: 12.5px;
+    color: #7b8794;
+    line-height: 1.7;
+  }
+</style>
+<div class="page">
+  <div class="card">
+    <div class="header">
+      <div class="eyebrow">ONBOARDING</div>
+      <h1 class="header-title">開発環境セットアップ手順</h1>
+      <p class="header-sub">はじめての方はこの 5 ステップを上から順に進めてください（所要 30〜40 分）</p>
+    </div>
+    <div class="header-rule"></div>
+
+    <div class="steps">
+      <div class="step">
+        <div class="badge-col">
+          <div class="badge">1</div>
+          <div class="guide"></div>
+        </div>
+        <div class="body">
+          <h2 class="step-title">リポジトリを clone する</h2>
+          <p class="step-text">社内 GitHub の SSH 鍵を登録したうえで <span class="code">git clone</span> します。</p>
+          <p class="step-text last">作業ディレクトリはホーム直下の <span class="code">~/src/</span> に揃えておくと、後の手順のパスがそのまま使えます。</p>
+        </div>
+      </div>
+      <div class="step-rule"></div>
+      <div class="step">
+        <div class="badge-col">
+          <div class="badge">2</div>
+          <div class="guide"></div>
+        </div>
+        <div class="body">
+          <h2 class="step-title">ツールチェーンを導入する</h2>
+          <p class="step-text">コンパイラとビルドツールを、リポジトリ同梱のバージョン指定に合わせて入れます。</p>
+          <p class="step-text last">バージョンがずれると後続のビルドが落ちるので、<span class="code">--version</span> で必ず確認してください。</p>
+        </div>
+      </div>
+      <div class="step-rule"></div>
+      <div class="step">
+        <div class="badge-col">
+          <div class="badge">3</div>
+          <div class="guide"></div>
+        </div>
+        <div class="body">
+          <h2 class="step-title">依存ライブラリを取得する</h2>
+          <p class="step-text">初回のみネットワーク経由で外部ライブラリを取りに行きます。回線によっては 10 分ほどかかります。</p>
+          <p class="step-text last">社内プロキシ環境の場合は、先に環境変数の設定が必要です。</p>
+        </div>
+      </div>
+      <div class="step-rule"></div>
+      <div class="step">
+        <div class="badge-col">
+          <div class="badge">4</div>
+          <div class="guide"></div>
+        </div>
+        <div class="body">
+          <h2 class="step-title">ビルドする</h2>
+          <p class="step-text">設定（configure）とビルドの 2 段階です。警告はすべてエラー扱いになっています。</p>
+          <p class="step-text last">失敗したら、まずステップ 2 のバージョンを疑ってください。</p>
+        </div>
+      </div>
+      <div class="step-rule"></div>
+      <div class="step">
+        <div class="badge-col">
+          <div class="badge">5</div>
+        </div>
+        <div class="body">
+          <h2 class="step-title">テストを実行する</h2>
+          <p class="step-text">全テストが緑になれば環境構築は完了です。お疲れさまでした 🎉</p>
+          <p class="step-text last">赤が出た場合は、ログを添えて #dev-help チャンネルに投げてください。</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer">
+      困ったときは：社内 wiki の「開発環境 FAQ」→ それでも解決しなければ #dev-help へ。メンターが必ず拾います。
+    </div>
+  </div>
+</div>

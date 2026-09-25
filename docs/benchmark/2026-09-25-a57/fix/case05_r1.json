@@ -1,0 +1,1 @@
+{"ok": true, "width": 1080, "height": 1080, "truncated": false, "errors": [], "warnings": [{"kind": "font-not-found", "detail": "no requested font family is loaded (`Noto Serif JP`, `Hiragino Mincho ProN`, `Yu Mincho`, `serif`); text uses `Noto Sans JP` instead at 83:49", "codepoint": 0, "line": 83, "column": 49, "offset": 1673, "overflow_px": 0, "edge": null}]}

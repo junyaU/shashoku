@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>読書メモ｜文章の呼吸</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;500;600&family=Noto+Sans+JP:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: #d8d4cc;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+  }
+  .card {
+    width: 1080px;
+    height: 1080px;
+    background: #f6f3ec;
+    background-image:
+      radial-gradient(circle at 20% 15%, rgba(255, 255, 255, 0.85) 0%, rgba(255, 255, 255, 0) 55%),
+      linear-gradient(160deg, #f8f5ef 0%, #efe9df 100%);
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 150px 130px;
+    overflow: hidden;
+    font-family: "Noto Serif JP", "Hiragino Mincho ProN", "Yu Mincho", serif;
+    color: #33312c;
+  }
+  /* 内側の細い罫 */
+  .card::before {
+    content: "";
+    position: absolute;
+    inset: 56px;
+    border: 1px solid rgba(120, 110, 95, 0.22);
+    pointer-events: none;
+  }
+  .mark {
+    font-size: 15px;
+    letter-spacing: 0.4em;
+    color: #a79c88;
+    font-family: "Noto Sans JP", sans-serif;
+    margin-bottom: 56px;
+  }
+  .quote {
+    position: relative;
+    font-size: 46px;
+    line-height: 2.1;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    text-indent: 1em;
+    margin: 0;
+  }
+  .quote::before {
+    content: "「";
+    position: absolute;
+    left: -0.72em;
+    top: -0.12em;
+    font-size: 64px;
+    color: #c4b9a3;
+    line-height: 1;
+  }
+  .quote::after {
+    content: "」";
+    color: #c4b9a3;
+    margin-left: -0.1em;
+  }
+  .rule {
+    width: 96px;
+    height: 1px;
+    background: #bdb29c;
+    margin: 64px 0 0 auto;
+  }
+  .credit {
+    margin-top: 28px;
+    text-align: right;
+    line-height: 1.9;
+  }
+  .credit .title {
+    display: block;
+    font-size: 22px;
+    letter-spacing: 0.08em;
+    color: #4a463e;
+  }
+  .credit .author {
+    display: block;
+    font-size: 17px;
+    letter-spacing: 0.12em;
+    color: #8c8371;
+    font-family: "Noto Sans JP", sans-serif;
+  }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="mark">読 書 メ モ</div>
+
+    <p class="quote">読みやすい文章とは、読み手が息をつく場所が、書き手の意図した場所と一致している文章のことだ。句読点は、その約束のしるしにすぎない。</p>
+
+    <div class="rule"></div>
+    <div class="credit">
+      <span class="title">『文章の呼吸』</span>
+      <span class="author">佐藤 一葉</span>
+    </div>
+  </div>
+</body>
+</html>
